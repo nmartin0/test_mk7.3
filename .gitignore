@@ -1,5 +1,12 @@
 Build output lives outside the tree (see build/env.sh, MK_BUILD).
-These exist only as a guard against an accidental in-tree build.
+The entries below are symlinks created by build/mksandbox.sh that point
+at $MK_BUILD or at the ode4linux clone. The build writes through them,
+so nothing lands inside the repository.
+/osfmk7.3/osfmk/obj
+/osfmk7.3/osfmk/export/at386
+/osfmk7.3/osfmk/src/makedefs/sys.mk
+/osfmk7.3/osfmk/src/makedefs/osf.man.mk
+/osfmk7.3/osfmk/src/makedefs/osf.doc.mk
 /obj/
 /export/
 *.o
