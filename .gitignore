@@ -1,0 +1,6 @@
+Build output lives outside the tree (see build/env.sh, MK_BUILD).
+These exist only as a guard against an accidental in-tree build.
+/obj/
+/export/
+*.o
+*.pp
