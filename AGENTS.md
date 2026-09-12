@@ -44,9 +44,15 @@ line, with the one deliberate departure documented in place.
 ## Build
 
 ```sh
-ODE4LINUX=/path/to/ode4linux sh build/bootstrap-ode.sh
-ODE4LINUX=/path/to/ode4linux . build/env.sh
+export ODE4LINUX=~/ode4linux
+sh build/bootstrap-ode.sh     # once: builds the ODE toolset
+sh build/mksandbox.sh         # once: prepares the sandbox
 ```
+
+OSFMK is built by ODE's `build` front end, which reads
+`osfmk7.3/osfmk/src/osc/Buildconf` and derives the environment from it.
+`build/env.sh` exists only as a reference transcription of Buildconf and
+is NOT the supported path -- see "Where the work stands".
 
 Host packages: `gcc`, `gcc-multilib`, `binutils`, `libc6-i386`,
 `qemu-system-x86`, `gdb`.
@@ -128,8 +134,55 @@ debuggable under gdb, rebuildable without a reboot. The kernel is not.
 So: boot to a `ddb>` prompt on serial with gdb attached, then everything
 else.
 
-State at the time of the vendor import, from a hand-rolled driver that
-has since been abandoned in favour of real ODE:
+### ODE toolset: working
+
+`build/bootstrap-ode.sh` builds six tools from ode4linux and they run:
+`make`, `build`, `workon`, `genpath`, `makepath`, `release`. Two flags
+are needed and both go through existing hooks, so neither the ode4linux
+clone nor this repository is modified:
+
+- `CENV=-fcommon` -- ode4linux targets GCC 4.8; GCC 10 changed the
+  `-fno-common` default. Without it, make fails to link on
+  `multiple definition of 'maxJobs'`.
+- `DEF_ARFLAGS=cr` -- `osf.std.mk` defaults to `crl`, and **`ar crl` is
+  broken in GNU binutils 2.42**: the `l` modifier consumes the archive
+  name, so ar tries to open the first object as an archive and reports
+  `file format not recognized`. Verified by testing `cr`, `crl`, `crs`
+  and `crls` directly. OSFMK's own Buildconf already sets `cr`, so this
+  affects only ODE's self-build.
+
+`md` (make depend) does not build -- same `-fno-common` problem, but
+inside ODE's own makefiles where `CENV` does not reach. It is only
+needed for incremental dependency generation, so it is deferred.
+
+### The current blocker, precisely located
+
+`build` reads Buildconf -- it derives `target_machine=at386` and the
+object base correctly, and fails with the right paths when they are
+missing. But **it does not export Buildconf's variables into make's
+environment**. Under `build`, make sees `project_name` empty, so
+`osf.std.mk:100`'s `.include <osf.${project_name}.mk>` becomes
+`osf..mk`, `osf.${project_name}.passes.mk` is never included, no
+`build_all` target is defined, and the build stops with
+`make: don't know how to make build_all`.
+
+Setting `project_name=osc` by hand and invoking make directly collapses
+the failure to a single remaining unset variable, `GCC_LATEST`, which
+Buildconf also sets. So the chain is broken in one place, not many.
+
+Next step is to find why `workon`/`build` are not propagating the
+environment. Candidates, in order: `ode_build_env` in
+`rc_files/osc/sb.conf`; whether `workon` is meant to set the environment
+and `build` only to locate the sandbox; and whether ODE expects the
+sandbox conf rather than Buildconf to carry these.
+
+Note `MAKESYSPATH` accepts a colon-separated list (each entry goes
+through `Dir_AddDir` in `parse.c`), but Buildconf's `replace setenv
+MAKESYSPATH` overrides anything pre-set in the environment -- tested.
+That is why the missing rule files are symlinked into `makedefs` by
+`build/mksandbox.sh` rather than added to a search path.
+
+### Earlier state, from a hand-rolled driver since abandoned
 
 - `config` generates 130 option headers for AT386 PRODUCTION.
 - 15 MIG stubs generate cleanly.
