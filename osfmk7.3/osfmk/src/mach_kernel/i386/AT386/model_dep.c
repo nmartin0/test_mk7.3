@@ -254,7 +254,22 @@ int		loadpt;
 
 vm_size_t	mem_size = 0; 
 vm_offset_t	first_addr = 0;	/* set by start.s - keep out of bss */
-vm_offset_t	first_avail = 0;/* first after page tables */
+/*
+ * AI-ONLY NOTE: section attribute required. start.S:487 stores the first
+ * physical address after the page tables here before any C runs, so it
+ * must survive the BSS clear in machine_startup(). Measured: start.S
+ * stores 0x503000, the clear makes it 0, and i386_init then computes
+ * hole_end = round_page(first_avail) = 0 against hole_start = 0x9f000.
+ * With the hole inverted nothing is skipped, so pmap_bootstrap allocated
+ * page tables from avail_start upward straight through 0x100000 and
+ * overwrote the kernel's own text.
+ *
+ * first_addr just below carries the same historical comment but is NOT
+ * written by start.S in this version (grep confirms zero stores); it is
+ * assigned in i386_init after the clear, so it needs no attribute.
+ */
+vm_offset_t	first_avail __attribute__((section(".data"))) = 0;
+				/* first after page tables */
 vm_offset_t	last_addr;
 
 vm_offset_t	avail_start, avail_end;
