@@ -257,3 +257,337 @@ i386/pio.h               inw/outw instead of the 0x66 prefix hack
 `docs/bootstrap-fork.md` records a separate open decision (Hurd vs OSF
 bootstrap) that is **not** reachable until this is fixed — neither
 bootstrap function is among the 55 functions the kernel enters.
+
+---
+
+# Next blocker: splsched() returns a bogus IPL
+
+**Status: open, narrowed to one routine. Supersedes the section above,
+which is resolved.**
+
+The `.text`-zeroing bug is fixed (see the commit "Keep the two variables
+start.S writes out of BSS"). The kernel now reaches far further:
+
+```
+distinct functions entered   55  ->  320
+```
+
+It completes VM init, IPC bootstrap, task and thread creation, services
+timer interrupts, and runs device autoconfiguration to completion:
+
+```
+Available physical space from 0x100000 to 0x3fe0000
+vm_page_bootstrap: 14705 free pages
+adjusting delay count: 10 9 35 175 313 261 319 333 327
+Unrecognized processor (type = 0x0, family = 0x6, model = 0x6)
+fdc0: port = 3f2, spl = 5, pic = 6.
+fdc0: at atbus0
+ fd0: at fdc0 slave 0, port = 3f2, spl = 5, pic = 6.
+ fd1: at fdc0 slave 1, port = 3f2, spl = 5, pic = 6.
+kd0: at atbus1, port = 60, spl = 6, pic = 1.
+com0: 82550 or 16550 chip.
+com0: at atbus2, port = 3f8, spl = 6, pic = 4. (DOS COM1)
+S3 chip ID probe returned 0x0
+vga: standard
+vga0: at atbus3
+realtime clock configured
+battery clock configured
+intnull(14)
+panic: splx(old 91, new 8): logic error in locore.s
+In tight loop: hit ctl-alt-del to reboot
+```
+
+## Read the panic message backwards
+
+**The labels in that message are swapped.** `i386/spl.S` pushes:
+
+```asm
+splxpanic:
+        pushl   EXT(curr_ipl)   /* pushed first  -> prints as the 2nd %x */
+        pushl   %eax            /* pushed second -> prints as the 1st %x */
+        pushl   $splxpanic2
+        call    EXT(panic)
+```
+
+Under cdecl the last thing pushed before the format string is argument
+one, so `%eax` prints where the message says "old". The real reading is:
+
+- **requested level = 0x91** (the argument to `splx`)
+- **curr_ipl = 8**, which is healthy: `SPLHI` is 8 for AT386
+  (`ipl.h` defines `IPLHI` as 7 only for `iPSC386`)
+
+`0x91 = 145 > 8`, so `ja splxpanic` fires correctly. The check is doing
+its job; the caller is wrong.
+
+Confirmed against the compiled code rather than the headers:
+
+```asm
+159dfe:  cmp $0x0,%eax
+159e01:  jl  splxpanic
+159e03:  cmp $0x8,%eax        <- SPLHI is 8, as expected
+159e06:  ja  splxpanic
+```
+
+## The caller
+
+From a `-d exec` trace, the blocks immediately before `splxpanic`:
+
+```
+thread_create_in
+  thread_hold
+    splvm
+    install_special_handler
+      install_special_handler_locked
+    splx            <- panics
+```
+
+`install_special_handler()` at `kern/thread_act.c:1549` is an ordinary,
+correct pairing:
+
+```c
+spl_t   spl;
+...
+spl = splsched();
+...
+splx(spl);
+```
+
+So **`splsched()` is returning 0x91** and `install_special_handler` is
+faithfully handing it back. `0x91` is not a plausible IPL; it looks like
+whatever happened to be in `%eax`, i.e. a path that returns without
+setting a value.
+
+That lead was followed and the answer is below. `splsched` does not
+fall through without setting `%eax`; the problem is a width disagreement
+between the assembly and the C declaration.
+
+## Root cause: curr_ipl is 32 bits in assembly, 8 bits in C
+
+`i386/spl.h:35`:
+
+```c
+typedef unsigned char           spl_t;
+```
+
+But every spl routine is assembly that returns the full 32-bit value:
+
+```asm
+00159dc8 <splsched/splhi/splhigh/splclock>:
+        cli
+        mov   0x1e0a08,%eax      ; return the FULL 32-bit curr_ipl
+        movl  $0x8,0x1e0a08      ; and store a 32-bit 8
+        ret
+```
+
+and `curr_ipl` is written with `movl` throughout — the encoding at
+`0x159dce` is `c7 05 08 0a 1e 00 08 00 00 00`, a four-byte store.
+
+GCC, seeing prototypes that return `spl_t`, keeps only the low byte:
+
+```asm
+0010cba9:  call   159dc8 <splclock>
+0010cbb2:  movzbl %al,%ebx        ; discard the upper 24 bits
+```
+
+That truncation is **correct for the declared type** and is not itself
+the defect. It is what makes the defect visible: `curr_ipl` genuinely
+holds a value whose low byte is `0x91`, and the C side can only ever see
+that byte.
+
+So the assembly and the C disagree about the width of a shared object.
+This is the same family as the `.bss` bugs already fixed -- assembly and
+C disagreeing about a shared variable's representation -- except the
+disagreement is width rather than section.
+
+**What is NOT yet established**, and must not be guessed: which side is
+wrong. Either `curr_ipl` should be a 32-bit `int` and `spl.h`'s
+`unsigned char` is the error, or the assembly should be storing and
+loading a byte. Deciding needs the C declaration of `curr_ipl` itself
+read against every assembly site that touches it, in `spl.S` and
+`interrupt.S`. Note the C declarations found so far disagree with each
+other too:
+
+```
+i386/spl.h:35              typedef unsigned char  spl_t;
+hp_pa/spl.h:205            typedef unsigned       spl_t;
+i386/kgdb_interface.c:82   typedef int            spl_t;   /* "XXX" */
+i386/AT386/lpr.c:221       extern spl_t curr_ipl[];
+i386/AT386/mp/mp_v1_1.c:69 extern int   curr_ipl[NCPUS];   <- int, not spl_t
+```
+
+`mp_v1_1.c` declaring it `int` while `lpr.c` declares it `spl_t`
+(= `unsigned char`) is a direct contradiction inside the same tree.
+
+**Also still unexplained:** where the value `0x91` comes from at all.
+Only four instructions in the entire linked kernel write `curr_ipl`, and
+none of them can produce 145:
+
+```
+158388:  movl $0x8,0x1e0a08
+159dce:  movl $0x8,0x1e0a08
+159e13:  mov  %eax,0x1e0a08     (set_spl, after the bounds check)
+159e5c:  mov  %eax,0x1e0a08
+```
+
+The indexed write at `interrupt.S:430` is inside
+`#if NCPUS > 1 && AT386 && !MP_V1_1` and is compiled out, as is the
+whole `MP_V1_1` interrupt path. So either something writes `curr_ipl`
+that is not a direct store to `0x1e0a08` -- a stray pointer, or a
+neighbouring object overrunning into it -- or `0x159e5c` is reached with
+an unvalidated `%eax`. `0x159e5c` sits just past `splxpanic`
+(`0x159e4a`) and has not been identified; identify it first.
+
+## Not the trigger: intnull(14)
+
+`intnull(14)` prints immediately before the panic and looks related. It
+is not. Booting with `-nodefaults` to remove the IDE controller, the
+usual source of IRQ 14, leaves both the message and the panic exactly
+as they were. Where the interrupt comes from is a separate question and
+is not blocking.
+
+## Eliminated
+
+- **`splsched` returning without setting `%eax`.** It does set it. With
+  `MACH_KPROF` off, `Entry(splsched)` deliberately falls through into
+  `Entry(splhigh)`/`Entry(splhi)`, which loads `%eax` from `curr_ipl`
+  before overwriting it. `splsched`, `splhi`, `splhigh` and `splclock`
+  are all the same address (`0x159dc8`), as are `splimp`, `splnet` and
+  `spltty` (`0x159dc0`) -- a breakpoint on one catches all of them.
+- **GCC's `movzbl %al,%ebx` truncation.** Correct for
+  `spl_t = unsigned char`. It reveals the bug rather than causing it.
+- **`spl.S:335-338` clobbering `%edx`.** It looks as though `%edx`, the
+  CPU index, is overwritten by the old IPL between reading and writing
+  `curr_ipl`. It is not: line 337 is `CPU_NUMBER(%edx)`, which reloads
+  it. Read the intervening line before reporting this.
+- **`SPLHI` being 7 while something passes 8.** `ipl.h` does define
+  `IPLHI` twice, but the 7 arm is `#if iPSC386`. The compiled constant
+  is 8.
+
+
+---
+
+# Narrowed: the splx argument is corrupted on the stack
+
+**Status: open. Mechanism located to a three-instruction window.
+Supersedes the width-mismatch section above, which is real but is not
+what produces 0x91.**
+
+## The call is correct when it is made
+
+`install_special_handler` is entered **once** before the panic (counted
+from a `-d exec` trace, not from gdb). Measured at breakpoints on that
+single call:
+
+```
+at 0x10cbb2, after "call splclock":   %eax = 8
+at 0x10cbde, where the arg is stored: %ebx = 8
+```
+
+So the value handed to `splx` is correct at the moment it is written.
+
+## The tail call is also correct
+
+```asm
+10cbde:  mov  %ebx,0x10(%esp)   ; place arg where splx will read it
+10cbe2:  add  $0x4,%esp
+10cbe5:  pop  %ebx
+10cbe6:  pop  %esi
+10cbe7:  jmp  159df2 <splx>     ; tail jump
+```
+
+`%esp` rises 12 across the `add` and two `pop`s, so the slot written at
+`0x10(%esp)` is at `0x4(%esp)` when `splx` executes
+`mov 0x4(%esp),%eax`. The arithmetic checks out.
+
+## Therefore the stack slot is overwritten in between
+
+`splx` reads `0x91` from a slot that held `8` three instructions
+earlier, on the only call to this function. Nothing in those three
+instructions writes memory. The only thing that can run in that window
+is an **interrupt**, and the interrupt path pushes onto this same stack.
+
+`intnull(14)` prints immediately before the panic, which places an
+unhandled interrupt at exactly the right moment.
+
+**Next step:** confirm an interrupt is taken in that window. Either use
+`-d int` correlated with the block index of `0x10cbde` from the exec
+trace, or capture `%esp` at `0x10cbde` and compare it against the frame
+the interrupt path builds. If confirmed, the question becomes why the
+interrupt frame lands on top of a live stack slot rather than below
+`%esp`.
+
+## A real hazard found on the way, not the cause
+
+`interrupt.S` calls `set_spl` **directly at its entry**, which in the
+linked image is `0x159e08`:
+
+```asm
+movzbl EXT(intpri)(%ecx), %eax   # eax = intpri[int#]
+call   EXT(set_spl)              # sets curr_ipl = eax
+```
+
+`splx` at `0x159df2` performs the bounds check and then *falls through*
+into `set_spl` at `0x159e08`. Entering `set_spl` by `call` therefore
+**bypasses the check entirely**, and `set_spl` writes `curr_ipl`
+unvalidated at `0x159e13`. Any bad value in `intpri[]` would reach
+`curr_ipl` with nothing to catch it.
+
+It is not the cause here -- `intpri` was read out of the running kernel
+and is correctly populated, matching the boot log exactly:
+
+```
+intpri[0..15] = 08 06 00 00 06 00 05 00 00 00 00 00 00 01 00 00
+                ^clock ^kd      ^com  ^fdc
+intpri[1]=6  matches "kd0: spl = 6"
+intpri[4]=6  matches "com0: spl = 6"
+intpri[6]=5  matches "fdc0: spl = 5"
+intpri[14]=0 valid (SPL0)
+```
+
+Worth recording anyway; it is a latent trap for the next person who
+changes `intpri` or adds a driver.
+
+## Eliminated this round
+
+- **`intpri[14]` holding garbage.** It holds 0, which is valid.
+- **`set_spl_noi` writing the bad value.** It is the only unvalidated
+  writer and is reached only from `return_from_interrupt`, but the
+  argument passed to `splx` is already wrong before any of that matters.
+- **`install_special_handler_locked` clobbering `%ebx`.** It pushes
+  `%ebx` at entry and restores it; `%ebx` reads 8 after it returns.
+- **The tail-call stack arithmetic.** Verified instruction by
+  instruction.
+
+## Instrument failures -- read this before trusting a measurement
+
+**gdb breakpoint conditions do not work against this QEMU stub.**
+
+```
+break *0xc0159df6 if $eax != 8
+```
+
+stops with `$eax == 8`. Conditions appear to be ignored entirely, so the
+breakpoint behaves as unconditional. Do not use them. Count and filter
+with `-d exec` traces instead.
+
+Two earlier results in this file were produced with unreliable methods
+and are corrected:
+
+| claim | method | truth |
+|---|---|---|
+| `set_spl_noi` only runs during the panic | gdb loop | runs **8** times before it |
+| `splx`: 800 calls, all `0x8` | gdb loop capped at 800 | `splx` runs **1574** times before the panic; the loop simply stopped early |
+
+The working technique for reading kernel data at a breakpoint, after
+several failures, is to **combine gdb and the monitor**: break in gdb,
+then `shell` out to a script that issues `pmemsave` over the monitor
+socket while the guest is stopped. `pmemsave` takes a guest *physical*
+address and works regardless of paging or segmentation.
+
+```
+(gdb) shell python3 tools/pmem.py /tmp/mon 0x1e0a08 4 /tmp/out.bin
+```
+
+gdb alone cannot read many kernel addresses at a breakpoint -- both
+`0x1e0a08` and `0xc01e0a08` return "Cannot access memory" at moments
+when reading registers works fine.
