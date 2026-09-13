@@ -137,13 +137,29 @@ else.
 ### ODE toolset: working
 
 `build/bootstrap-ode.sh` builds six tools from ode4linux and they run:
-`make`, `build`, `workon`, `genpath`, `makepath`, `release`. Two flags
+`make`, `build`, `workon`, `genpath`, `makepath`, `release`, plus `md`
+built separately. (`workon` is built but deliberately unused -- see the
+idiom review below.) Two flags
 are needed and both go through existing hooks, so neither the ode4linux
 clone nor this repository is modified:
 
 - `CENV=-fcommon` -- ode4linux targets GCC 4.8; GCC 10 changed the
   `-fno-common` default. Without it, make fails to link on
   `multiple definition of 'maxJobs'`.
+- `-std=gnu89` -- GCC 14 makes implicit function declarations, implicit
+  int, int-conversion and incompatible-pointer-types **hard errors**.
+  All four were valid C89 and are pervasive here: libode calls `gets()`,
+  `genpath.c` calls `getcwd()` and `chdir()` without `<unistd.h>`.
+  This is not a suppression -- gnu89 is the dialect the code is written
+  in, and Buildconf names gcc 2.7.2.1 as the era compiler. Verified with
+  gcc 14.2.0 against the exact failing files: `getstab.c` 1 error -> 0,
+  `genpath.c` 2 -> 0, `makepath.c` 2 -> 0.
+  Chosen over pinning an older gcc because a dialect flag describes the
+  source while a version pin describes an accident of the host -- and on
+  a future self-hosting Mach system the compiler will be natively gnu89
+  and need no flag at all. Known cost: some of those diagnostics are
+  real bugs, not dialect noise. `gets()` into a fixed buffer is a
+  genuine overflow. It is ODE's code, so it is recorded, not patched.
 - `DEF_ARFLAGS=cr` -- `osf.std.mk` defaults to `crl`, and **`ar crl` is
   broken in GNU binutils 2.42**: the `l` modifier consumes the archive
   name, so ar tries to open the first object as an archive and reports
@@ -208,6 +224,133 @@ that last step will differ for us.
 `build VAR=value <target>`, are both documented idioms -- see
 build(1) FLAGS and EXAMPLES.
 
+### Host contamination audit
+
+Done properly once; redo it after any change to `CARGS` or the include
+paths. Three checks, all empirical.
+
+**1. Headers.** `gcc -H` on a kernel source, looking for `/usr/include`
+or GCC's internal include directory: **zero hits**. Every header comes
+from the exported OSFMK tree or the source tree. `-nostdinc` is
+complete rather than merely restrictive here, because OSFMK ships its
+own `sa_mach/stdarg.h`, `sa_mach/string.h` and `sa_mach/types.h` --
+nothing needs GCC's freestanding headers.
+
+**2. Compiler-injected symbols.** `nm -u` across every built object,
+subtracting what the objects define between them. This found two real
+defects, both from modern distro GCC defaults OSF could not have
+anticipated:
+
+- `__stack_chk_fail_local` -- from `-fstack-protector-strong`, on by
+  default. Lives in libssp/libc, which does not exist here.
+- `_GLOBAL_OFFSET_TABLE_` -- from `-fPIE`, on by default. A kernel is
+  loaded at a fixed address and has no dynamic linker.
+
+Both present on every non-trivial object before the fix, both gone
+after adding `-fno-stack-protector -fno-pic` to `CARGS`. Re-audited
+across the full build: no injected symbols of any class remain.
+
+**3. libgcc helpers.** Zero `__udivdi3`-family references in the
+current objects. If any appear later they must be resolved
+deliberately, not by linking host libgcc.
+
+`memcpy`, `memset`, `bcopy`, `bzero` appear as undefined and that is
+correct -- the kernel defines them itself in `i386/bcopy.S`
+(`memcpy`, `bcopy`) and `i386/bzero.S` (`memset`, `bzero`). Those are
+assembly objects the build has not reached yet. GCC emits calls to
+`memcpy` for large struct assignment regardless of `-fno-builtin`, so
+these references are expected and the kernel satisfies them.
+
+**Link stage.** `_LD_` resolves to `ld`, not to the GCC driver, so no
+crt files, no `-lc` and no `-lgcc` are added implicitly -- `ld` links
+only what it is given. **Predicted issue, not yet hit:** `ld` on an
+x86-64 host defaults to `elf_x86_64` output and will need
+`-m elf_i386`, which is the link-stage counterpart of the `-m32`
+problem and the same class of 1998-assumption. `LDFLAGS` for ELF is
+`-Ttext ${TEXTORG} -e pstart` in `conf/AT386/template.mk`, with
+`LDFLAGS+=${LDOPTS}` as the hook.
+
+### Kernel build: 122 objects, then i386_rpc.c
+
+```
+sh build/ode.sh -here mach_kernel MACH_KERNEL_CONFIG=PRODUCTION
+->  122 objects, then:
+    i386/i386_rpc.c:215: Error: operand type mismatch for `mov'
+    (also 409, 462, 519)
+```
+
+**Measure only in a clean clone of this repository.** The figure was
+briefly reported as 74 with a `memory_object.h` failure. That was
+measured in a working copy whose *vendor import itself* had been
+polluted: the tree had been built in before it was committed, so 160
+generated files under `src/mach_kernel/PRODUCTION` were captured into
+the "pristine" import. A stale `PRODUCTION/mach/memory_object.h` there
+shadowed the real source header and produced a failure that does not
+exist in a clean checkout.
+
+Two lessons, both cheap and both learned expensively:
+
+- **The vendor import must be made from a fresh upstream clone**, never
+  from a directory anything has been built in. Verify with
+  `git ls-files 'osfmk7.3/**/PRODUCTION/*' | wc -l`, which must be 0.
+- **Measurements are only meaningful in a clean clone of the pushed
+  repository.** When in doubt, clone from the remote and measure there.
+  It is public; there is no reason to guess at its state.
+
+### Kernel build configuration
+
+```
+sh build/ode.sh -here mach_kernel MACH_KERNEL_CONFIG=PRODUCTION
+```
+
+Two configuration findings, both added to `CARGS` in `Buildconf.local`,
+which is where Buildconf already puts i386-on-Linux compiler arguments:
+
+- **`-m32`.** Buildconf assumes a 32-bit host, as every host was in
+  1998. Without it we were building a 64-bit kernel. It surfaced as
+  `cast from pointer to integer of different size` in `ipc_table.h` --
+  a real defect, not a warning to wave away.
+- **`-Wno-error`.** `conf/template.mk:84` sets `-Werror` against gcc
+  2.7.2.1's warning set. Modern GCC adds ~25 years of diagnostics OSF
+  never saw, so keeping it tightens their configuration rather than
+  preserving it.
+
+Full warning inventory across the kernel is 13 in 4 classes:
+`-Wpointer-compare` (5), `-Wpedantic` (3), `-Wexpansion-to-defined` (3),
+`-Woverflow` (2). Worth auditing, not yet done.
+
+The `-Woverflow` pair is understood and deliberately NOT fixed:
+`mach_port_qos_t` in `mach/port.h` declares `boolean_t name:1` where
+`boolean_t` is `int`, so a signed one-bit field stores `TRUE` as `-1`.
+It has behaved that way since 1998 and works, because `-1` is truthy.
+**That struct crosses the IPC boundary** -- changing the field
+signedness would change the wire format. Leave it.
+
+### Source modifications to osfmk7.3 (the complete list)
+
+**`i386/pio.h`** -- two lines, in `inw` and `outw`. The 1995 idiom
+`.byte 0x66; inl` is rejected by GNU as 2.42. Replaced with matching
+mnemonics, verified byte-identical (`66 ed`, `66 ef`). Reasoning is in
+the AI-ONLY NOTES block at the foot of the file.
+
+**Do not add a preprocessor conditional to keep both encodings.** It was
+tried and reverted. No predefined macro exposes the assembler's version
+-- GCC's documented set has none, the only assembler-related one being
+`__GCC_HAVE_DWARF2_CFI_ASM` -- so such a switch could only ever be set
+by hand, which is not a portability mechanism. A `__GNUC__` test would
+additionally be vacuous, since the block already sits inside
+`#if defined(__GNUC__)`. Where assembler capability genuinely must be
+probed, the established practice is a build-time test that assembles a
+snippet, not an `#ifdef`. Decisively, the other six accessors in this
+same file -- `inl`, `inb`, `outl`, `outb` -- already use plain
+mnemonics with identical `"=a"`/`"d"` constraints, so the fix restores
+consistency rather than introducing a style; and Linux does not
+conditionalise this either (`arch/x86/include/asm/shared/io.h`,
+`BUILDIO`). Superseded code belongs in git and in the notes block, not
+in live conditionals nothing can select.
+
+That is the entire list. Everything else so far has been configuration.
+
 ### FIRST pass: working
 
 ```
@@ -258,11 +401,10 @@ Setting `project_name=osc` by hand and invoking make directly collapses
 the failure to a single remaining unset variable, `GCC_LATEST`, which
 Buildconf also sets. So the chain is broken in one place, not many.
 
-Next step is to find why `workon`/`build` are not propagating the
-environment. Candidates, in order: `ode_build_env` in
-`rc_files/osc/sb.conf`; whether `workon` is meant to set the environment
-and `build` only to locate the sandbox; and whether ODE expects the
-sandbox conf rather than Buildconf to carry these.
+That diagnosis was itself WRONG and is kept only as a record of the
+wrong turn. `build -verbose` shows every Buildconf variable correctly
+set; I had conflated a hand-run of make (no `project_name`) with a run
+under `build`. The real cause was `SOURCEDIR`, resolved above.
 
 Note `MAKESYSPATH` accepts a colon-separated list (each entry goes
 through `Dir_AddDir` in `parse.c`), but Buildconf's `replace setenv
