@@ -265,7 +265,16 @@ unsigned int	avail_remaining;
 
 /* parameters passed from GRUB */
 int mb_info_size = sizeof(struct multiboot_info);
-struct multiboot_info mb_info = { 0 };
+/*
+ * AI-ONLY NOTE: the section attribute is required, not decorative.
+ * start.S fills mb_info from %ebx before any C code runs, so it must
+ * survive the BSS clear below. Under GCC 2.7 an explicitly
+ * zero-initialized global went to .data and did; GCC 3.x onward puts
+ * it in .bss (-fzero-initialized-in-bss, on by default), where the
+ * clear wipes it. See the matching note on the bzero in
+ * machine_startup().
+ */
+struct multiboot_info mb_info __attribute__((section(".data"))) = { 0 };
 extern vm_offset_t boot_start;
 extern vm_size_t boot_size;
 extern vm_offset_t exec_start;
@@ -303,6 +312,27 @@ int		boottype = 0;
 void
 machine_startup(void)
 {
+	/*
+	 * Zero the BSS.
+	 *
+	 * AI-ONLY NOTE: this was in i386_init(), which runs after
+	 * parse_multiboot() below, so the clear wiped everything
+	 * parse_multiboot() had just written -- cnvmem, extmem,
+	 * mb_module, boot_start/size, exec_start/size and
+	 * kern_args_start/size, nine variables in all. i386_init() then
+	 * read cnvmem and extmem as zero and computed
+	 * "Available physical space from 0x101000 to 0x100000", an empty
+	 * range, leaving no memory to bootstrap with.
+	 *
+	 * Clearing first is what GNU Mach does: its boothdr.S zeroes BSS
+	 * in assembly and only then passes the boot data into C, so boot
+	 * data is never stashed in BSS ahead of the clear. machine_startup
+	 * is the first C function called (start.S), so this is the
+	 * earliest equivalent point without moving the loop into
+	 * assembly.
+	 */
+	bzero((char *)&edata,(unsigned)(&end - &edata));
+
 	/*
 	 * Prepare multiboot information
 	 */
@@ -620,11 +650,6 @@ i386_init(void)
 {
 	int i,j;			/* Standard index vars. */
 	vm_size_t	bios_hole_size;	
-
-	/*
-	 * Zero the BSS.
-	 */
-	bzero((char *)&edata,(unsigned)(&end - &edata));
 
 	boot_string = &boot_string_store[0];
 
