@@ -1242,3 +1242,88 @@ Next: determine whether the interrupt is taken inside the
 `spllo`/`set_spl` window. `set_spl` does `cli` at `0x159e0b`, three
 instructions after entry, so there is a real window in which interrupts
 are still enabled.
+
+
+---
+
+# The trigger: com0 and fdc0 interrupt with no handler registered
+
+Refines the previous section. `0x121591` is **not** `thread_continue`'s
+return address left on the stack by `spllo`'s tail jump. It is the
+**interrupted EIP**, pushed by the CPU as part of the hardware interrupt
+frame.
+
+## The evidence
+
+Every interrupt taken during a clean boot, by EIP:
+
+```
+1477  IP=0008:001704f4   halt_all_cpus   (post-panic, the halt loop)
+   2  IP=0008:0016e557
+   2  IP=0008:00121591   thread_continue+49   <- the bad value
+   1  IP=0008:0017307d
+   1  IP=0008:00158410   intnull
+```
+
+and the records themselves:
+
+```
+Servicing hardware INT=0x44
+  v=44  IP=0008:00121591  SP=0010:08b78fd0  EAX=00000008  EFL=00000202
+Servicing hardware INT=0x46
+  v=46  IP=0008:00121591  SP=0010:08b78fd0  EAX=00000008
+```
+
+`INT_VEC_START` is `0x40`, so these are **IRQ 4 and IRQ 6**. `EFL` has
+`IF` set, so interrupts were legitimately enabled -- `thread_continue`
+had just called `spllo`, which sets `SPL0`.
+
+`EAX = 8` at the moment of interrupt, so `curr_ipl` was healthy going
+in. The corruption is entirely on the way out.
+
+## Why those two IRQs
+
+The boot log configures both devices:
+
+```
+fdc0: port = 3f2, spl = 5, pic = 6.
+com0: at atbus2, port = 3f8, spl = 6, pic = 4. (DOS COM1)
+```
+
+but the dispatch table does not have handlers for them:
+
+```
+ivect[ 0] = hardclock      ivect[ 1] = kdintr
+ivect[ 4] = intnull   <-- com0 configured on pic 4
+ivect[ 6] = intnull   <-- fdc0 configured on pic 6
+ivect[13] = fpintr        ivect[14] = intnull
+```
+
+So the devices are probed, configured and **enabled at the PIC**, but
+their interrupts dispatch to the null stub. That is the trigger: a real
+device raises a real interrupt that nothing claims.
+
+`intnull` itself is correct -- it balances exactly, 28 bytes consumed
+and restored -- so the fault is not in the stub. The fault is that
+`return_from_interrupt`'s `pop %eax` retrieves the CPU-pushed EIP from
+the hardware frame rather than the IPL the kernel pushed, which means
+the entry and exit paths disagree about the stack shape by exactly the
+hardware frame.
+
+## Two questions for the next session
+
+1. **Why does the interrupt exit path reach the hardware frame?** The
+   call site's own accounting is correct and `intnull` balances, both
+   verified instruction by instruction. So the discrepancy is in how the
+   interrupt is *entered* -- what pushes happen before the code at
+   `0x154d34` runs, and whether every vector arrives through the same
+   prologue.
+2. **Why are com0 and fdc0 configured without handlers?** This may be a
+   second, independent defect. If the drivers are meant to register via
+   `ivect[]` during autoconfiguration and are not doing so, that is
+   worth understanding on its own -- and fixing it would also remove the
+   trigger, though not the underlying stack bug.
+
+Question 2 is the cheaper one and may be the real fix: a kernel whose
+configured devices register their handlers would not exercise this path
+at all.
