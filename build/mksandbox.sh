@@ -81,6 +81,66 @@ cat > "${OSFMK}/rc_files/osc/Buildconf.local" <<EOF
 # only for a backed sandbox.
 #
 replace setenv SOURCEDIR \${source_base}
+#
+# CARGS is where Buildconf already puts the i386-on-Linux compiler
+# arguments, under exactly this condition:
+#   on i386 on_os linux target i386 setenv CARGS -D__NO_UNDERSCORES__
+# We extend it rather than introduce a new variable. Replacing means
+# restating __NO_UNDERSCORES__, which selects ELF symbol naming in
+# i386/asm.h and must not be lost.
+#
+# -m32: Buildconf assumes a 32-bit host, as every host was in 1998. On
+# x86-64 its absence silently builds a 64-bit kernel, which first shows
+# up as "cast from pointer to integer of different size" in the IPC
+# tables -- a real defect, not a warning to suppress.
+#
+# -Wno-error: conf/template.mk sets -Werror against gcc 2.7.2.1's
+# warning set. Modern GCC adds about 25 years of diagnostics OSF never
+# saw, so keeping -Werror tightens their configuration rather than
+# preserving it. The whole kernel produces 13 warnings in 4 classes
+# (-Wpointer-compare, -Wpedantic, -Wexpansion-to-defined, -Woverflow),
+# small enough to audit; see AGENTS.md.
+#
+# -fno-stack-protector, -fno-pic: modern distro GCC defaults to
+# -fstack-protector-strong and -fPIE. Both inject symbols a kernel
+# cannot resolve. Audited with nm across the built objects: without
+# these, every non-trivial object carries undefined __stack_chk_fail_local
+# (lives in libssp/libc, absent here) and _GLOBAL_OFFSET_TABLE_ (a
+# kernel is loaded at a fixed address and has no dynamic linker). With
+# them, both are gone. OSF could not have anticipated either default.
+#
+# NOT added: -ffreestanding. OSF deliberately passes -fno-builtin from
+# conf/AT386/template.mk, and -ffreestanding additionally inhibits
+# libcall optimisations. Linux removed -ffreestanding from i386 for
+# that reason, preferring targeted -fno-builtin-* flags. -fno-builtin
+# plus the kernel's own mem/str routines is the standard arrangement
+# and is what OSF chose; leave their choice alone.
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -Wno-error"
+#
+# The genassym rule in conf/AT386/template.mk calls the compiler
+# directly and does NOT include the standard CFLAGS, so nothing from
+# CARGS reaches it. genassym computes struct offsets for assym.S, so it
+# must be built for the TARGET word size: built 64-bit it would bake
+# 8-byte pointer offsets into a 32-bit kernel and crash with no
+# diagnostic. It fails loudly instead, on a pointer-to-int cast in
+# kern/queue.h. ANSI_CC / TRADITIONAL_CC / HOST_CC are documented hooks
+# in makedefs/osf.std.mk, and Buildconf itself sets HOST_CC for the
+# i860 target, so this is OSF's own mechanism. -fno-builtin is included
+# because that rule drops it too.
+#
+replace setenv ANSI_CC "gcc -m32 -fno-builtin -Wno-error"
+replace setenv TRADITIONAL_CC "gcc -m32 -fno-builtin -Wno-error"
+replace setenv HOST_CC "gcc -m32 -fno-builtin -Wno-error"
+#
+# ld on an x86-64 host defaults to elf_x86_64 output and rejects the
+# 32-bit objects: "i386 architecture of input file is incompatible with
+# i386:x86-64 output". This is the link-stage counterpart of -m32 and
+# the same 1998 assumption that host word size equals target.
+# conf/AT386/template.mk ends its LDFLAGS with "LDFLAGS+=${LDOPTS}",
+# which exists precisely so the link can be extended without editing
+# the template.
+#
+replace setenv LDOPTS "-m elf_i386"
 EOF
 
 # --- 4. the sandboxrc --------------------------------------------------
@@ -104,7 +164,12 @@ echo "  obj    -> ${MK_BUILD}/obj"
 echo "  export -> ${MK_BUILD}/export/at386"
 echo "  rc     :  ${MK_BUILD}/sandboxrc"
 echo
-echo "To enter it (USER and SHELL must be set; workon aborts without them):"
-echo "  export PATH=\"${MK_BUILD}/ode-sandbox/tools/at386_linux/bin:\$PATH\""
-echo "  cd ${REPO_ROOT}/osfmk7.3"
-echo "  workon -sb osfmk -rc ${MK_BUILD}/sandboxrc"
+
+if [ -x "${MK_BUILD}/ode-sandbox/tools/at386_linux/bin/build" ]; then
+	echo "Next:"
+	echo "  sh build/ode.sh MAKEFILE_PASS=FIRST"
+else
+	echo "The ODE tools are not built yet. Next:"
+	echo "  sh build/bootstrap-ode.sh"
+	echo "  sh build/ode.sh MAKEFILE_PASS=FIRST"
+fi
