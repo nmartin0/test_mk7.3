@@ -1,0 +1,317 @@
+# Debugging methodology
+
+How to find out why this kernel does not do what you expect.
+
+This is written for an AI agent picking the project up cold. It is not
+general advice — it is what worked and what failed on **this** kernel,
+under **this** emulator, with the actual commands. Every "do not" below
+is something that already cost real time here.
+
+The single theme: **measure, do not infer.** Most of the mistakes
+recorded here were correct-sounding inferences from an instrument that
+was lying, or that was pointed at the wrong thing.
+
+---
+
+## 1. Look at the right output device
+
+OSFMK's AT386 console is `kd` — the VGA text screen and the AT keyboard.
+`cninit()` lives in `i386/AT386/kd.c`. **There is no serial console
+option.** Do not pass `-serial stdio` and conclude from silence that the
+kernel is hung. It printed its banner to VGA for an entire session while
+that conclusion was being drawn.
+
+Read the VGA text buffer at physical `0xB8000`, 80x25, two bytes per
+cell (character, attribute).
+
+**Read it through the QEMU monitor, not gdb.** `pmemsave` takes a
+**guest physical** address. gdb's `dump binary memory` takes a **guest
+virtual** address, and once the kernel enables paging the two differ:
+`0xB8000` becomes unreadable and `0xC00B8000` returns zeros. The monitor
+sidesteps paging entirely.
+
+```sh
+qemu-system-i386 -kernel mach_kernel.PRODUCTION -display none \
+    -no-reboot -m 64 -monitor unix:/tmp/mon,server,nowait &
+sleep 8
+python3 tools/vgadump.py /tmp/mon /tmp/vga.bin        # see below
+```
+
+The reader is about twenty lines:
+
+```python
+import socket, time, sys
+mon, out = sys.argv[1], sys.argv[2]
+s = socket.socket(socket.AF_UNIX); s.connect(mon)
+time.sleep(0.5); s.recv(65536)
+s.sendall(f'pmemsave 0xb8000 4000 "{out}"\n'.encode())
+time.sleep(1.5); s.close()
+d = open(out, 'rb').read()
+for r in range(25):
+    line = ''.join(chr(d[(r*80+c)*2]) if 32 <= d[(r*80+c)*2] < 127 else ' '
+                   for c in range(80)).rstrip()
+    if line.strip(): print("  |" + line)
+```
+
+**Always validate the reader against a known-good kernel before trusting
+a blank result.** A build that is known to print its banner is the
+control. A blank screen from an unvalidated reader means nothing.
+
+---
+
+## 2. Trace first, single-step last
+
+`-d exec` logs every translated block with the guest EIP. One run
+answers "where does it end up" with no guessing:
+
+```sh
+qemu-system-i386 -kernel mach_kernel.PRODUCTION -display none \
+    -no-reboot -m 64 -d exec -D /tmp/exec.log
+```
+
+The guest EIP is the second bracketed field:
+
+```
+Trace 0: 0x7f36... [c0000000/00000000c0101005/000000f0/ff020000]
+                                    ^^^^^^^^ guest EIP
+```
+
+Extract with `re.findall(rb'/00000000([0-9a-f]{8})/', data)` and map to
+symbols with `nm -n`. Subtract `0xC0000000` first: the kernel links at
+`0x100000` but runs from its high-half mapping.
+
+Two things this gives you that breakpoints do not:
+
+- **The set of functions ever entered.** Deduplicate the EIP stream by
+  first occurrence and print the tail. That is literally "how far did
+  startup get", and it found the real stopping point in one run after
+  breakpoints had been misleading for an hour.
+- **The last distinct EIPs**, which distinguishes a tight loop from a
+  halt.
+
+`-d int` logs exceptions and CPU resets. Zero `v=` lines means the
+kernel is **not faulting** — it is looping or halting deliberately.
+Check this before hunting for a fault that isn't there.
+
+### Do not conclude "stuck" from `stepi`
+
+**`stepi` on a `rep` instruction executes one iteration and leaves `pc`
+unchanged.** A loop that breaks when the pc repeats will fire on a
+perfectly healthy `rep movsb`. This produced three separate false "it is
+stuck here" diagnoses:
+
+- `rep movsb` copying the multiboot info — working
+- `rep stos` zeroing a page table with `ecx = 0x400`, against a
+  detector threshold of 800 iterations — working
+- and the conclusion that a hang existed at all
+
+If you must detect a spin by stepping, watch `%ecx` or the full
+(pc, regs) tuple, not `pc` alone. Better: use `-d exec`.
+
+### Do not breakpoint a symbol without checking it is on the path
+
+`vstart` was breakpointed and never hit, which read as a hang. It was
+never going to be hit: `multiboot_entry` jumps to `fix_desc_common` at
+`0x1002d0`, **past** `vstart` at `0x100289`. Disassemble the path before
+deciding a missed breakpoint means anything.
+
+---
+
+## 3. gdb, when you do need it
+
+Attach with `-s -S`, then **`target remote` first and `symbol-file`
+after**. Loading the file before connecting puts gdb in a state where
+`continue` reports "Selected thread is running" and batch scripts fail.
+
+```
+target remote :1234
+symbol-file mach_kernel.PRODUCTION
+break *0xc0101005
+continue
+```
+
+Breakpoint addresses must be **virtual** (`0xc01704b0`), not the
+physical address `nm` prints (`0x1704b0`). Reading globals also works
+better by address than by name: gdb frequently reports
+`'cnvmem' has unknown type; cast it to its declared type`, and
+`x/1dw &sym` sidesteps it.
+
+Asynchronous `interrupt` after `continue &` does not work reliably in
+batch mode here. Use a breakpoint you know will be hit instead.
+
+---
+
+## 4. Measure in a clean tree
+
+**Build into a fresh `MK_BUILD` before believing any number.** A reused
+build directory reports progress a clean checkout cannot reproduce.
+
+Worse, check the *source* tree too. An early working copy had 160
+generated files under `src/mach_kernel/PRODUCTION` committed into what
+was supposed to be a pristine vendor import, because the tree had been
+built in before it was committed. A stale
+`PRODUCTION/mach/memory_object.h` there shadowed the real source header
+and produced a failure that does not exist in a clean checkout — which
+led to a wrong object count being published in a commit message and then
+"corrected" to another wrong number.
+
+```sh
+git ls-files 'osfmk7.3/**/PRODUCTION/*' | wc -l     # must be 0
+```
+
+When a measurement matters, take it in a fresh clone of the pushed
+repository. It is public; there is no reason to measure anywhere else.
+
+---
+
+## 5. Distinguish "the toolchain refuses" from "the code is wrong"
+
+Two different failure classes need two different responses.
+
+**Build failures are usually configuration.** This tree was written to
+be portable across a.out and ELF, K&R and ANSI, and several assemblers.
+It usually has a conditional for whatever you are hitting; the flag is
+just not being passed. Before editing any 1995 source, find the switch.
+Examples that cost time before the switch was found:
+
+- Six `.S` files failed with *"bad or irreducible absolute expression"*.
+  `ALIGN` is defined inside `#ifdef ASSEMBLER` in `i386/asm.h`, and the
+  `.S.o` rule passes `-DASSEMBLER`. Not a source bug.
+- Symbols came out with a leading underscore. `i386/asm.h` carries both
+  a.out and ELF conventions selected on `__NO_UNDERSCORES__`, which
+  `osc/Buildconf` sets for exactly the i386-on-Linux case. Not a source
+  bug.
+
+**Read `osfmk7.3/osfmk/src/osc/Buildconf` before touching build
+settings.** It is OSF's own ODE configuration and already supports an
+i386 target on a Linux host.
+
+**When a source change is genuinely required, prove equivalence rather
+than arguing it.** Assemble both forms and compare bytes:
+
+```
+.byte 0x66; inl  %dx,%eax  ->  66 ed   in  (%dx),%ax
+inw  %dx,%ax               ->  66 ed   in  (%dx),%ax
+```
+
+That evidence belongs in the commit message.
+
+**And check whether a configuration escape exists first.** For the
+assembler suffix/register mismatches, every `-m` option gas has was
+tested; none accepts the 1995 form, and `-mold-gcc` no longer exists.
+Only then was the source edited.
+
+---
+
+## 6. Enumerate before proposing
+
+Three fixes were proposed here on partial information and had to be
+withdrawn:
+
+- A global `-fno-zero-initialized-in-bss` to rescue one variable. It
+  relocated ~20 KB of objects and silenced the console.
+- Then a section attribute on `mb_info` alone — still wrong, because
+  `parse_multiboot()` writes **nine** variables, not one, and the
+  attribute would have rescued only the one that had been looked at.
+- Only after listing all nine did the actual defect appear: the BSS
+  clear ran three calls *after* the function whose output it was
+  erasing. An ordering bug, fixed by moving one statement.
+
+The rule: **before proposing, enumerate everything in the same class.**
+List every variable the function writes. List every suffix/width
+mismatch in every assembly file, not the two the assembler happened to
+report. Read the call order before theorising about placement.
+
+A scan is cheap; a withdrawn patch is not.
+
+---
+
+## 7. Check whether the "fix" is even reachable
+
+`bootstrap_create_old()` was analysed as a candidate path. It compiles
+clean, links clean, and every symbol it calls exists. It also **never
+runs**, because the kernel stops in `Switch_context` long before
+`startup.c:517`.
+
+Before investing in a function, confirm it executes. `-d exec` plus the
+first-occurrence set from §2 answers this in one run:
+
+```
+did the bootstrap path run?
+  bootstrap_create_old   no
+  user_bootstrap         no
+  task_create_local      no
+```
+
+---
+
+## 8. Negative and positive controls
+
+Never claim a change was necessary without removing it and watching the
+failure return. Each of the three OSFMK source changes was individually
+reverted and rebuilt:
+
+| reverted      | objects | kernel produced |
+|---------------|---------|-----------------|
+| `pio.h`       | 131     | no              |
+| `locore.S`    | 204     | no              |
+| `i386_rpc.c`  | 122     | no              |
+| none          | 206     | yes             |
+
+The last row is the positive control and matters as much as the others.
+
+---
+
+## 9. Instrument hygiene
+
+- **`pkill -f qemu` matches your own shell's command line** and kills
+  the session mid-command. Use `pkill -x qemu-system-i386`.
+- Verify a compiler shim actually takes effect before trusting a
+  negative result. A PATH shim intended to force gcc-14 silently never
+  applied, which produced a confident and wrong "not reproducible here".
+  Repointing `/usr/bin/cc` and `/usr/bin/gcc` reproduced the failure
+  immediately.
+- `ln -sfn target existing_dir/` creates the link *inside* the
+  directory, not in place of it. This silently produced 3 KB MIG stubs
+  instead of 150 KB and looked like success.
+- A generated MIG header can shadow a real source header of the same
+  name. `mach/memory_object.h` exists in the source tree; a generated
+  one earlier on the `-I` path broke ~150 objects at once and presented
+  as a type error.
+
+---
+
+## 10. Patch hygiene
+
+Generate patches against **the commit the maintainer last confirmed
+pushed**, not against your own `HEAD~1`. The two diverge the moment a
+patch is questioned instead of applied, and `git am` fails on a single
+line of mismatched context. Four patches in a row had to be regenerated
+before this was taken seriously.
+
+The repository is public. Clone it, apply there, build there, and only
+then send:
+
+```sh
+git clone https://github.com/nmartin0/test_mk7.3.git /tmp/verify
+cd /tmp/verify && git am /path/to/the.patch && <build>
+```
+
+A failed `git am` leaves `.git/rebase-apply` behind and **every
+subsequent `git am` fails until `git am --abort`**, with an error that
+does not mention the real cause.
+
+---
+
+## 11. What good evidence looks like
+
+A claim is ready to act on when it has a measurement attached:
+
+- not "mostly compiles" but "206 of 206 objects, kernel 1,021,568 bytes"
+- not "the encodings are equivalent" but `66 ed` / `66 ed`
+- not "it hangs here" but a `-d exec` trace showing the last distinct
+  EIPs and the set of functions entered
+- not "this flag is needed" but the build output with and without it
+
+If a number cannot be produced, say that plainly instead of reaching for
+an adjective.
