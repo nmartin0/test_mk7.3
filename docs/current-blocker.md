@@ -1153,3 +1153,92 @@ and, at attach, assert the guest is at reset before measuring:
 
 Any run where `eip` is not the reset vector at attach is invalid and
 must be discarded.
+
+
+---
+
+# RE-ESTABLISHED, on a verified-clean guest: set_spl_noi writes a return address
+
+The previous section retracted this finding because it had been measured
+on a stale guest. Re-run under the corrected procedure, **it holds.**
+
+## The measurement
+
+Procedure followed exactly: `pkill -x qemu-system-i38`, `ps` confirmed
+empty, guest started with `-S`, and `eip` asserted at attach.
+
+```
+ATTACH eip=0xfff0  OK reset vector
+
+  #1  val=0x0       eip=0x153539   bzero
+  #2  val=0x8       eip=0x158392   picinit
+  #3  val=0x5       eip=0x159e18   set_spl
+  #4  val=0x6       eip=0x159e18   set_spl
+  #5  val=0x5       eip=0x159e61   set_spl_noi      <- valid
+  #6  val=0x8       eip=0x159e18   set_spl
+  ...
+*** FIRST OUT-OF-RANGE at write #51, t=0.7s:
+    curr_ipl = 0x121591  from eip=0x159e61 (set_spl_noi)
+    esp = 0x1c9ff4 (boot stack)
+```
+
+45 healthy writes precede it, and it happens at t=0.7s -- long before
+the panic, on the boot stack, on a guest proven to have started at the
+reset vector. This is not halt-loop noise.
+
+## Where 0x121591 comes from
+
+It is not a stale value or a coincidence. It is exactly a return site:
+
+```asm
+00121560 <thread_continue>:
+  ...
+  12158c:  call 159db0 <spllo>
+  121591:  add  $0x4,%esp        <- the value found in curr_ipl
+```
+
+and `spllo` is a tail-jump stub:
+
+```asm
+00159db0 <spllo>:
+  159db0:  mov $0x0,%eax
+  159db5:  jmp 159e08 <set_spl>
+```
+
+So `thread_continue`'s `call spllo` pushes `0x121591`, `spllo` jumps
+rather than calls, and that return address remains at `[esp]` for the
+whole of `set_spl`. `return_from_interrupt` later executes
+
+```asm
+154d48:  add  $0x4,%esp
+154d4b:  cli
+154d4c:  pop  %eax          <- retrieves 0x121591, not the saved IPL
+154d55:  call 159e5c <set_spl_noi>
+```
+
+and `set_spl_noi` writes it to `curr_ipl` with no bounds check.
+
+Downstream this is exactly what has been chased: the next `splclock`
+returns the code address, `movzbl %al,%ebx` keeps its low byte, and
+`splx` is handed a byte-sized garbage value -- `0x91`, that differs per
+run because the code address differs.
+
+## What is still not established
+
+**Why** `return_from_interrupt`'s `pop` reaches `thread_continue`'s
+frame. The call site's own push/pop accounting is correct, verified
+instruction by instruction, and `intnull` balances exactly (28 consumed,
+28 restored). Both were checked. So the stack is already off by one slot
+*before* `return_from_interrupt` runs.
+
+The tail-jump structure of the spl family is the obvious place to look:
+`spllo`, `splbio`, `spltty`, `splnet`, `splimp` all `jmp` into `set_spl`
+rather than calling it, so every one of them leaves its caller's return
+address at `[esp]` while `set_spl` executes. If an interrupt is taken in
+that window and its return path assumes a different stack shape, this is
+precisely the value that would surface.
+
+Next: determine whether the interrupt is taken inside the
+`spllo`/`set_spl` window. `set_spl` does `cli` at `0x159e0b`, three
+instructions after entry, so there is a real window in which interrupts
+are still enabled.
