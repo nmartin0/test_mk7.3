@@ -13,6 +13,33 @@ was lying, or that was pointed at the wrong thing.
 
 ---
 
+## 0. Is the failure deterministic? Check before anything else
+
+**Run the same boot three times and compare the failure.** If the values
+differ, every technique below changes meaning, because you can no longer
+compare a measurement from one run against a measurement from another.
+
+The `splx` panic on this branch reports a different value every boot:
+`0x91`, `0x57`, `0x3f`, `0x18`, `0x4b`, `0x17`. That was not noticed for
+several rounds, and it produced the most expensive wrong turn in the
+project:
+
+- `%ebx` was measured as `8` at the call site — correct, in that run.
+- `%eax` was measured as `0x91` at the panic — correct, in a *different*
+  run.
+- Comparing the two produced a conclusion that a stack slot was being
+  corrupted between two adjacent instructions, which is impossible and
+  wasted three rounds, including an interrupt hypothesis that the
+  evidence later contradicted outright.
+
+**Rule: on a non-deterministic failure, every value in a chain of
+reasoning must come from a single stopped guest.** Anchor on a
+breakpoint, then read everything you need before continuing. Never
+assemble an argument from values captured in separate runs.
+
+If you must compare across runs, compare *distributions*, not values,
+and say that is what you are doing.
+
 ## 1. Look at the right output device
 
 OSFMK's AT386 console is `kd` — the VGA text screen and the AT keyboard.
@@ -153,7 +180,13 @@ Consequences:
   physical page. So a read succeeding tells you nothing about which
   addressing you are using.
 - `nm` prints link addresses (low). Add `0xC0000000` before setting a
-  breakpoint; do not add it when reading memory.
+  breakpoint; do not add it when reading memory *through gdb*.
+- **`ESP` and other pointers in registers are segment offsets too.** The
+  data segments have the same `0xC0000000` base as `CS`. An `ESP` of
+  `0x08b78f1c` is linear `0xC8B78F1C`. Reading the raw value through the
+  QEMU monitor returns "Cannot access memory" and looks like an
+  unmapped stack; adding the segment base makes it readable. This cost
+  several rounds, during which the stack was believed to be corrupt.
 
 ## 3. gdb, when you do need it
 
@@ -192,8 +225,25 @@ is stopped. `pmemsave` takes a guest **physical** address, so paging and
 segmentation do not enter into it.
 
 ```
-(gdb) shell python3 tools/pmem.py /tmp/mon 0x1e0a08 4 /tmp/out.bin
+(gdb) shell python3 tools/pmem.py  /tmp/mon 0x1e0a08  4   # PHYSICAL
+(gdb) shell python3 tools/vmem.py  /tmp/mon 0xc8b78f1c 8  # LINEAR
 ```
+
+Two readers, because the monitor has two addressing modes and you need
+both:
+
+| tool | monitor cmd | address space | use for |
+|---|---|---|---|
+| `tools/pmem.py` | `pmemsave` | guest **physical** | globals whose link address you know, framebuffers |
+| `tools/vmem.py` | `x/Nxw` | guest **linear** | stacks and anything reached through a register |
+
+For a register-derived address, add the segment base first: linear =
+register + `0xC0000000`.
+
+The monitor echoes input with readline escape sequences before the
+reply, so a naive reader captures only the echo. Drain the socket for a
+few seconds and strip `\x1b[...` before parsing; `tools/vmem.py` does
+this.
 
 ---
 
@@ -300,6 +350,40 @@ did the bootstrap path run?
 ```
 
 ---
+
+## 7a. Tail calls hide the caller
+
+GCC turns `... ; splx(s); }` into a tail jump:
+
+```asm
+10cbde:  mov  %ebx,0x10(%esp)
+10cbe2:  add  $0x4,%esp
+10cbe5:  pop  %ebx
+10cbe6:  pop  %esi
+10cbe7:  jmp  159df2 <splx>
+```
+
+Two consequences that both caused wrong conclusions here:
+
+- **The return address on the stack belongs to the caller's caller.**
+  At `splx`, `[esp]` was `0x10cc39`, which is inside `thread_hold` —
+  the return address from `thread_hold`'s `call install_special_handler`.
+  It is tempting to read that as "`thread_hold` called `splx`". It did
+  not; `install_special_handler` tail-jumped there and left the frame
+  in place.
+- **`-d exec` block adjacency is not a call relationship.** Blocks
+  logged next to each other may be a tail jump, a fallthrough into the
+  next function, or a branch taken inside one block. On this branch
+  `splx+0` appearing immediately before `splxpanic+0` was read as "this
+  invocation panicked", which was right, but the same adjacency was
+  *also* read as proof about which caller was responsible, which was
+  wrong.
+
+To identify a caller reliably: read `[esp]` at the callee's entry, map
+it with `nm`, and then **disassemble that address** to see whether it is
+a return site from a `call` — and if so, a call to *what*. Do not assume
+the instruction at a return address is the call itself; it is the
+instruction after it.
 
 ## 8. Negative and positive controls
 
