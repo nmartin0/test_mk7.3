@@ -117,6 +117,36 @@ deciding a missed breakpoint means anything.
 
 ---
 
+## 2a. The kernel is relocated by SEGMENTATION, not just paging
+
+This wasted more time than any other single misunderstanding, so it gets
+its own section.
+
+`-d exec` shows the segment base explicitly:
+
+```
+Trace 0: 0x7f36... [c0000000/00000000c0101005/000000f0/ff020000]
+                    ^^^^^^^^ cs_base    ^^^^^^^^ linear pc
+```
+
+`cs_base = 0xC0000000`. The CPU's `EIP` is the **low** value
+(`0x101005`); the linear address is `0xC0000000 + EIP`. `start.S`
+arranges this at `0x100252` by copying PDE[768] into PDE[0], so the low
+4 MB is identity-mapped and code can keep running at low `EIP` until the
+`lgdt`/`ljmp` installs high-based segments.
+
+Consequences:
+
+- **Breakpoints in kernel C code need the LINEAR address.**
+  `break *0xc01706f0` for `machine_startup`, not `break *0x1706f0`.
+  A breakpoint set at the low address simply never fires, which reads
+  exactly like "the kernel never gets there" and is not.
+- **Memory reads work at either address**, since both map to the same
+  physical page. So a read succeeding tells you nothing about which
+  addressing you are using.
+- `nm` prints link addresses (low). Add `0xC0000000` before setting a
+  breakpoint; do not add it when reading memory.
+
 ## 3. gdb, when you do need it
 
 Attach with `-s -S`, then **`target remote` first and `symbol-file`
