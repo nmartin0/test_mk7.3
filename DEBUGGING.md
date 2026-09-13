@@ -210,6 +210,26 @@ better by address than by name: gdb frequently reports
 Asynchronous `interrupt` after `continue &` does not work reliably in
 batch mode here. Use a breakpoint you know will be hit instead.
 
+**Hardware watchpoints do work**, unlike conditions, and they catch
+writes through computed addresses that grepping the disassembly cannot:
+
+```
+(gdb) watch *(unsigned int*)0x1e0a08
+```
+
+They report EIP *after* the storing instruction. This found `bzero`
+writing a variable via `rep stos`, which no search for direct stores to
+that address would have shown. But they have only proved reliable for
+the first few hits: a loop of 25 `continue`s produced nothing at all,
+twice. Use them to answer "what writes this, early", validate against a
+known write first, and do not yet trust them to scan.
+
+**Do not size a brute-force search from a `-d exec` count.** A
+fallthrough from one function into the next does not start a new
+translated block, so the trace counts only entries reached by `call`.
+`splx` falls through into `set_spl`, and the trace reported 7 `set_spl`
+entries where a breakpoint sees thousands.
+
 **Breakpoint conditions do not work at all.** `break *ADDR if $eax != 8`
 stops with `$eax == 8`; the condition is ignored and the breakpoint
 behaves as unconditional. This silently produces wrong answers rather

@@ -704,3 +704,96 @@ gdb breakpoint conditions do **not** work against this stub (see
 `DEBUGGING.md` §3), so count and filter with `-d exec` or step manually.
 Because the failure is non-deterministic, take every value in the chain
 from the same run.
+
+
+---
+
+## Round 2 eliminations: the curr_ipl writers are clean
+
+All values below come from **single runs**, per section 0 of
+`DEBUGGING.md`.
+
+**`set_spl_noi` is eliminated.** It was the leading suspect, being the
+only unvalidated writer. Breaking on its first call:
+
+```
+first set_spl_noi call: eax = 0x5   (valid)
+console at that moment: "panic: splx(old 91, new 8)" ALREADY PRINTED
+```
+
+It never runs before the failure. Earlier readings of `0x1704f4`
+(`halt_all_cpus+36`) from it are all post-panic, from timer interrupts
+arriving while the kernel sits in its halt loop.
+
+**`set_spl` is eliminated.** 4,000 consecutive writes logged in one run,
+every one in range `0..8`.
+
+**The `-d exec` counts were wrong, in a way worth remembering.** `splx`
+*falls through* into `set_spl` at `0x159e08`, and a fallthrough does not
+start a new translated block, so the trace only counts entries reached
+by `call`. It reported 7 `set_spl` entries where a breakpoint sees
+thousands, and 1,574 `splx` entries where the panic had still not been
+reached after 4,000 `set_spl` writes. **Never size a brute-force search
+from a `-d exec` count where fallthrough is possible.**
+
+## Hardware watchpoints DO work, and found a writer grep missed
+
+Contrary to breakpoint *conditions*, which are silently ignored
+(`DEBUGGING.md` §3), hardware watchpoints function:
+
+```
+(gdb) watch *(unsigned int*)0x1e0a08
+Hardware watchpoint 1
+```
+
+Validated against known writes; it reports EIP **after** the storing
+instruction. First three hits of a boot:
+
+```
+eip=0x153539   bzero+17      rep stos    <- the BSS clear
+eip=0x158392   picinit+236   movl $0x8
+eip=0x159e18   set_spl+16    mov %eax,...
+```
+
+`bzero` is the important one: it writes `curr_ipl` through a computed
+address (`rep stos`), so **grepping the disassembly for stores to
+`0x1e0a08` does not find all writers**. The earlier claim in this file
+that "only four instructions write `curr_ipl`" is therefore wrong as
+stated — it was four *direct* stores. Any stray pointer write would
+likewise be invisible to that method.
+
+**Caveat on the instrument:** the watchpoint fires reliably for the
+first few hits, but a loop of 25 `continue`s produced no output at all,
+twice. It is usable for "what writes this, early" and not yet trusted
+for "scan until a condition holds". Validate before relying on it.
+
+## What is still unexplained
+
+`curr_ipl` holds `0x91` when `splclock` reads it, yet no writer has been
+caught writing an out-of-range value. Both cannot be true. The most
+likely wrong assumption is still the completeness of the writer set,
+which `bzero` has already shown to be incomplete once.
+
+Unresolved ambiguity worth stating plainly: at the panic, `[esp]` is
+`0x0010cc39` and `[esp+4]` is the bad value. `0x10cc39` is the
+instruction after `thread_hold`'s `call install_special_handler`. That is
+consistent with **either** reading -- `install_special_handler` tail-
+jumping into `splx` and leaving `thread_hold`'s frame in place, **or**
+something `call`ing `splx` with `0x10cc39` as a genuine return address.
+The tail-call reading was asserted earlier in this file with more
+confidence than the evidence supports.
+
+## Suggested next steps
+
+1. **Do not brute-force `set_spl`.** It is clean and the search space is
+   far larger than the trace suggests.
+2. Get a reliable long-running watchpoint, or find another way to catch
+   a write of a value `> 8` to `0x1e0a08`. Validate whatever is chosen
+   against a known write first.
+3. Settle the tail-call ambiguity by reading `[esp]` at `splx` *entry*
+   on a run that panics, and comparing `esp` there against `esp` at
+   `install_special_handler+62` in the **same** run.
+4. Consider whether `0x91`-class values could come from somewhere other
+   than `curr_ipl` at all -- the read is
+   `mov 0x1e0a08,%eax` then `movzbl %al,%ebx`, so only the low byte
+   survives, and every observed bad value fits in a byte.
