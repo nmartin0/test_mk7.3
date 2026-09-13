@@ -21,8 +21,21 @@ option.** Do not pass `-serial stdio` and conclude from silence that the
 kernel is hung. It printed its banner to VGA for an entire session while
 that conclusion was being drawn.
 
-Read the VGA text buffer at physical `0xB8000`, 80x25, two bytes per
-cell (character, attribute).
+Read the VGA text buffer, 80x25, two bytes per cell (character,
+attribute) -- but **check both framebuffer addresses**:
+
+```
+0xb8000   colour text mode, the usual one
+0xa0000   the graphics window
+```
+
+`kd_xga_init` probes the adapter during `cninit()`, and this kernel ends
+up writing to **0xa0000**. A reader hardcoded to `0xb8000` reports a
+blank screen for a kernel that is printing perfectly well. That happened
+here and looked exactly like a regression caused by the previous commit;
+a wider `pmemsave` and a search for the banner text found the output
+sitting at `0xa03c0`. `tools/vgadump.py` now tries both and reports
+which one it used.
 
 **Read it through the QEMU monitor, not gdb.** `pmemsave` takes a
 **guest physical** address. gdb's `dump binary memory` takes a **guest
@@ -33,25 +46,20 @@ sidesteps paging entirely.
 ```sh
 qemu-system-i386 -kernel mach_kernel.PRODUCTION -display none \
     -no-reboot -m 64 -monitor unix:/tmp/mon,server,nowait &
-sleep 8
-python3 tools/vgadump.py /tmp/mon /tmp/vga.bin        # see below
+python3 tools/vgadump.py /tmp/mon /tmp/vga.bin 8
 ```
 
-The reader is about twenty lines:
+If both addresses come back empty, do not conclude the kernel is silent
+until you have searched memory for the text:
 
-```python
-import socket, time, sys
-mon, out = sys.argv[1], sys.argv[2]
-s = socket.socket(socket.AF_UNIX); s.connect(mon)
-time.sleep(0.5); s.recv(65536)
-s.sendall(f'pmemsave 0xb8000 4000 "{out}"\n'.encode())
-time.sleep(1.5); s.close()
-d = open(out, 'rb').read()
-for r in range(25):
-    line = ''.join(chr(d[(r*80+c)*2]) if 32 <= d[(r*80+c)*2] < 127 else ' '
-                   for c in range(80)).rstrip()
-    if line.strip(): print("  |" + line)
+```sh
+# in the monitor: pmemsave 0 0x400000 "/tmp/mem.bin"
+python3 -c "d=open('/tmp/mem.bin','rb').read(); print(hex(d.find(b'Mach 3.0')))"
 ```
+
+The console characters are interleaved with attribute bytes, so search
+for the plain string first (it will find the *format string* in .data)
+and then for the interleaved form to find the framebuffer itself.
 
 **Always validate the reader against a known-good kernel before trusting
 a blank result.** A build that is known to print its banner is the
