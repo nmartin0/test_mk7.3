@@ -357,10 +357,85 @@ faithfully handing it back. `0x91` is not a plausible IPL; it looks like
 whatever happened to be in `%eax`, i.e. a path that returns without
 setting a value.
 
-**Next step:** read `splsched` in `i386/spl.S` and find the path that
-falls through without loading `%eax` from `curr_ipl`. Compare against
-`splvm`, which is called two blocks earlier on the same path and does
-not misbehave.
+That lead was followed and the answer is below. `splsched` does not
+fall through without setting `%eax`; the problem is a width disagreement
+between the assembly and the C declaration.
+
+## Root cause: curr_ipl is 32 bits in assembly, 8 bits in C
+
+`i386/spl.h:35`:
+
+```c
+typedef unsigned char           spl_t;
+```
+
+But every spl routine is assembly that returns the full 32-bit value:
+
+```asm
+00159dc8 <splsched/splhi/splhigh/splclock>:
+        cli
+        mov   0x1e0a08,%eax      ; return the FULL 32-bit curr_ipl
+        movl  $0x8,0x1e0a08      ; and store a 32-bit 8
+        ret
+```
+
+and `curr_ipl` is written with `movl` throughout — the encoding at
+`0x159dce` is `c7 05 08 0a 1e 00 08 00 00 00`, a four-byte store.
+
+GCC, seeing prototypes that return `spl_t`, keeps only the low byte:
+
+```asm
+0010cba9:  call   159dc8 <splclock>
+0010cbb2:  movzbl %al,%ebx        ; discard the upper 24 bits
+```
+
+That truncation is **correct for the declared type** and is not itself
+the defect. It is what makes the defect visible: `curr_ipl` genuinely
+holds a value whose low byte is `0x91`, and the C side can only ever see
+that byte.
+
+So the assembly and the C disagree about the width of a shared object.
+This is the same family as the `.bss` bugs already fixed -- assembly and
+C disagreeing about a shared variable's representation -- except the
+disagreement is width rather than section.
+
+**What is NOT yet established**, and must not be guessed: which side is
+wrong. Either `curr_ipl` should be a 32-bit `int` and `spl.h`'s
+`unsigned char` is the error, or the assembly should be storing and
+loading a byte. Deciding needs the C declaration of `curr_ipl` itself
+read against every assembly site that touches it, in `spl.S` and
+`interrupt.S`. Note the C declarations found so far disagree with each
+other too:
+
+```
+i386/spl.h:35              typedef unsigned char  spl_t;
+hp_pa/spl.h:205            typedef unsigned       spl_t;
+i386/kgdb_interface.c:82   typedef int            spl_t;   /* "XXX" */
+i386/AT386/lpr.c:221       extern spl_t curr_ipl[];
+i386/AT386/mp/mp_v1_1.c:69 extern int   curr_ipl[NCPUS];   <- int, not spl_t
+```
+
+`mp_v1_1.c` declaring it `int` while `lpr.c` declares it `spl_t`
+(= `unsigned char`) is a direct contradiction inside the same tree.
+
+**Also still unexplained:** where the value `0x91` comes from at all.
+Only four instructions in the entire linked kernel write `curr_ipl`, and
+none of them can produce 145:
+
+```
+158388:  movl $0x8,0x1e0a08
+159dce:  movl $0x8,0x1e0a08
+159e13:  mov  %eax,0x1e0a08     (set_spl, after the bounds check)
+159e5c:  mov  %eax,0x1e0a08
+```
+
+The indexed write at `interrupt.S:430` is inside
+`#if NCPUS > 1 && AT386 && !MP_V1_1` and is compiled out, as is the
+whole `MP_V1_1` interrupt path. So either something writes `curr_ipl`
+that is not a direct store to `0x1e0a08` -- a stray pointer, or a
+neighbouring object overrunning into it -- or `0x159e5c` is reached with
+an unvalidated `%eax`. `0x159e5c` sits just past `splxpanic`
+(`0x159e4a`) and has not been identified; identify it first.
 
 ## Not the trigger: intnull(14)
 
@@ -372,6 +447,14 @@ is not blocking.
 
 ## Eliminated
 
+- **`splsched` returning without setting `%eax`.** It does set it. With
+  `MACH_KPROF` off, `Entry(splsched)` deliberately falls through into
+  `Entry(splhigh)`/`Entry(splhi)`, which loads `%eax` from `curr_ipl`
+  before overwriting it. `splsched`, `splhi`, `splhigh` and `splclock`
+  are all the same address (`0x159dc8`), as are `splimp`, `splnet` and
+  `spltty` (`0x159dc0`) -- a breakpoint on one catches all of them.
+- **GCC's `movzbl %al,%ebx` truncation.** Correct for
+  `spl_t = unsigned char`. It reveals the bug rather than causing it.
 - **`spl.S:335-338` clobbering `%edx`.** It looks as though `%edx`, the
   CPU index, is overwritten by the old IPL between reading and writing
   `curr_ipl`. It is not: line 337 is `CPU_NUMBER(%edx)`, which reloads
