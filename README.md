@@ -15,7 +15,7 @@ ordinary user tasks and can be built and debugged at runtime.
 | `build/` | everything we write. |
 | `AGENTS.md` | operational rules — read before changing anything. |
 | `DEBUGGING.md` | how to find out why the kernel misbehaves; read before debugging. |
-| `docs/` | design notes and open decisions. |
+| `docs/` | design notes, open decisions, and the current blocker. |
 | `tools/` | debugging helpers. |
 | `PRINCIPLES.md` | why the decisions are what they are. |
 
