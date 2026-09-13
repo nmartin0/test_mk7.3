@@ -224,11 +224,24 @@ the first few hits: a loop of 25 `continue`s produced nothing at all,
 twice. Use them to answer "what writes this, early", validate against a
 known write first, and do not yet trust them to scan.
 
-**Do not size a brute-force search from a `-d exec` count.** A
-fallthrough from one function into the next does not start a new
-translated block, so the trace counts only entries reached by `call`.
-`splx` falls through into `set_spl`, and the trace reported 7 `set_spl`
-entries where a breakpoint sees thousands.
+**`-d exec` counts are not execution counts.** Measured against
+breakpoints in the same build:
+
+| function | trace said | breakpoints show |
+|---|---|---|
+| `set_spl` | 7 | thousands |
+| `splx` | 1574 | >4000 |
+| `install_special_handler` | 1 | at least 22 |
+
+Two causes. A **fallthrough** from one function into the next does not
+start a new translated block, so only `call`-entries are counted; `splx`
+falls through into `set_spl`. And QEMU **chains** translated blocks, so
+a block re-executed through a chain is not re-logged.
+
+Use `-d exec` for "was this reached" and for the *order* of first entry.
+Never use it for "how many times", to size a brute-force search, or to
+conclude something runs only once. That last error was made here and
+three separate conclusions were built on it.
 
 **Breakpoint conditions do not work at all.** `break *ADDR if $eax != 8`
 stops with `$eax == 8`; the condition is ignored and the breakpoint

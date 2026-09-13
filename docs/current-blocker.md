@@ -797,3 +797,97 @@ confidence than the evidence supports.
    than `curr_ipl` at all -- the read is
    `mov 0x1e0a08,%eax` then `movzbl %al,%ebx`, so only the low byte
    survives, and every observed bad value fits in a byte.
+
+
+---
+
+## Round 3: the panic is on a different stack, and the trace counts are unreliable
+
+All values below come from **single runs**.
+
+### The whole chain, one run
+
+```
+A  at install_special_handler's "call splclock":
+       curr_ipl = 0x8        esp = 0x001c9f30      <- boot stack
+C  at its store of the argument:
+       ebx      = 0x8        esp = 0x001c9f30
+E  at splxpanic:
+       eax      = 0x91       esp = 0x08b78f1c      <- THREAD stack
+```
+
+The stacks are unrelated. `0x1c9f30` is the boot stack set up by
+`vstart` (`lea 0x1ca000,%esp`); `0x08b78f1c` is in kernel VM, allocated
+for a thread.
+
+### install_special_handler is healthy, and is called many times
+
+Breaking on `0xc010cba9` and logging every call in one run: **22
+consecutive calls, every one on the boot stack with `curr_ipl = 8` and
+`ebx = 8`.** None of them is the failing call.
+
+So the panicking `splx` comes from a later invocation running on a
+thread stack, and stepping to it one breakpoint at a time does not
+converge -- 22 iterations took about 150 seconds.
+
+### The `-d exec` counts have been wrong every time
+
+This is the finding with the widest consequences. Comparing trace counts
+against breakpoint counts, in the same build:
+
+| function | `-d exec` said | breakpoints show |
+|---|---|---|
+| `set_spl` | 7 | thousands |
+| `splx` | 1574 | still not panicking after 4000 |
+| `install_special_handler` | 1 | at least 22 |
+
+Two distinct causes:
+
+- **Fallthrough.** `splx` falls through into `set_spl`; a fallthrough
+  does not start a new translated block, so only `call`-entries count.
+- **Block chaining.** QEMU chains translated blocks and does not
+  re-log an entry every time a chained block is re-executed, so a
+  function called repeatedly from the same site can be logged once.
+
+**Consequence: `-d exec` is reliable for "was this code ever reached"
+and for the *order* of first entry. It is not reliable for "how many
+times", and must not be used to size a search or to conclude that
+something runs only once.** Several earlier inferences in this file were
+built on exactly that, including the claim that
+`install_special_handler` is "entered exactly once before the panic".
+
+### What is now known about the failing call
+
+`0x10cc39` on the panic stack **cannot** be a return address from a call
+to `splx`: `thread_hold+41` is `mov 0x184(%ebx),%eax`, not a call
+instruction. It is the return address from
+`call install_special_handler` at `thread_hold+36`. So either
+
+- `install_special_handler` tail-jumped into `splx` from an invocation
+  running on a thread stack -- consistent with everything, and the
+  simplest reading -- or
+- it is stale data on that thread's stack and the real caller is
+  elsewhere.
+
+The first is more likely, because the value at `[esp+4]` is exactly the
+bad IPL, which is where `install_special_handler`'s tail call puts its
+argument.
+
+### Next experiment
+
+Catch `install_special_handler` on a **thread** stack rather than the
+boot stack. `esp` is the discriminator: boot stack is `0x001c9xxx`,
+thread stacks are in kernel VM around `0x08bxxxxx`.
+
+gdb breakpoint conditions do not work here, so this needs either a
+scripted loop that continues until `$esp >> 20 != 0x1c9`, accepting the
+runtime, or a different instrument. Before investing in the loop, note
+that the same script reached only 22 calls in 150 seconds; the panic is
+much further out.
+
+An alternative worth trying first: make the failure happen sooner or
+more often. `thread_hold` is called per thread creation, so a
+configuration that creates fewer threads, or booting without modules so
+the boot script does not run, may reach the failing call earlier. Booting
+with no modules still panics with the same class of value, and is a
+shorter path.
