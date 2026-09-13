@@ -243,11 +243,17 @@ Never use it for "how many times", to size a brute-force search, or to
 conclude something runs only once. That last error was made here and
 three separate conclusions were built on it.
 
-**Breakpoint conditions do not work at all.** `break *ADDR if $eax != 8`
-stops with `$eax == 8`; the condition is ignored and the breakpoint
-behaves as unconditional. This silently produces wrong answers rather
-than an error, so never filter with a condition -- count and filter with
-a `-d exec` trace instead.
+**Every gdb feature that evaluates and resumes is broken.** Setting
+breakpoints and stopping at them works. Anything where gdb must decide
+at a stop and continue on its own does not, and fails silently:
+
+- `break *ADDR if $eax != 8` stops with `$eax == 8`. The condition is
+  ignored.
+- `ignore 1 50` prints nothing, and `info breakpoints` afterwards still
+  says "ignore next 50 hits" -- the count is never decremented.
+
+Only manual stop-and-read loops work, at roughly six stops per second.
+Budget accordingly: a search needing thousands of stops is not viable.
 
 **gdb often cannot read kernel data at a breakpoint** even when reading
 registers works. Both the link address and the linear address return

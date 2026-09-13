@@ -891,3 +891,102 @@ configuration that creates fewer threads, or booting without modules so
 the boot script does not run, may reach the failing call earlier. Booting
 with no modules still panics with the same class of value, and is a
 shorter path.
+
+
+---
+
+## Round 4: instrument limits mapped, and a latent width bug next door
+
+### Booting without modules does not shorten the path
+
+Logged every `install_special_handler` call with no modules supplied:
+30 calls, all on the boot stack (`esp=0x001c9f30`), all with
+`curr_ipl = 8`. The suggestion at the end of round 3 -- that the
+no-module boot might reach the failing call sooner -- is **wrong**, and
+should not be retried.
+
+### splx has 503 call sites
+
+```
+408  call 159df2 <splx>
+ 95  jmp  159df2 <splx>     (tail calls)
+```
+
+Focusing on `install_special_handler` was far too narrow. The stack
+layout at the panic still points there, but it is one of 503.
+
+### Every gdb feature that evaluates and resumes is broken
+
+Already known: breakpoint **conditions** are silently ignored. Now also
+measured: **ignore counts** do not work either.
+
+```
+(gdb) ignore 1 50          -> prints nothing (should confirm)
+(gdb) continue             -> stops; registers then unreadable
+(gdb) info breakpoints     -> "ignore next 50 hits"   (never decremented)
+```
+
+The coherent picture: this stub supports setting breakpoints and
+stopping at them. **Anything requiring gdb to evaluate at a stop and
+resume automatically -- conditions, ignore counts -- silently does
+nothing useful.** Only manual stop-and-read loops work, at roughly six
+stops per second, which is what makes a search of this size impractical.
+
+### curr_ipl's neighbourhood, and a real latent bug
+
+`curr_ipl` sits inside a block of 2-byte PIC register variables:
+
+```
+0x1e0a06 .. 0x1e0a08  size=2   master_ocw
+0x1e0a08 .. 0x1e0a0c  size=4   curr_ipl
+0x1e0a0c .. 0x1e0a0e  size=2   PICM_ICW3
+```
+
+Every access to `master_ocw` in the linked image:
+
+```
+15833c:  66 89 0d 06 0a 1e 00   mov %cx,0x1e0a06     WRITE, 16-bit
+159e37:  8b 15 06 0a 1e 00      mov 0x1e0a06,%edx    READ,  32-bit
+159e78:  8b 15 06 0a 1e 00      mov 0x1e0a06,%edx    READ,  32-bit
+```
+
+The reads are 32-bit against a 2-byte object, so they pull `curr_ipl`'s
+low half into the top of `%edx`. The cause is an assembly/C width
+disagreement:
+
+```c
+i386/pic.c:171      i386_ioport_t master_icw, master_ocw, slaves_icw, slaves_ocw;
+```
+```asm
+i386/spl.S:170      movl EXT(master_ocw),%edx
+i386/interrupt.S:233,263   movl EXT(master_icw),%edx
+```
+
+**This is not the panic cause.** It is a read, not a write, so it cannot
+corrupt `curr_ipl`; and only `%dx` reaches `outb %al,(%dx)`, so the port
+number is right. Recorded because it is real, because it is the fourth
+instance of assembly and C disagreeing about a shared object's
+representation, and because anyone who later changes the layout of these
+variables or starts using the full `%edx` will be bitten by it.
+
+### Where that leaves the search
+
+Still unexplained: `curr_ipl` reads `0x91` at the failing `splclock`,
+and no writer has been caught writing out of range. Ruled out so far:
+`set_spl`, `set_spl_noi`, `intpri[]`, every observed
+`install_special_handler` call, and now the neighbouring-variable
+overrun theory.
+
+The remaining candidates, in the order worth trying:
+
+1. **A stray pointer write** from anywhere in the kernel. A hardware
+   watchpoint is the only instrument that can see this; it works for the
+   first few hits but has not been made to scan (see above). Getting a
+   long-running watchpoint working is probably the highest-value
+   instrument work available.
+2. **The failing `install_special_handler` invocation on a thread
+   stack**, which needs either a working conditional stop or a way to
+   make the failure occur sooner. Both currently unavailable.
+3. That `curr_ipl` is not the source at all -- the read is
+   `mov 0x1e0a08,%eax` then `movzbl %al,%ebx`, so only the low byte
+   survives, and every bad value observed fits in a byte.
