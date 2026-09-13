@@ -155,7 +155,42 @@ clone nor this repository is modified:
 inside ODE's own makefiles where `CENV` does not reach. It is only
 needed for incremental dependency generation, so it is deferred.
 
-### The current blocker, precisely located
+### FIRST pass: working
+
+```
+build MAKEFILE_PASS=FIRST   ->  rc=0, 0 errors, 250 headers exported
+```
+
+The cause of the earlier `don't know how to make build_all` was NOT a
+missing environment, and an earlier note in this file saying so was
+wrong. Running `build -verbose` shows every Buildconf variable correctly
+set. The real cause: Buildconf sets `SOURCEDIR` to the empty string,
+which is right only for a sandbox with a backing chain -- OSF's shared
+read-only source tree, reached via `backing_build` in `sb.conf`. We have
+no backing chain. With `SOURCEDIR` empty, `MAKESRCDIRPATH` (set from it
+in `src/Makeconf`) is empty too, so after ODE make relocates itself into
+the object directory it has no path back to the source tree and finds no
+Makefile at all. The symptom is misleading -- it reads as a missing
+target rather than a missing search path.
+
+Fixed through `Buildconf.local`, which `libode/builddata.c` looks for at
+`<sandbox_base>/rc_files/<project>/Buildconf.local` and parses AFTER
+Buildconf, so `replace setenv` there wins. It is ODE's designed override
+point; no vendor file is modified. `build/mksandbox.sh` generates it.
+
+`md` turned out not to be optional -- the FIRST pass calls it for every
+directory it exports from. `bootstrap-ode.sh` now builds it by hand,
+because `setup.sh`'s link fails on `_argbreak` being a tentative
+definition in both `md.c` and libode, and `CENV` does not reach ODE's own
+makefiles. Three things were needed and are worth not rediscovering:
+`BUILD_DATE`, `MACHINE` and `OS` must be passed as string macros or
+`interface.c` and `par_rc_file.c` do not compile; and ODE's `porting/`
+replacements for `strerror`, `strdup`, `strcasecmp`, `getcwd`,
+`vfprintf`, `vsprintf` and `waitpid` must be excluded, since glibc
+provides all of them and ODE's `strerror.c` references `sys_errlist`
+and `sys_nerr`, which glibc removed.
+
+### Previous blocker, resolved -- kept for history
 
 `build` reads Buildconf -- it derives `target_machine=at386` and the
 object base correctly, and fails with the right paths when they are

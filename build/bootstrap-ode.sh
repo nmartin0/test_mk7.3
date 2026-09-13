@@ -58,9 +58,51 @@ export CENV DEF_ARFLAGS context OS
 ( cd "${SB}/src" && sh ode/setup/setup.sh at386_linux ) \
 	> "${MK_BUILD}/bootstrap-ode.log" 2>&1 || true
 
+# setup.sh builds md but its link fails: md.c and libode both define
+# _argbreak as tentative definitions, which -fno-common (GCC 10+) makes
+# a duplicate symbol. CENV does not reach ODE's own makefiles, only its
+# bootstrap.sh, so md is rebuilt here by hand. It is not optional -- the
+# FIRST pass calls md for every directory it exports from.
+#
+# Excluded from libode: the porting/ replacements for strerror, strdup,
+# strcasecmp, getcwd, vfprintf, vsprintf and waitpid. glibc provides all
+# of them, and ODE's strerror.c references sys_errlist and sys_nerr,
+# which glibc removed.
+#
+# BUILD_DATE, MACHINE and OS are string macros that ODE's own makefiles
+# pass; par_rc_file.c and interface.c do not compile without them.
+build_md() {
+	W="${MK_BUILD}/mdbuild"
+	rm -rf "${W}"; mkdir -p "${W}/inc"
+	ln -sfn "${SB}/src/ode/include" "${W}/inc/ode"
+	CF="-O -fcommon -std=gnu89 -w -D_BLD -DNO_STATVFS -DINC_VFS"
+	CF="${CF} -DUSE_BSIZE -DVA_ARGV_IS_RECAST -DNO_POLL"
+	CF="${CF} -DBUILD_DATE=\"unknown\" -DMACHINE=\"i386\" -DOS=\"linux\""
+	CF="${CF} -I${W}/inc"
+	( cd "${W}" || exit 1
+	  for f in "${SB}/src/ode/lib/libode"/*.c; do
+		gcc ${CF} -c -o "$(basename "${f%.c}").o" "$f" 2>/dev/null || true
+	  done
+	  for f in "${SB}/src/ode/lib/libode/porting"/*.c; do
+		b=$(basename "${f%.c}")
+		case "$b" in
+		strerror|strdup|strcasecmp|getcwd|vfprintf|vsprintf|waitpid)
+			continue ;;
+		esac
+		gcc ${CF} -c -o "$b.o" "$f" 2>/dev/null || true
+	  done
+	  ar cr libode.a ./*.o
+	  gcc ${CF} -c -o md.o "${SB}/src/ode/bin/md/md.c"
+	  gcc -fcommon -o md md.o -L. -lode
+	) >> "${MK_BUILD}/bootstrap-ode.log" 2>&1
+	[ -x "${W}/md" ] && cp "${W}/md" "${BIN}/md"
+	rm -rf "${W}"
+}
+
 BIN="${SB}/tools/at386_linux/bin"
+[ -x "${BIN}/md" ] || build_md
 missing=
-for t in make build workon genpath makepath release; do
+for t in make build workon genpath makepath release md; do
 	[ -x "${BIN}/${t}" ] || missing="${missing} ${t}"
 done
 
@@ -73,7 +115,3 @@ fi
 echo "built: ${BIN}"
 echo "  $(cd "${BIN}" && echo *)"
 echo "log:   ${MK_BUILD}/bootstrap-ode.log"
-echo
-echo "md (make depend) is NOT built: it hits the same -fno-common issue"
-echo "inside ODE's own makefiles, where CENV does not reach. It is only"
-echo "needed for incremental dependency generation, so it is deferred."
