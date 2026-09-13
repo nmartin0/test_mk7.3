@@ -423,13 +423,49 @@ parse_multiboot(void)
 	/* 
          * Get information about the bootstrap. Currently we only
 	 * support loading one module.
+	 *
+	 * AI-ONLY NOTE: the mods_count guards are required.
+	 *
+	 * The module array was read unconditionally, and mods_addr is
+	 * only meaningful when MULTIBOOT_MODS is set in flags. Booted
+	 * with no modules, qemu leaves mods_count at 0 and mods_addr
+	 * pointing at the same address as cmdline, so mb_module[0] was
+	 * the kernel command line read as a module table:
+	 *
+	 *   boot_start = 0x6863616d     ASCII "mach"
+	 *   boot_size  = 167905778      garbage, and crucially not 0
+	 *
+	 * bootstrap_create() guards itself with "if (boot_size == 0)
+	 * return", which is plainly meant to catch exactly this case.
+	 * It never fired, because boot_size was computed from the
+	 * command line rather than left at zero. bootstrap_create then
+	 * dereferenced boot_start and the kernel took 937335 page
+	 * faults, at which point the stack was unusable and unrelated
+	 * assertions started failing.
+	 *
+	 * mb_module[1] was read the same way. Even with one module
+	 * supplied it is past the end of the array: exec_size came back
+	 * as -1094452224. mods_count is authoritative per the multiboot
+	 * specification, so both reads are now bounded by it.
+	 *
+	 * boot_start, boot_size, exec_start and exec_size are zero
+	 * initialized globals and the BSS clear now runs before this
+	 * function, so leaving them untouched is what makes OSF's own
+	 * guard work as written.
 	 */
-	mb_module = (struct multiboot_module *) mb_info.mods_addr;
- 	boot_start = mb_module[0].mod_start;
- 	boot_size = mb_module[0].mod_end - mb_module[0].mod_start;
- 
- 	exec_start = mb_module[1].mod_start;
- 	exec_size = mb_module[1].mod_end - mb_module[1].mod_start;
+	if (mb_info.flags & MULTIBOOT_MODS) {
+		mb_module = (struct multiboot_module *) mb_info.mods_addr;
+
+		if (mb_info.mods_count >= 1) {
+			boot_start = mb_module[0].mod_start;
+			boot_size = mb_module[0].mod_end - mb_module[0].mod_start;
+		}
+
+		if (mb_info.mods_count >= 2) {
+			exec_start = mb_module[1].mod_start;
+			exec_size = mb_module[1].mod_end - mb_module[1].mod_start;
+		}
+	}
 
 
 	kern_args_start = mb_info.cmdline;
