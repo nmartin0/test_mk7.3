@@ -1072,3 +1072,84 @@ untested:
 
 Check 2 first: search for every branch to `return_from_interrupt` and
 confirm each arrives with the same stack shape.
+
+
+---
+
+## Instrument failure: stale QEMU processes invalidated measurements
+
+`pkill -x qemu-system-i386` **never matched anything**. Linux truncates
+`comm` to 15 characters, so the process is `qemu-system-i38`. Every
+"fresh" QEMU started during this investigation raced a stale one for
+port 1234, and gdb frequently attached to the old, already-failed guest.
+
+Two runs of the identical watchpoint script, back to back:
+
+```
+run 1   initial curr_ipl = <unreadable, guest at reset>
+        bzero(0) -> picinit(8) -> set_spl(5) -> set_spl(6) -> set_spl_noi(5)
+        all healthy
+
+run 2   initial curr_ipl = 0x1704F4        <- already corrupt AT ATTACH
+        then the alternating 0x8 / 0x1704f4 pattern
+```
+
+Run 2 is an artefact. The guest was started with `-S` and cannot have
+executed, so gdb was talking to the previous run's process.
+
+Confirmed directly: after `pkill -x qemu-system-i386`,
+`ps -eo pid,etimes,comm` still shows `qemu-system-i38` alive, and a
+freshly attached gdb reports `eip = 0x1704f4` and
+`curr_ipl = 0x1704f4` before any `continue`.
+
+### What this invalidates
+
+Any measurement in this file where the guest appears to be **past the
+failure at attach time** must be treated as suspect. Specifically:
+
+- **The alternating `set_spl` / `set_spl_noi` pattern** reported in the
+  previous section was captured in a stale-process run. The conclusion
+  that `set_spl_noi` writes a code address into `curr_ipl` is therefore
+  **not established**. It may still be true -- but it was observed on a
+  guest that had already failed, where the value is expected to be
+  garbage and the alternation is just the halt loop taking timer
+  interrupts.
+- Earlier readings of `0x1704f4` that were dismissed as "post-panic
+  noise" were probably correct after all, for this reason.
+- The inconsistent breakpoint behaviour seen throughout -- breakpoints
+  "not firing", registers unreadable, hit sequences differing between
+  identical runs -- is explained by this and need not be attributed to
+  the gdb stub.
+
+### What survives
+
+Run 1, taken against a guest genuinely at reset, is clean:
+
+```
+bzero writes 0, picinit writes 8, set_spl writes 5, 6, then
+set_spl_noi writes 5
+```
+
+Every early write is a valid IPL. So on a correctly-started guest, the
+first writes to `curr_ipl` are healthy and the corruption happens later.
+
+The gdb limitations recorded earlier -- conditions and ignore counts
+silently doing nothing -- were each observed more than once and are
+probably real, but should be re-confirmed on a guest verified to be at
+reset before being relied on again.
+
+### Required procedure from now on
+
+```sh
+pkill -x qemu-system-i38
+ps -eo pid,etimes,comm | grep qemu     # must be empty
+```
+
+and, at attach, assert the guest is at reset before measuring:
+
+```
+(gdb) info registers eip        # expect 0x0000fff0, the reset vector
+```
+
+Any run where `eip` is not the reset vector at attach is invalid and
+must be discarded.

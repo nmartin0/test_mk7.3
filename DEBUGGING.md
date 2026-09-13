@@ -454,8 +454,32 @@ The last row is the positive control and matters as much as the others.
 
 ## 9. Instrument hygiene
 
-- **`pkill -f qemu` matches your own shell's command line** and kills
-  the session mid-command. Use `pkill -x qemu-system-i386`.
+- **Killing stale QEMU processes is harder than it looks, and getting it
+  wrong silently corrupts every measurement.**
+
+  `pkill -f qemu` matches your own shell's command line and kills the
+  session mid-command. But `pkill -x qemu-system-i386` **never matches
+  anything**: Linux truncates `comm` to 15 characters and
+  `qemu-system-i386` is 16, so the process is named `qemu-system-i38`.
+
+  ```sh
+  pkill -x qemu-system-i38        # correct
+  ps -eo pid,etimes,comm | grep qemu    # always verify
+  ```
+
+  The failure mode is vicious. A stale QEMU keeps port 1234 bound, so
+  the next `gdb -ex 'target remote :1234'` attaches to the **old,
+  already-failed guest** instead of the new one -- even though the new
+  one was started with `-S` and cannot have run. It looks like a guest
+  that booted and failed instantly. Symptoms seen here: `curr_ipl`
+  already `0x1704f4` before the first `continue`, `eip` already at
+  `halt_all_cpus+36`, watchpoint hit sequences differing between
+  supposedly identical runs, and breakpoints "not firing" because the
+  stale guest was already past them.
+
+  **Always confirm no QEMU survives before starting a new one**, and
+  treat any measurement where the guest appears to be past the failure
+  at attach time as invalid.
 - Verify a compiler shim actually takes effect before trusting a
   negative result. A PATH shim intended to force gcc-14 silently never
   applied, which produced a confident and wrong "not reproducible here".
