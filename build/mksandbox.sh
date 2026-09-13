@@ -115,7 +115,7 @@ replace setenv SOURCEDIR \${source_base}
 # that reason, preferring targeted -fno-builtin-* flags. -fno-builtin
 # plus the kernel's own mem/str routines is the standard arrangement
 # and is what OSF chose; leave their choice alone.
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-zero-initialized-in-bss -fno-stack-protector -fno-pic -Wno-error"
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -Wno-error"
 #
 # The genassym rule in conf/AT386/template.mk calls the compiler
 # directly and does NOT include the standard CFLAGS, so nothing from
