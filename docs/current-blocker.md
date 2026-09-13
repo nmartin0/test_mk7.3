@@ -591,3 +591,116 @@ address and works regardless of paging or segmentation.
 gdb alone cannot read many kernel addresses at a breakpoint -- both
 `0x1e0a08` and `0xc01e0a08` return "Cannot access memory" at moments
 when reading registers works fine.
+
+
+---
+
+# CORRECTION and current state of the splx panic
+
+**Everything above about a "corrupted stack slot" is wrong.** It is left
+in place because the reasoning is instructive, but do not act on it.
+
+## What was wrong, and why
+
+The failure is **non-deterministic**. The reported value differs every
+boot: `0x91`, `0x57`, `0x3f`, `0x18`, `0x4b`, `0x17` have all been seen
+from the same binary.
+
+That was not noticed, and two measurements taken in *different runs*
+were compared as though they came from one:
+
+- `%ebx = 8` at `install_special_handler+62` — correct, in that run.
+- `%eax = 0x91` at `splxpanic` — correct, in another run.
+
+Comparing them produced "the argument is correct when written and wrong
+three instructions later", which is impossible, and then an interrupt
+hypothesis to explain the impossibility. A later measurement showed
+**no interrupt is taken in that function at all** — only four interrupts
+occur before the panic, and the 1,453 at `0x1704f4` are after it while
+halted.
+
+Specifically retracted:
+
+- "the stack slot is overwritten in between" — no.
+- "the only thing that can run in that window is an interrupt" — nothing
+  runs there.
+- "`install_special_handler` is not the culprit" — it is; see below.
+
+## What is actually established
+
+`install_special_handler` **tail-jumps** into `splx`:
+
+```asm
+10cbde:  mov  %ebx,0x10(%esp)
+10cbe2:  add  $0x4,%esp
+10cbe5:  pop  %ebx
+10cbe6:  pop  %esi
+10cbe7:  jmp  159df2 <splx>
+```
+
+so at `splx` the stack still holds `thread_hold`'s frame. Read at the
+panic, in one stopped guest:
+
+```
+eax = 0x91            the bad IPL
+esp = 0x08b78f1c      linear 0xC8B78F1C  (segment base!)
+[esp]   = 0x0010cc39  return addr from thread_hold's
+                      "call install_special_handler" at 0x10cc34
+[esp+4] = 0x00000091  the argument
+```
+
+`0x10cc39` is **not** a call to `splx` — it is the instruction after
+`call install_special_handler`. Reading it as "`thread_hold` called
+`splx`" is the tail-call trap described in `DEBUGGING.md` §7a.
+
+So the panicking call is `install_special_handler`'s, and its argument
+comes from:
+
+```asm
+10cba9:  call   159dc8 <splclock>     ; == splhi == splsched == splvm
+10cbb2:  movzbl %al,%ebx              ; keep the low byte
+```
+
+and `splclock` is only:
+
+```asm
+mov  0x1e0a08,%eax      ; return the OLD curr_ipl
+movl $0x8,0x1e0a08
+```
+
+**Therefore `curr_ipl` itself is intermittently garbage.** Nothing is
+wrong in `splx`, `install_special_handler` or `thread_hold`; they
+faithfully pass along a bad value that was already in `curr_ipl`.
+
+## The remaining suspect
+
+Only four instructions in the linked kernel write `curr_ipl`:
+
+```
+158388:  movl $0x8,0x1e0a08     picinit, constant
+159dce:  movl $0x8,0x1e0a08     splhi, constant
+159e13:  mov  %eax,0x1e0a08     set_spl
+159e5c:  mov  %eax,0x1e0a08     set_spl_noi   <- UNVALIDATED
+```
+
+`set_spl_noi` is called from exactly one place, `return_from_interrupt`,
+with the IPL popped off the interrupt frame, and it performs no bounds
+check. `set_spl` is also reachable unchecked: `interrupt.S` calls its
+entry at `0x159e08` directly, which is *past* the bounds check that
+`splx` performs at `0x159dfe`–`0x159e06` before falling through into it.
+
+And a nested interrupt has been observed: `v=0x4f` (IRQ 15) taken at
+`EIP=0x158410` with `ECX=0x0e`, i.e. while IRQ 14 was being handled, on
+a different stack from the IRQ 14 frame. `intnull(14)` prints
+immediately before the panic in every run.
+
+**Hypothesis, not yet proven:** the nested interrupt's return path
+restores a bad saved IPL through `set_spl_noi`, leaving `curr_ipl`
+out of range for the next `splsched`.
+
+**Next experiment.** In one stopped guest: break at `0x159e5c`, read
+`%eax` each time, and find the call that writes a value outside `0..8`.
+gdb breakpoint conditions do **not** work against this stub (see
+`DEBUGGING.md` §3), so count and filter with `-d exec` or step manually.
+Because the failure is non-deterministic, take every value in the chain
+from the same run.
