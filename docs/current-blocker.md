@@ -83,22 +83,64 @@ frames 0xfc000, 0xfe000, 0xff000, 0x100000) being read as thread state.
 
 ## When the page dies
 
-Bisected with breakpoints, reading physical `0x100ef2` each time:
+Bisected with breakpoints, reading `0x100ef2` at each point. The window
+has been closed to a single function:
 
 | point | bytes at 0x100ef2 | intact? |
 |---|---|---|
-| before any execution | `8b 4c 24 04 8b 44 24 08` | yes |
-| at `multiboot_entry` (`0x100194`) | `8b 4c 24 04 8b 44 24 08` | yes |
-| after the page-directory `rep stos` (`0x1001cc`) | `8b 4c 24 04 8b 44 24 08` | yes |
-| at `setup_main` (`0x122870`) | all zero | **NO** |
+| before any execution | `8b 4c 24 04` | yes |
+| `multiboot_entry` (`0x100194`) | `8b 4c 24 04` | yes |
+| after page-directory `rep stos` (`0x1001cc`) | `8b 4c 24 04` | yes |
+| after the PTE-fill loop (`0x100203`) | `8b 4c 24 04` | yes |
+| after the zero loop (`0x100210`) | `8b 4c 24 04` | yes |
+| before `fix_desc_common` (`0x100226`) | `8b 4c 24 04` | yes |
+| right after paging is enabled (`0x100274`) | `8b 4c 24 04` | yes |
+| `machine_startup` entry (`0xc01706f0`) | `8b 4c 24 04` | yes |
+| after the BSS clear (`0xc0170708`) | `8b 4c 24 04` | yes |
+| **after `i386_init()` (`0xc0170717`)** | **`00 00 00 00`** | **NO** |
 
-So `.text[0x100000..0x101000]` is destroyed between `0x1001cc` and
-`setup_main`. The rest of `.text` survives — `setup_main` at `0x122870`
-reads correctly at the same moment.
+**`i386_init()` destroys it.** The rest of `.text` survives — `setup_main`
+at `0x122870` still reads correctly at the same moment, so this is
+specifically the page at `0x100000`.
 
-## The prime suspect
+## The prime suspect: pmap_bootstrap allocating over the kernel
 
-The PTE-fill loop in `i386/start.S`, immediately after `0x1001cc`:
+`i386_init()` calls `pmap_bootstrap()`, which builds the kernel's real
+page tables and zeroes each page-table page it allocates. It is the only
+thing in that function that writes whole pages.
+
+The evidence from the crash site fits it exactly. The registers
+recovered from the wild jump were **page table entries** — four
+consecutive slots 0x1000 apart with low bits `0x103` (`P|RW|G`), naming
+frames `0xfc000`, `0xfe000`, `0xff000` and `0x100000`. That is a page
+allocator walking upward and reaching `0x100000`, which is precisely
+where the kernel's text is loaded.
+
+The banner supports the same reading:
+
+```
+Available physical space from 0x101000 to 0x3fe0000
+```
+
+`avail_start = 0x101000` is **one page above the kernel's load
+address**, not above the kernel's *end* (`end = 0x1fe084`). If
+`pmap_bootstrap` hands out pages from anywhere below `0x1fe084` it is
+allocating on top of the kernel image, and the first page it reaches
+going upward through `0xfc000`, `0xfd000`, `0xfe000`, `0xff000` is
+`0x100000` — the text page that dies.
+
+**Next step:** read `pmap_bootstrap()` in `intel/pmap.c` and check the
+arithmetic that produces its first free physical page against
+`avail_start`, `first_addr` and `end`. `model_dep.c` sets
+`avail_start = first_addr` after `first_addr = round_page(first_addr)`;
+find what `first_addr` was initialised from and whether it accounts for
+the kernel image at all.
+
+## Eliminated: the PTE-fill loop in start.S
+
+This was the previous prime suspect and is **disproved** — the page is
+still intact at `0x100203`, `0x100210` and `0x100226`, all after the
+loop has run. Kept here so it is not re-tried. The loop is:
 
 ```asm
 1001cc:  add  $0xc00,%ebx      ; ebx -> PDE slot for 0xC0000000
@@ -128,37 +170,39 @@ against `%edi`, a **pointer into the PTE array**. Solving
 `3 + 0x1000n >= 0x501000 + 4n` gives n = 1282, so it writes 1282 PTEs at
 `0x501000..0x502008` and maps physical `0` through roughly `0x502000`.
 
-That the loop terminates on a relationship between a frame number and a
-table pointer is worth understanding before changing anything. It is the
-kind of construction that works only while the table sits at a
-particular address, and the table's address here derives from
-`0x500000`, a hardcoded constant. The kernel is ~1 MB and loads at
-`0x100000`, so it fits inside the mapped region — but the loop also
-writes PTEs into `0x501000+`, and if any of its bounds are off by a
-page, it writes into memory it should not.
+It terminates when `%eax`, a physical frame address, exceeds `%edi`, a
+pointer into the PTE array — an odd construction, but not the bug. It
+writes 1282 PTEs at `0x501000..0x502008`, mapping physical `0` through
+about `0x502000`, and leaves `0x100000` alone.
 
-**This is a hypothesis, not a conclusion.** It has not been confirmed
-that this loop is what zeroes `0x100000`. What is confirmed is the
-window it sits in.
+## The addressing correction that cost the most time
 
-## How to confirm it
-
-The cheap decisive test is a watchpoint on the destroyed page during
-that window:
+**The kernel is relocated by segmentation, not only by paging.** The
+`-d exec` trace makes this explicit:
 
 ```
-target remote :1234
-break *0x1001cc              # physical; paging not yet on
-continue
-watch *(unsigned int *)0x100ef2
-continue
+Trace 0: 0x7f36... [c0000000/00000000c0101005/000000f0/ff020000]
+                    ^^^^^^^^ cs_base    ^^^^^^^^ linear pc
 ```
 
-If gdb's hardware watchpoints prove unreliable against this stub, the
-fallback is to sample `x/4xb 0x100ef2` at successive breakpoints through
-`0x1001cc`, `0x100203`, `0x100210`, `0x100226` (the jump to
-`fix_desc_common`) and `0x100289` (`vstart`), which brackets it to a
-single instruction.
+`cs_base = 0xC0000000`, so the CPU's `EIP` is the **low** value
+(`0x101005`) while the linear address is `0xC0000000 + EIP`.
+`start.S` does this deliberately at `0x100252`:
+
+```asm
+mov %cr3,%eax
+mov 0xc00(%eax),%ecx    ; read PDE[768], the 0xC0000000 entry
+mov %ecx,(%eax)         ; copy it to PDE[0] -- identity-map low 4MB
+```
+
+so both the low and high ranges are valid, and code runs at low `EIP`
+until the `lgdt`/`ljmp` installs the high-based segments.
+
+Practical consequence: **gdb breakpoints in kernel C code need the
+linear form** — `break *0xc01706f0` for `machine_startup`, not
+`break *0x1706f0`. Several earlier "breakpoint never hit" results were
+this mistake and said nothing about the kernel. Memory reads work at
+either address, since both map to the same physical page.
 
 ## Hypotheses already eliminated
 
@@ -173,6 +217,10 @@ Do not spend time on these again.
 - **The BSS clear is responsible.** Disproved. `edata = 0x1d6cac`,
   `end = 0x1fe084`; the clear covers only that range and cannot reach
   `0x100000`.
+- **The PTE-fill loop in `start.S`.** Disproved by sampling at
+  `0x100203`, `0x100210` and `0x100226` — all after it, all intact.
+- **The BSS clear moved to `machine_startup`.** Disproved; the page is
+  intact at `0xc0170708`, immediately after it returns.
 - **`setbit` has a bug.** No. Its four instructions are correct as
   linked. The problem is that they are not in memory when called.
 - **`Switch_context` has a bug.** No. It faithfully loads registers from
