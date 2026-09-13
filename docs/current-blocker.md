@@ -257,3 +257,125 @@ i386/pio.h               inw/outw instead of the 0x66 prefix hack
 `docs/bootstrap-fork.md` records a separate open decision (Hurd vs OSF
 bootstrap) that is **not** reachable until this is fixed — neither
 bootstrap function is among the 55 functions the kernel enters.
+
+---
+
+# Next blocker: splsched() returns a bogus IPL
+
+**Status: open, narrowed to one routine. Supersedes the section above,
+which is resolved.**
+
+The `.text`-zeroing bug is fixed (see the commit "Keep the two variables
+start.S writes out of BSS"). The kernel now reaches far further:
+
+```
+distinct functions entered   55  ->  320
+```
+
+It completes VM init, IPC bootstrap, task and thread creation, services
+timer interrupts, and runs device autoconfiguration to completion:
+
+```
+Available physical space from 0x100000 to 0x3fe0000
+vm_page_bootstrap: 14705 free pages
+adjusting delay count: 10 9 35 175 313 261 319 333 327
+Unrecognized processor (type = 0x0, family = 0x6, model = 0x6)
+fdc0: port = 3f2, spl = 5, pic = 6.
+fdc0: at atbus0
+ fd0: at fdc0 slave 0, port = 3f2, spl = 5, pic = 6.
+ fd1: at fdc0 slave 1, port = 3f2, spl = 5, pic = 6.
+kd0: at atbus1, port = 60, spl = 6, pic = 1.
+com0: 82550 or 16550 chip.
+com0: at atbus2, port = 3f8, spl = 6, pic = 4. (DOS COM1)
+S3 chip ID probe returned 0x0
+vga: standard
+vga0: at atbus3
+realtime clock configured
+battery clock configured
+intnull(14)
+panic: splx(old 91, new 8): logic error in locore.s
+In tight loop: hit ctl-alt-del to reboot
+```
+
+## Read the panic message backwards
+
+**The labels in that message are swapped.** `i386/spl.S` pushes:
+
+```asm
+splxpanic:
+        pushl   EXT(curr_ipl)   /* pushed first  -> prints as the 2nd %x */
+        pushl   %eax            /* pushed second -> prints as the 1st %x */
+        pushl   $splxpanic2
+        call    EXT(panic)
+```
+
+Under cdecl the last thing pushed before the format string is argument
+one, so `%eax` prints where the message says "old". The real reading is:
+
+- **requested level = 0x91** (the argument to `splx`)
+- **curr_ipl = 8**, which is healthy: `SPLHI` is 8 for AT386
+  (`ipl.h` defines `IPLHI` as 7 only for `iPSC386`)
+
+`0x91 = 145 > 8`, so `ja splxpanic` fires correctly. The check is doing
+its job; the caller is wrong.
+
+Confirmed against the compiled code rather than the headers:
+
+```asm
+159dfe:  cmp $0x0,%eax
+159e01:  jl  splxpanic
+159e03:  cmp $0x8,%eax        <- SPLHI is 8, as expected
+159e06:  ja  splxpanic
+```
+
+## The caller
+
+From a `-d exec` trace, the blocks immediately before `splxpanic`:
+
+```
+thread_create_in
+  thread_hold
+    splvm
+    install_special_handler
+      install_special_handler_locked
+    splx            <- panics
+```
+
+`install_special_handler()` at `kern/thread_act.c:1549` is an ordinary,
+correct pairing:
+
+```c
+spl_t   spl;
+...
+spl = splsched();
+...
+splx(spl);
+```
+
+So **`splsched()` is returning 0x91** and `install_special_handler` is
+faithfully handing it back. `0x91` is not a plausible IPL; it looks like
+whatever happened to be in `%eax`, i.e. a path that returns without
+setting a value.
+
+**Next step:** read `splsched` in `i386/spl.S` and find the path that
+falls through without loading `%eax` from `curr_ipl`. Compare against
+`splvm`, which is called two blocks earlier on the same path and does
+not misbehave.
+
+## Not the trigger: intnull(14)
+
+`intnull(14)` prints immediately before the panic and looks related. It
+is not. Booting with `-nodefaults` to remove the IDE controller, the
+usual source of IRQ 14, leaves both the message and the panic exactly
+as they were. Where the interrupt comes from is a separate question and
+is not blocking.
+
+## Eliminated
+
+- **`spl.S:335-338` clobbering `%edx`.** It looks as though `%edx`, the
+  CPU index, is overwritten by the old IPL between reading and writing
+  `curr_ipl`. It is not: line 337 is `CPU_NUMBER(%edx)`, which reloads
+  it. Read the intervening line before reporting this.
+- **`SPLHI` being 7 while something passes 8.** `ipl.h` does define
+  `IPLHI` twice, but the 7 arm is `#if iPSC386`. The compiled constant
+  is 8.
