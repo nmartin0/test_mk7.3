@@ -462,3 +462,132 @@ is not blocking.
 - **`SPLHI` being 7 while something passes 8.** `ipl.h` does define
   `IPLHI` twice, but the 7 arm is `#if iPSC386`. The compiled constant
   is 8.
+
+
+---
+
+# Narrowed: the splx argument is corrupted on the stack
+
+**Status: open. Mechanism located to a three-instruction window.
+Supersedes the width-mismatch section above, which is real but is not
+what produces 0x91.**
+
+## The call is correct when it is made
+
+`install_special_handler` is entered **once** before the panic (counted
+from a `-d exec` trace, not from gdb). Measured at breakpoints on that
+single call:
+
+```
+at 0x10cbb2, after "call splclock":   %eax = 8
+at 0x10cbde, where the arg is stored: %ebx = 8
+```
+
+So the value handed to `splx` is correct at the moment it is written.
+
+## The tail call is also correct
+
+```asm
+10cbde:  mov  %ebx,0x10(%esp)   ; place arg where splx will read it
+10cbe2:  add  $0x4,%esp
+10cbe5:  pop  %ebx
+10cbe6:  pop  %esi
+10cbe7:  jmp  159df2 <splx>     ; tail jump
+```
+
+`%esp` rises 12 across the `add` and two `pop`s, so the slot written at
+`0x10(%esp)` is at `0x4(%esp)` when `splx` executes
+`mov 0x4(%esp),%eax`. The arithmetic checks out.
+
+## Therefore the stack slot is overwritten in between
+
+`splx` reads `0x91` from a slot that held `8` three instructions
+earlier, on the only call to this function. Nothing in those three
+instructions writes memory. The only thing that can run in that window
+is an **interrupt**, and the interrupt path pushes onto this same stack.
+
+`intnull(14)` prints immediately before the panic, which places an
+unhandled interrupt at exactly the right moment.
+
+**Next step:** confirm an interrupt is taken in that window. Either use
+`-d int` correlated with the block index of `0x10cbde` from the exec
+trace, or capture `%esp` at `0x10cbde` and compare it against the frame
+the interrupt path builds. If confirmed, the question becomes why the
+interrupt frame lands on top of a live stack slot rather than below
+`%esp`.
+
+## A real hazard found on the way, not the cause
+
+`interrupt.S` calls `set_spl` **directly at its entry**, which in the
+linked image is `0x159e08`:
+
+```asm
+movzbl EXT(intpri)(%ecx), %eax   # eax = intpri[int#]
+call   EXT(set_spl)              # sets curr_ipl = eax
+```
+
+`splx` at `0x159df2` performs the bounds check and then *falls through*
+into `set_spl` at `0x159e08`. Entering `set_spl` by `call` therefore
+**bypasses the check entirely**, and `set_spl` writes `curr_ipl`
+unvalidated at `0x159e13`. Any bad value in `intpri[]` would reach
+`curr_ipl` with nothing to catch it.
+
+It is not the cause here -- `intpri` was read out of the running kernel
+and is correctly populated, matching the boot log exactly:
+
+```
+intpri[0..15] = 08 06 00 00 06 00 05 00 00 00 00 00 00 01 00 00
+                ^clock ^kd      ^com  ^fdc
+intpri[1]=6  matches "kd0: spl = 6"
+intpri[4]=6  matches "com0: spl = 6"
+intpri[6]=5  matches "fdc0: spl = 5"
+intpri[14]=0 valid (SPL0)
+```
+
+Worth recording anyway; it is a latent trap for the next person who
+changes `intpri` or adds a driver.
+
+## Eliminated this round
+
+- **`intpri[14]` holding garbage.** It holds 0, which is valid.
+- **`set_spl_noi` writing the bad value.** It is the only unvalidated
+  writer and is reached only from `return_from_interrupt`, but the
+  argument passed to `splx` is already wrong before any of that matters.
+- **`install_special_handler_locked` clobbering `%ebx`.** It pushes
+  `%ebx` at entry and restores it; `%ebx` reads 8 after it returns.
+- **The tail-call stack arithmetic.** Verified instruction by
+  instruction.
+
+## Instrument failures -- read this before trusting a measurement
+
+**gdb breakpoint conditions do not work against this QEMU stub.**
+
+```
+break *0xc0159df6 if $eax != 8
+```
+
+stops with `$eax == 8`. Conditions appear to be ignored entirely, so the
+breakpoint behaves as unconditional. Do not use them. Count and filter
+with `-d exec` traces instead.
+
+Two earlier results in this file were produced with unreliable methods
+and are corrected:
+
+| claim | method | truth |
+|---|---|---|
+| `set_spl_noi` only runs during the panic | gdb loop | runs **8** times before it |
+| `splx`: 800 calls, all `0x8` | gdb loop capped at 800 | `splx` runs **1574** times before the panic; the loop simply stopped early |
+
+The working technique for reading kernel data at a breakpoint, after
+several failures, is to **combine gdb and the monitor**: break in gdb,
+then `shell` out to a script that issues `pmemsave` over the monitor
+socket while the guest is stopped. `pmemsave` takes a guest *physical*
+address and works regardless of paging or segmentation.
+
+```
+(gdb) shell python3 tools/pmem.py /tmp/mon 0x1e0a08 4 /tmp/out.bin
+```
+
+gdb alone cannot read many kernel addresses at a breakpoint -- both
+`0x1e0a08` and `0xc01e0a08` return "Cannot access memory" at moments
+when reading registers works fine.

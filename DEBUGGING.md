@@ -177,6 +177,24 @@ better by address than by name: gdb frequently reports
 Asynchronous `interrupt` after `continue &` does not work reliably in
 batch mode here. Use a breakpoint you know will be hit instead.
 
+**Breakpoint conditions do not work at all.** `break *ADDR if $eax != 8`
+stops with `$eax == 8`; the condition is ignored and the breakpoint
+behaves as unconditional. This silently produces wrong answers rather
+than an error, so never filter with a condition -- count and filter with
+a `-d exec` trace instead.
+
+**gdb often cannot read kernel data at a breakpoint** even when reading
+registers works. Both the link address and the linear address return
+"Cannot access memory". The technique that does work is to combine the
+two interfaces: run QEMU with `-s -S` *and* a monitor socket, break in
+gdb, then `shell` out to a script that issues `pmemsave` while the guest
+is stopped. `pmemsave` takes a guest **physical** address, so paging and
+segmentation do not enter into it.
+
+```
+(gdb) shell python3 tools/pmem.py /tmp/mon 0x1e0a08 4 /tmp/out.bin
+```
+
 ---
 
 ## 4. Measure in a clean tree
