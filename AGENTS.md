@@ -155,6 +155,59 @@ clone nor this repository is modified:
 inside ODE's own makefiles where `CENV` does not reach. It is only
 needed for incremental dependency generation, so it is deferred.
 
+### Idiomatic ODE usage -- checked against the manuals
+
+Read `ode4linux/src/ode/man/man1/{build,workon,mksb}.1` and
+`osfmk7.3/{OSFMK_BUILD.README,set_ode_path.sh,build_world}` before
+changing how the tools are invoked. Four things came out of that review:
+
+**Do not use `workon`.** `OSFMK_BUILD.README` says to, but `workon(1)`
+itself says it "is part of the source control mechanism ... and is
+normally not be used if ODE source control is not used." We use git.
+`build(1)` takes `-sb` and `-rc` in its own right, and running it
+directly gives an identical result -- verified, `MAKEFILE_PASS=FIRST`
+returns 0 with the same 250 exported headers either way. It also drops
+workon's requirement for `SHELL`. `USER` is still needed -- `build(1)`
+checks for it directly and aborts with "USER not found in environment";
+`build/ode.sh` sets it from `$LOGNAME` if absent, as
+`OSFMK_BUILD.README` suggests. Note that an EMPTY `USER` passes the
+check, so a test using `env USER=` proves nothing.
+
+**Do not prepend ODE to the caller's PATH.** `set_ode_path.sh` states
+the rule: ODE's tools belong early in PATH only inside a workon shell,
+and after the system tools otherwise, so a plain `make` does not
+silently become ODE make. `build/ode.sh` sets PATH for its own
+invocation only.
+
+**`-rc` is a documented alternative to `~/.sandboxrc`.** `build(1)`
+FILES lists `${HOME}/.sandboxrc`, and `-rc` overrides it. Using `-rc`
+keeps the sandbox rc out of `$HOME`.
+
+**There is no SECOND pass in the canonical order.** `build_world` is
+OSFMK's own script and goes straight from FIRST to per-directory
+targets:
+
+```
+build MAKEFILE_PASS=FIRST
+build -here mach_services/lib/libcthreads
+build -here mach_services/lib/libsa_mach
+build -here mach_services/lib/libmach
+build -here mach_services/lib/libmach_maxonstack
+build -here file_systems
+build -here bootstrap
+build -here mach_kernel MACH_KERNEL_CONFIG=PRODUCTION
+makeboot
+```
+
+`makeboot` there is PowerMac-specific -- it produces the Mach_Kernel
+image for a MacOS Extensions folder. AT386 has its own
+`conf/AT386/config.makeboot` and a boot path under `stand/AT386`, so
+that last step will differ for us.
+
+`build -here <dir>` taking a directory as the target, and
+`build VAR=value <target>`, are both documented idioms -- see
+build(1) FLAGS and EXAMPLES.
+
 ### FIRST pass: working
 
 ```
