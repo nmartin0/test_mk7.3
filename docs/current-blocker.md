@@ -990,3 +990,85 @@ The remaining candidates, in the order worth trying:
 3. That `curr_ipl` is not the source at all -- the read is
    `mov 0x1e0a08,%eax` then `movzbl %al,%ebx`, so only the low byte
    survives, and every bad value observed fits in a byte.
+
+
+---
+
+# FOUND: set_spl_noi writes a code address into curr_ipl
+
+**This supersedes every "eliminated" verdict above that concerns
+`set_spl_noi`. Read this section first.**
+
+## The measurement
+
+A hardware watchpoint on `curr_ipl`, logging the first 20 writes of one
+run:
+
+```
+ 0 t=0.01s eip=0x00159e18 curr_ipl=0x8        esp=0x001c9fec
+ 1 t=0.01s eip=0x00159e61 curr_ipl=0x1704f4   esp=0x001c9ff4
+ 2 t=0.02s eip=0x00159e18 curr_ipl=0x8        esp=0x001c9fec
+ 3 t=0.03s eip=0x00159e61 curr_ipl=0x1704f4   esp=0x001c9ff4
+ ...  alternating, every ~0.005s, indefinitely
+```
+
+`0x159e18` is `set_spl+16`, writing a correct `0x8`.
+`0x159e61` is `set_spl_noi+5`, writing **`0x1704f4`**, which is
+`halt_all_cpus+36` -- a code address, not an IPL.
+
+## Two earlier verdicts in this file are wrong
+
+- **"`set_spl_noi` is eliminated."** It was eliminated on the evidence
+  that its *first* call carries `eax = 0x5`. That is true and
+  irrelevant: the first call is fine and every subsequent one is not.
+  Checking only the first instance of a repeating call is not an
+  elimination.
+- **"The `0x1704f4` readings are all post-panic."** They are not.
+  `esp = 0x001c9ff4` is the **boot stack**, and the writes begin at
+  t=0.01s, long before the panic. That dismissal was based on the value
+  looking like halt-loop noise rather than on when it occurred.
+
+## Why the value is what it is
+
+`set_spl_noi` has exactly one caller, `return_from_interrupt`, which
+recovers the saved IPL like this:
+
+```asm
+                pushl   %eax                    # save old IPL
+                pushl   EXT(iunit)(,%ecx,4)     # unit# as handler arg
+                call    *EXT(ivect)(,%ecx,4)    # the handler
+return_from_interrupt:
+                addl    $4,%esp                 # drop the handler arg
+                cli
+                popl    %eax                    # the saved IPL
+```
+
+Recovering `halt_all_cpus+36` from that `popl` means the stack is **off
+by one slot** at that point: it pops a return address where the saved
+IPL should be. `set_spl_noi` then writes it to `curr_ipl` with no bounds
+check, which is why nothing catches it.
+
+This also explains the downstream behaviour that has been chased for
+several rounds. Once `curr_ipl` holds a code address, the next
+`splclock`/`splsched` returns it, `movzbl %al,%ebx` keeps the low byte,
+and `splx` is handed a value like `0xf4` -- a byte-sized garbage value
+that differs per run because the code address differs. Every observed
+bad value fits in a byte, which matches.
+
+## Next step
+
+Work out why the interrupt return stack is off by one slot. Candidates,
+untested:
+
+1. A handler reached through `ivect[]` that does not conform to the
+   convention `return_from_interrupt` assumes. `intnull` is the stub for
+   unregistered vectors and `intnull(14)` prints immediately before the
+   panic in every run.
+2. A path that reaches `return_from_interrupt` without having pushed
+   both the saved IPL and the handler argument -- i.e. a `jmp` into the
+   middle of the sequence rather than a fall-through from the `call`.
+3. `ETAP_INTERRUPT_PROBE` or `MP_*` macros expanding to something that
+   disturbs the stack in this configuration.
+
+Check 2 first: search for every branch to `return_from_interrupt` and
+confirm each arrives with the same stack shape.

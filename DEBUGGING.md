@@ -211,11 +211,22 @@ Asynchronous `interrupt` after `continue &` does not work reliably in
 batch mode here. Use a breakpoint you know will be hit instead.
 
 **Hardware watchpoints do work**, unlike conditions, and they catch
-writes through computed addresses that grepping the disassembly cannot:
+writes through computed addresses that grepping the disassembly cannot.
+**But you must watch the LINEAR address, and watching both is what
+actually works:**
 
 ```
-(gdb) watch *(unsigned int*)0x1e0a08
+(gdb) watch *(unsigned int*)0x1e0a08      # link address
+(gdb) watch *(unsigned int*)0xc01e0a08    # linear address
 ```
+
+Watching only the link address makes gdb fall back to a *software*
+watchpoint, which single-steps the guest: the first `continue` then
+never returns and looks like a hang. With both set, the hardware path
+engages and it runs at roughly **30 hits per second**, which is fast
+enough to scan thousands of writes. This difference is the whole reason
+a bug that had resisted several days of indirect searching was found in
+under a second.
 
 They report EIP *after* the storing instruction. This found `bzero`
 writing a variable via `rep stos`, which no search for direct stores to
