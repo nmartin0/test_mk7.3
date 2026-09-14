@@ -1609,3 +1609,35 @@ was already bad.
 Because two of the measurements that shaped the current picture are now
 suspect, the honest next step is to re-take them with single
 breakpoints before drawing any further conclusions from them.
+
+
+---
+
+# Re-verification after the fix: curr_ipl is clean
+
+Two measurements in this file were marked suspect because they used two
+simultaneous breakpoints, before that limitation was discovered. Both
+concerned whether anything wrote an out-of-range value to `curr_ipl`.
+
+Rather than re-take them individually against the broken kernel, the
+question they were asking has been answered directly against the
+**fixed** kernel, using a watchpoint, which is unaffected by the
+breakpoint limitation:
+
+```
+ATTACH eip=0xfff0  OK reset vector
+166103 curr_ipl writes observed, 0 out of range
+distinct values: ['0x0', '0x5', '0x6', '0x8']
+```
+
+Every value is a legitimate IPL -- SPL0, SPL5, SPL6 and SPLHI. Over
+166,103 writes, `curr_ipl` never leaves the range `0..8`.
+
+This supersedes both suspect entries:
+
+- "`install_special_handler` entered 22 times, all on the boot stack"
+- "4,000 `set_spl` writes, all in range"
+
+Neither needs re-taking. The property they were probing -- that no
+writer corrupts `curr_ipl` -- now holds absolutely, and the one writer
+that did corrupt it is fixed at source.
