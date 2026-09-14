@@ -704,3 +704,908 @@ gdb breakpoint conditions do **not** work against this stub (see
 `DEBUGGING.md` §3), so count and filter with `-d exec` or step manually.
 Because the failure is non-deterministic, take every value in the chain
 from the same run.
+
+
+---
+
+## Round 2 eliminations: the curr_ipl writers are clean
+
+All values below come from **single runs**, per section 0 of
+`DEBUGGING.md`.
+
+**`set_spl_noi` is eliminated.** It was the leading suspect, being the
+only unvalidated writer. Breaking on its first call:
+
+```
+first set_spl_noi call: eax = 0x5   (valid)
+console at that moment: "panic: splx(old 91, new 8)" ALREADY PRINTED
+```
+
+It never runs before the failure. Earlier readings of `0x1704f4`
+(`halt_all_cpus+36`) from it are all post-panic, from timer interrupts
+arriving while the kernel sits in its halt loop.
+
+**`set_spl` is eliminated.** 4,000 consecutive writes logged in one run,
+every one in range `0..8`.
+
+**The `-d exec` counts were wrong, in a way worth remembering.** `splx`
+*falls through* into `set_spl` at `0x159e08`, and a fallthrough does not
+start a new translated block, so the trace only counts entries reached
+by `call`. It reported 7 `set_spl` entries where a breakpoint sees
+thousands, and 1,574 `splx` entries where the panic had still not been
+reached after 4,000 `set_spl` writes. **Never size a brute-force search
+from a `-d exec` count where fallthrough is possible.**
+
+## Hardware watchpoints DO work, and found a writer grep missed
+
+Contrary to breakpoint *conditions*, which are silently ignored
+(`DEBUGGING.md` §3), hardware watchpoints function:
+
+```
+(gdb) watch *(unsigned int*)0x1e0a08
+Hardware watchpoint 1
+```
+
+Validated against known writes; it reports EIP **after** the storing
+instruction. First three hits of a boot:
+
+```
+eip=0x153539   bzero+17      rep stos    <- the BSS clear
+eip=0x158392   picinit+236   movl $0x8
+eip=0x159e18   set_spl+16    mov %eax,...
+```
+
+`bzero` is the important one: it writes `curr_ipl` through a computed
+address (`rep stos`), so **grepping the disassembly for stores to
+`0x1e0a08` does not find all writers**. The earlier claim in this file
+that "only four instructions write `curr_ipl`" is therefore wrong as
+stated — it was four *direct* stores. Any stray pointer write would
+likewise be invisible to that method.
+
+**Caveat on the instrument:** the watchpoint fires reliably for the
+first few hits, but a loop of 25 `continue`s produced no output at all,
+twice. It is usable for "what writes this, early" and not yet trusted
+for "scan until a condition holds". Validate before relying on it.
+
+## What is still unexplained
+
+`curr_ipl` holds `0x91` when `splclock` reads it, yet no writer has been
+caught writing an out-of-range value. Both cannot be true. The most
+likely wrong assumption is still the completeness of the writer set,
+which `bzero` has already shown to be incomplete once.
+
+Unresolved ambiguity worth stating plainly: at the panic, `[esp]` is
+`0x0010cc39` and `[esp+4]` is the bad value. `0x10cc39` is the
+instruction after `thread_hold`'s `call install_special_handler`. That is
+consistent with **either** reading -- `install_special_handler` tail-
+jumping into `splx` and leaving `thread_hold`'s frame in place, **or**
+something `call`ing `splx` with `0x10cc39` as a genuine return address.
+The tail-call reading was asserted earlier in this file with more
+confidence than the evidence supports.
+
+## Suggested next steps
+
+1. **Do not brute-force `set_spl`.** It is clean and the search space is
+   far larger than the trace suggests.
+2. Get a reliable long-running watchpoint, or find another way to catch
+   a write of a value `> 8` to `0x1e0a08`. Validate whatever is chosen
+   against a known write first.
+3. Settle the tail-call ambiguity by reading `[esp]` at `splx` *entry*
+   on a run that panics, and comparing `esp` there against `esp` at
+   `install_special_handler+62` in the **same** run.
+4. Consider whether `0x91`-class values could come from somewhere other
+   than `curr_ipl` at all -- the read is
+   `mov 0x1e0a08,%eax` then `movzbl %al,%ebx`, so only the low byte
+   survives, and every observed bad value fits in a byte.
+
+
+---
+
+## Round 3: the panic is on a different stack, and the trace counts are unreliable
+
+All values below come from **single runs**.
+
+### The whole chain, one run
+
+```
+A  at install_special_handler's "call splclock":
+       curr_ipl = 0x8        esp = 0x001c9f30      <- boot stack
+C  at its store of the argument:
+       ebx      = 0x8        esp = 0x001c9f30
+E  at splxpanic:
+       eax      = 0x91       esp = 0x08b78f1c      <- THREAD stack
+```
+
+The stacks are unrelated. `0x1c9f30` is the boot stack set up by
+`vstart` (`lea 0x1ca000,%esp`); `0x08b78f1c` is in kernel VM, allocated
+for a thread.
+
+### install_special_handler is healthy, and is called many times
+
+Breaking on `0xc010cba9` and logging every call in one run: **22
+consecutive calls, every one on the boot stack with `curr_ipl = 8` and
+`ebx = 8`.** None of them is the failing call.
+
+So the panicking `splx` comes from a later invocation running on a
+thread stack, and stepping to it one breakpoint at a time does not
+converge -- 22 iterations took about 150 seconds.
+
+### The `-d exec` counts have been wrong every time
+
+This is the finding with the widest consequences. Comparing trace counts
+against breakpoint counts, in the same build:
+
+| function | `-d exec` said | breakpoints show |
+|---|---|---|
+| `set_spl` | 7 | thousands |
+| `splx` | 1574 | still not panicking after 4000 |
+| `install_special_handler` | 1 | at least 22 |
+
+Two distinct causes:
+
+- **Fallthrough.** `splx` falls through into `set_spl`; a fallthrough
+  does not start a new translated block, so only `call`-entries count.
+- **Block chaining.** QEMU chains translated blocks and does not
+  re-log an entry every time a chained block is re-executed, so a
+  function called repeatedly from the same site can be logged once.
+
+**Consequence: `-d exec` is reliable for "was this code ever reached"
+and for the *order* of first entry. It is not reliable for "how many
+times", and must not be used to size a search or to conclude that
+something runs only once.** Several earlier inferences in this file were
+built on exactly that, including the claim that
+`install_special_handler` is "entered exactly once before the panic".
+
+### What is now known about the failing call
+
+`0x10cc39` on the panic stack **cannot** be a return address from a call
+to `splx`: `thread_hold+41` is `mov 0x184(%ebx),%eax`, not a call
+instruction. It is the return address from
+`call install_special_handler` at `thread_hold+36`. So either
+
+- `install_special_handler` tail-jumped into `splx` from an invocation
+  running on a thread stack -- consistent with everything, and the
+  simplest reading -- or
+- it is stale data on that thread's stack and the real caller is
+  elsewhere.
+
+The first is more likely, because the value at `[esp+4]` is exactly the
+bad IPL, which is where `install_special_handler`'s tail call puts its
+argument.
+
+### Next experiment
+
+Catch `install_special_handler` on a **thread** stack rather than the
+boot stack. `esp` is the discriminator: boot stack is `0x001c9xxx`,
+thread stacks are in kernel VM around `0x08bxxxxx`.
+
+gdb breakpoint conditions do not work here, so this needs either a
+scripted loop that continues until `$esp >> 20 != 0x1c9`, accepting the
+runtime, or a different instrument. Before investing in the loop, note
+that the same script reached only 22 calls in 150 seconds; the panic is
+much further out.
+
+An alternative worth trying first: make the failure happen sooner or
+more often. `thread_hold` is called per thread creation, so a
+configuration that creates fewer threads, or booting without modules so
+the boot script does not run, may reach the failing call earlier. Booting
+with no modules still panics with the same class of value, and is a
+shorter path.
+
+
+---
+
+## Round 4: instrument limits mapped, and a latent width bug next door
+
+### Booting without modules does not shorten the path
+
+Logged every `install_special_handler` call with no modules supplied:
+30 calls, all on the boot stack (`esp=0x001c9f30`), all with
+`curr_ipl = 8`. The suggestion at the end of round 3 -- that the
+no-module boot might reach the failing call sooner -- is **wrong**, and
+should not be retried.
+
+### splx has 503 call sites
+
+```
+408  call 159df2 <splx>
+ 95  jmp  159df2 <splx>     (tail calls)
+```
+
+Focusing on `install_special_handler` was far too narrow. The stack
+layout at the panic still points there, but it is one of 503.
+
+### Every gdb feature that evaluates and resumes is broken
+
+Already known: breakpoint **conditions** are silently ignored. Now also
+measured: **ignore counts** do not work either.
+
+```
+(gdb) ignore 1 50          -> prints nothing (should confirm)
+(gdb) continue             -> stops; registers then unreadable
+(gdb) info breakpoints     -> "ignore next 50 hits"   (never decremented)
+```
+
+The coherent picture: this stub supports setting breakpoints and
+stopping at them. **Anything requiring gdb to evaluate at a stop and
+resume automatically -- conditions, ignore counts -- silently does
+nothing useful.** Only manual stop-and-read loops work, at roughly six
+stops per second, which is what makes a search of this size impractical.
+
+### curr_ipl's neighbourhood, and a real latent bug
+
+`curr_ipl` sits inside a block of 2-byte PIC register variables:
+
+```
+0x1e0a06 .. 0x1e0a08  size=2   master_ocw
+0x1e0a08 .. 0x1e0a0c  size=4   curr_ipl
+0x1e0a0c .. 0x1e0a0e  size=2   PICM_ICW3
+```
+
+Every access to `master_ocw` in the linked image:
+
+```
+15833c:  66 89 0d 06 0a 1e 00   mov %cx,0x1e0a06     WRITE, 16-bit
+159e37:  8b 15 06 0a 1e 00      mov 0x1e0a06,%edx    READ,  32-bit
+159e78:  8b 15 06 0a 1e 00      mov 0x1e0a06,%edx    READ,  32-bit
+```
+
+The reads are 32-bit against a 2-byte object, so they pull `curr_ipl`'s
+low half into the top of `%edx`. The cause is an assembly/C width
+disagreement:
+
+```c
+i386/pic.c:171      i386_ioport_t master_icw, master_ocw, slaves_icw, slaves_ocw;
+```
+```asm
+i386/spl.S:170      movl EXT(master_ocw),%edx
+i386/interrupt.S:233,263   movl EXT(master_icw),%edx
+```
+
+**This is not the panic cause.** It is a read, not a write, so it cannot
+corrupt `curr_ipl`; and only `%dx` reaches `outb %al,(%dx)`, so the port
+number is right. Recorded because it is real, because it is the fourth
+instance of assembly and C disagreeing about a shared object's
+representation, and because anyone who later changes the layout of these
+variables or starts using the full `%edx` will be bitten by it.
+
+### Where that leaves the search
+
+Still unexplained: `curr_ipl` reads `0x91` at the failing `splclock`,
+and no writer has been caught writing out of range. Ruled out so far:
+`set_spl`, `set_spl_noi`, `intpri[]`, every observed
+`install_special_handler` call, and now the neighbouring-variable
+overrun theory.
+
+The remaining candidates, in the order worth trying:
+
+1. **A stray pointer write** from anywhere in the kernel. A hardware
+   watchpoint is the only instrument that can see this; it works for the
+   first few hits but has not been made to scan (see above). Getting a
+   long-running watchpoint working is probably the highest-value
+   instrument work available.
+2. **The failing `install_special_handler` invocation on a thread
+   stack**, which needs either a working conditional stop or a way to
+   make the failure occur sooner. Both currently unavailable.
+3. That `curr_ipl` is not the source at all -- the read is
+   `mov 0x1e0a08,%eax` then `movzbl %al,%ebx`, so only the low byte
+   survives, and every bad value observed fits in a byte.
+
+
+---
+
+# FOUND: set_spl_noi writes a code address into curr_ipl
+
+**This supersedes every "eliminated" verdict above that concerns
+`set_spl_noi`. Read this section first.**
+
+## The measurement
+
+A hardware watchpoint on `curr_ipl`, logging the first 20 writes of one
+run:
+
+```
+ 0 t=0.01s eip=0x00159e18 curr_ipl=0x8        esp=0x001c9fec
+ 1 t=0.01s eip=0x00159e61 curr_ipl=0x1704f4   esp=0x001c9ff4
+ 2 t=0.02s eip=0x00159e18 curr_ipl=0x8        esp=0x001c9fec
+ 3 t=0.03s eip=0x00159e61 curr_ipl=0x1704f4   esp=0x001c9ff4
+ ...  alternating, every ~0.005s, indefinitely
+```
+
+`0x159e18` is `set_spl+16`, writing a correct `0x8`.
+`0x159e61` is `set_spl_noi+5`, writing **`0x1704f4`**, which is
+`halt_all_cpus+36` -- a code address, not an IPL.
+
+## Two earlier verdicts in this file are wrong
+
+- **"`set_spl_noi` is eliminated."** It was eliminated on the evidence
+  that its *first* call carries `eax = 0x5`. That is true and
+  irrelevant: the first call is fine and every subsequent one is not.
+  Checking only the first instance of a repeating call is not an
+  elimination.
+- **"The `0x1704f4` readings are all post-panic."** They are not.
+  `esp = 0x001c9ff4` is the **boot stack**, and the writes begin at
+  t=0.01s, long before the panic. That dismissal was based on the value
+  looking like halt-loop noise rather than on when it occurred.
+
+## Why the value is what it is
+
+`set_spl_noi` has exactly one caller, `return_from_interrupt`, which
+recovers the saved IPL like this:
+
+```asm
+                pushl   %eax                    # save old IPL
+                pushl   EXT(iunit)(,%ecx,4)     # unit# as handler arg
+                call    *EXT(ivect)(,%ecx,4)    # the handler
+return_from_interrupt:
+                addl    $4,%esp                 # drop the handler arg
+                cli
+                popl    %eax                    # the saved IPL
+```
+
+Recovering `halt_all_cpus+36` from that `popl` means the stack is **off
+by one slot** at that point: it pops a return address where the saved
+IPL should be. `set_spl_noi` then writes it to `curr_ipl` with no bounds
+check, which is why nothing catches it.
+
+This also explains the downstream behaviour that has been chased for
+several rounds. Once `curr_ipl` holds a code address, the next
+`splclock`/`splsched` returns it, `movzbl %al,%ebx` keeps the low byte,
+and `splx` is handed a value like `0xf4` -- a byte-sized garbage value
+that differs per run because the code address differs. Every observed
+bad value fits in a byte, which matches.
+
+## Next step
+
+Work out why the interrupt return stack is off by one slot. Candidates,
+untested:
+
+1. A handler reached through `ivect[]` that does not conform to the
+   convention `return_from_interrupt` assumes. `intnull` is the stub for
+   unregistered vectors and `intnull(14)` prints immediately before the
+   panic in every run.
+2. A path that reaches `return_from_interrupt` without having pushed
+   both the saved IPL and the handler argument -- i.e. a `jmp` into the
+   middle of the sequence rather than a fall-through from the `call`.
+3. `ETAP_INTERRUPT_PROBE` or `MP_*` macros expanding to something that
+   disturbs the stack in this configuration.
+
+Check 2 first: search for every branch to `return_from_interrupt` and
+confirm each arrives with the same stack shape.
+
+
+---
+
+## Instrument failure: stale QEMU processes invalidated measurements
+
+`pkill -x qemu-system-i386` **never matched anything**. Linux truncates
+`comm` to 15 characters, so the process is `qemu-system-i38`. Every
+"fresh" QEMU started during this investigation raced a stale one for
+port 1234, and gdb frequently attached to the old, already-failed guest.
+
+Two runs of the identical watchpoint script, back to back:
+
+```
+run 1   initial curr_ipl = <unreadable, guest at reset>
+        bzero(0) -> picinit(8) -> set_spl(5) -> set_spl(6) -> set_spl_noi(5)
+        all healthy
+
+run 2   initial curr_ipl = 0x1704F4        <- already corrupt AT ATTACH
+        then the alternating 0x8 / 0x1704f4 pattern
+```
+
+Run 2 is an artefact. The guest was started with `-S` and cannot have
+executed, so gdb was talking to the previous run's process.
+
+Confirmed directly: after `pkill -x qemu-system-i386`,
+`ps -eo pid,etimes,comm` still shows `qemu-system-i38` alive, and a
+freshly attached gdb reports `eip = 0x1704f4` and
+`curr_ipl = 0x1704f4` before any `continue`.
+
+### What this invalidates
+
+Any measurement in this file where the guest appears to be **past the
+failure at attach time** must be treated as suspect. Specifically:
+
+- **The alternating `set_spl` / `set_spl_noi` pattern** reported in the
+  previous section was captured in a stale-process run. The conclusion
+  that `set_spl_noi` writes a code address into `curr_ipl` is therefore
+  **not established**. It may still be true -- but it was observed on a
+  guest that had already failed, where the value is expected to be
+  garbage and the alternation is just the halt loop taking timer
+  interrupts.
+- Earlier readings of `0x1704f4` that were dismissed as "post-panic
+  noise" were probably correct after all, for this reason.
+- The inconsistent breakpoint behaviour seen throughout -- breakpoints
+  "not firing", registers unreadable, hit sequences differing between
+  identical runs -- is explained by this and need not be attributed to
+  the gdb stub.
+
+### What survives
+
+Run 1, taken against a guest genuinely at reset, is clean:
+
+```
+bzero writes 0, picinit writes 8, set_spl writes 5, 6, then
+set_spl_noi writes 5
+```
+
+Every early write is a valid IPL. So on a correctly-started guest, the
+first writes to `curr_ipl` are healthy and the corruption happens later.
+
+The gdb limitations recorded earlier -- conditions and ignore counts
+silently doing nothing -- were each observed more than once and are
+probably real, but should be re-confirmed on a guest verified to be at
+reset before being relied on again.
+
+### Required procedure from now on
+
+```sh
+pkill -x qemu-system-i38
+ps -eo pid,etimes,comm | grep qemu     # must be empty
+```
+
+and, at attach, assert the guest is at reset before measuring:
+
+```
+(gdb) info registers eip        # expect 0x0000fff0, the reset vector
+```
+
+Any run where `eip` is not the reset vector at attach is invalid and
+must be discarded.
+
+
+---
+
+# RE-ESTABLISHED, on a verified-clean guest: set_spl_noi writes a return address
+
+The previous section retracted this finding because it had been measured
+on a stale guest. Re-run under the corrected procedure, **it holds.**
+
+## The measurement
+
+Procedure followed exactly: `pkill -x qemu-system-i38`, `ps` confirmed
+empty, guest started with `-S`, and `eip` asserted at attach.
+
+```
+ATTACH eip=0xfff0  OK reset vector
+
+  #1  val=0x0       eip=0x153539   bzero
+  #2  val=0x8       eip=0x158392   picinit
+  #3  val=0x5       eip=0x159e18   set_spl
+  #4  val=0x6       eip=0x159e18   set_spl
+  #5  val=0x5       eip=0x159e61   set_spl_noi      <- valid
+  #6  val=0x8       eip=0x159e18   set_spl
+  ...
+*** FIRST OUT-OF-RANGE at write #51, t=0.7s:
+    curr_ipl = 0x121591  from eip=0x159e61 (set_spl_noi)
+    esp = 0x1c9ff4 (boot stack)
+```
+
+45 healthy writes precede it, and it happens at t=0.7s -- long before
+the panic, on the boot stack, on a guest proven to have started at the
+reset vector. This is not halt-loop noise.
+
+## Where 0x121591 comes from
+
+It is not a stale value or a coincidence. It is exactly a return site:
+
+```asm
+00121560 <thread_continue>:
+  ...
+  12158c:  call 159db0 <spllo>
+  121591:  add  $0x4,%esp        <- the value found in curr_ipl
+```
+
+and `spllo` is a tail-jump stub:
+
+```asm
+00159db0 <spllo>:
+  159db0:  mov $0x0,%eax
+  159db5:  jmp 159e08 <set_spl>
+```
+
+So `thread_continue`'s `call spllo` pushes `0x121591`, `spllo` jumps
+rather than calls, and that return address remains at `[esp]` for the
+whole of `set_spl`. `return_from_interrupt` later executes
+
+```asm
+154d48:  add  $0x4,%esp
+154d4b:  cli
+154d4c:  pop  %eax          <- retrieves 0x121591, not the saved IPL
+154d55:  call 159e5c <set_spl_noi>
+```
+
+and `set_spl_noi` writes it to `curr_ipl` with no bounds check.
+
+Downstream this is exactly what has been chased: the next `splclock`
+returns the code address, `movzbl %al,%ebx` keeps its low byte, and
+`splx` is handed a byte-sized garbage value -- `0x91`, that differs per
+run because the code address differs.
+
+## What is still not established
+
+**Why** `return_from_interrupt`'s `pop` reaches `thread_continue`'s
+frame. The call site's own push/pop accounting is correct, verified
+instruction by instruction, and `intnull` balances exactly (28 consumed,
+28 restored). Both were checked. So the stack is already off by one slot
+*before* `return_from_interrupt` runs.
+
+The tail-jump structure of the spl family is the obvious place to look:
+`spllo`, `splbio`, `spltty`, `splnet`, `splimp` all `jmp` into `set_spl`
+rather than calling it, so every one of them leaves its caller's return
+address at `[esp]` while `set_spl` executes. If an interrupt is taken in
+that window and its return path assumes a different stack shape, this is
+precisely the value that would surface.
+
+Next: determine whether the interrupt is taken inside the
+`spllo`/`set_spl` window. `set_spl` does `cli` at `0x159e0b`, three
+instructions after entry, so there is a real window in which interrupts
+are still enabled.
+
+
+---
+
+# The trigger: com0 and fdc0 interrupt with no handler registered
+
+Refines the previous section. `0x121591` is **not** `thread_continue`'s
+return address left on the stack by `spllo`'s tail jump. It is the
+**interrupted EIP**, pushed by the CPU as part of the hardware interrupt
+frame.
+
+## The evidence
+
+Every interrupt taken during a clean boot, by EIP:
+
+```
+1477  IP=0008:001704f4   halt_all_cpus   (post-panic, the halt loop)
+   2  IP=0008:0016e557
+   2  IP=0008:00121591   thread_continue+49   <- the bad value
+   1  IP=0008:0017307d
+   1  IP=0008:00158410   intnull
+```
+
+and the records themselves:
+
+```
+Servicing hardware INT=0x44
+  v=44  IP=0008:00121591  SP=0010:08b78fd0  EAX=00000008  EFL=00000202
+Servicing hardware INT=0x46
+  v=46  IP=0008:00121591  SP=0010:08b78fd0  EAX=00000008
+```
+
+`INT_VEC_START` is `0x40`, so these are **IRQ 4 and IRQ 6**. `EFL` has
+`IF` set, so interrupts were legitimately enabled -- `thread_continue`
+had just called `spllo`, which sets `SPL0`.
+
+`EAX = 8` at the moment of interrupt, so `curr_ipl` was healthy going
+in. The corruption is entirely on the way out.
+
+## Why those two IRQs
+
+The boot log configures both devices:
+
+```
+fdc0: port = 3f2, spl = 5, pic = 6.
+com0: at atbus2, port = 3f8, spl = 6, pic = 4. (DOS COM1)
+```
+
+but the dispatch table does not have handlers for them:
+
+```
+ivect[ 0] = hardclock      ivect[ 1] = kdintr
+ivect[ 4] = intnull   <-- com0 configured on pic 4
+ivect[ 6] = intnull   <-- fdc0 configured on pic 6
+ivect[13] = fpintr        ivect[14] = intnull
+```
+
+So the devices are probed, configured and **enabled at the PIC**, but
+their interrupts dispatch to the null stub. That is the trigger: a real
+device raises a real interrupt that nothing claims.
+
+`intnull` itself is correct -- it balances exactly, 28 bytes consumed
+and restored -- so the fault is not in the stub. The fault is that
+`return_from_interrupt`'s `pop %eax` retrieves the CPU-pushed EIP from
+the hardware frame rather than the IPL the kernel pushed, which means
+the entry and exit paths disagree about the stack shape by exactly the
+hardware frame.
+
+## Two questions for the next session
+
+1. **Why does the interrupt exit path reach the hardware frame?** The
+   call site's own accounting is correct and `intnull` balances, both
+   verified instruction by instruction. So the discrepancy is in how the
+   interrupt is *entered* -- what pushes happen before the code at
+   `0x154d34` runs, and whether every vector arrives through the same
+   prologue.
+2. **Why are com0 and fdc0 configured without handlers?** This may be a
+   second, independent defect. If the drivers are meant to register via
+   `ivect[]` during autoconfiguration and are not doing so, that is
+   worth understanding on its own -- and fixing it would also remove the
+   trigger, though not the underlying stack bug.
+
+Question 2 is the cheaper one and may be the real fix: a kernel whose
+configured devices register their handlers would not exercise this path
+at all.
+
+
+---
+
+# RETRACTION: com0 and fdc0 DO have handlers registered
+
+The previous section claimed `ivect[4]` and `ivect[6]` were `intnull`,
+i.e. that com0 and fdc0 configured without registering handlers. **That
+is wrong.** The reading was taken through gdb against a stale guest,
+before the `pkill` defect was found.
+
+Re-read on a guest verified at the reset vector, stopped at the panic:
+
+```
+  ivect[ 0] = 0x001540a0  hardclock
+  ivect[ 1] = 0x0016d220  kdintr
+  ivect[ 4] = 0x0015e740  comintr      <- real handler
+  ivect[ 6] = 0x00161240  fdintr       <- real handler
+  ivect[13] = 0x00153f30  fpintr
+  ivect[14] = 0x00158410  intnull      <- the only null stub
+```
+
+The device table was right all along: `autoconf.c:600` carries
+`(intr_t)comintr` and `:406` carries `(intr_t)fdintr`, `take_dev_irq`
+passes `dev->intr` through to `take_irq`, and `take_irq` installs it.
+Autoconfiguration works correctly. There is no missing-handler defect.
+
+So the "cheaper question" recommended at the end of the previous section
+does not exist. Only question 1 remains: **why the interrupt exit path
+reaches the hardware frame.**
+
+## What still stands from that section
+
+The interrupt evidence itself came from standalone `-d int` runs, which
+write to their own log file and do not use gdb or port 1234, so they are
+not affected by the stale-process defect. Still valid:
+
+```
+Servicing hardware INT=0x44
+  v=44  IP=0008:00121591  SP=0010:08b78fd0  EAX=00000008  EFL=00000202
+Servicing hardware INT=0x46
+  v=46  IP=0008:00121591  SP=0010:08b78fd0  EAX=00000008
+```
+
+Two interrupts are taken at `thread_continue+49`, with `IF` set and
+`curr_ipl` healthy at 8. `0x121591` is the interrupted EIP from the
+hardware frame, and it is the value that later appears in `curr_ipl`.
+
+But the reading changes. These are **IRQ 4 and IRQ 6 being serviced
+normally by `comintr` and `fdintr`** -- ordinary device interrupts on a
+working kernel, not unclaimed interrupts hitting a null stub. The path
+that corrupts `curr_ipl` is therefore the *normal* interrupt path, not
+an error path, which makes it a more serious defect than described and
+removes the possibility of side-stepping it.
+
+## Lesson
+
+Every gdb-derived reading taken before the `pkill` defect was found must
+be re-verified before being relied on. The `-d int` and `-d exec` runs
+are not affected. Readings already re-confirmed on clean guests:
+
+- the `set_spl_noi` out-of-range write at t=0.7s -- **holds**
+- `ivect` contents -- **retracted, was wrong**
+
+Not yet re-verified, and currently unsafe to rely on: `intpri` contents,
+the gdb conditions and ignore-count limitations, and the
+`install_special_handler` boot-stack readings.
+
+
+---
+
+# The interrupt entry switches stacks; that is where to look next
+
+`return_from_interrupt`'s `pop %eax` does **not** run on the stack the
+interrupt arrived on. `all_intrs`, the IDT stub at `0x1005da`, switches
+to a dedicated interrupt stack first:
+
+```asm
+1005da:  push %ecx
+1005db:  push %edx
+1005dc:  cld
+1005dd:  cmp  %ss:0x1ca000,%esp     ; already on the interrupt stack?
+1005e4:  jb   10063e <int_from_intstack>   ; yes -> do not switch
+1005e6:  push %ds
+1005e7:  push %es
+1005e8:  mov  %ss,%dx
+1005eb:  mov  %edx,%ds
+1005ed:  mov  %edx,%es
+1005ef:  mov  $0x48,%dx
+1005f3:  mov  %edx,%gs
+1005f5:  mov  0x1ca004,%ecx         ; int_stack_top
+1005fb:  xchg %ecx,%esp             ; SWITCH to the interrupt stack
+1005fd:  push %ecx                  ; save the old esp
+1005fe:  mov  $0x8,%edx
+100603:  incl %gs:(%edx)            ; cpu_data interrupt nesting count
+100606:  call 154ce4 <interrupt>    ; dispatch; contains the IPL push/pop
+10060b:  mov  $0x8,%edx
+100610:  decl %gs:(%edx)
+100613:  pop  %esp                  ; switch back
+```
+
+This ties the observations together:
+
+- The interrupt was taken with `SP = 0x08b78fd0`, a thread stack.
+- The corrupted `set_spl_noi` write had `esp = 0x1c9ff4`, which is just
+  below `0x1ca000` -- the **interrupt stack**, exactly where the push
+  and pop of the saved IPL happen after the switch.
+
+So the `push %eax` at `0x154d39` and the `pop %eax` at `0x154d4c` both
+execute on the interrupt stack, inside the `call interrupt` at
+`0x100606`. Their accounting was verified correct in isolation, and
+`intnull` balances, so if the popped value is wrong the discrepancy must
+come from the surrounding structure rather than from those instructions.
+
+## What to examine
+
+1. **The switch guard.** `cmp %ss:0x1ca000,%esp` then `jb`. A thread
+   stack at `0x08b78fd0` is far above `0x1ca000`, so the branch is not
+   taken and the switch happens -- correct. A nested interrupt already
+   on the interrupt stack would be below `0x1ca000` and would take
+   `int_from_intstack` -- also correct on the face of it. Both arms need
+   checking against what `interrupt` and `return_from_interrupt` assume.
+2. **`int_from_intstack` at `0x10063e`.** This is the no-switch arm. If
+   it reaches `return_from_interrupt` with a different stack shape than
+   the switching arm, that is the defect. It was never examined.
+3. **The interrupt stack itself.** `0x1ca000` is also where `vstart` put
+   the boot stack (`lea 0x1ca000,%esp`). If the boot stack and the
+   interrupt stack are the same memory, an interrupt arriving while the
+   kernel is still on the boot stack would switch onto a region it is
+   already using. Worth confirming; `int_stack_top` is read from
+   `0x1ca004` and the guard compares against `0x1ca000`.
+
+Point 3 is the most suspicious and the cheapest to check.
+
+## Reminder on trust
+
+Everything above is disassembly of the linked image, which is not
+affected by the stale-guest defect. The runtime readings quoted --
+`SP = 0x08b78fd0` and `esp = 0x1c9ff4` -- come from a `-d int` log and
+from a watchpoint run on a guest verified at the reset vector
+respectively, so both are sound.
+
+
+---
+
+# Stack layout confirmed: boot and interrupt stacks are one 4 KB region
+
+Point 3 of the previous section is confirmed, and it is **by design**,
+not a defect.
+
+```
+intstack        = 0x1c9000
+eintstack       = 0x1ca000        interrupt stack is exactly 4 KB
+int_stack_high  @ 0x1ca000, value 0x1ca000
+int_stack_top   @ 0x1ca004, value 0x1ca000
+vstart          : lea 0x1ca000,%esp
+```
+
+`start.S` declares the region as "Interrupt and bootup stack for initial
+processor" -- OSF deliberately shares it. `vstart` sets `%esp` to
+`eintstack`, so the boot stack **is** the interrupt stack.
+
+The switch guard is therefore correct in both directions:
+
+- on the boot stack, `esp` is just under `0x1ca000`, so
+  `cmp int_stack_high,%esp; jb` takes the branch to
+  `int_from_intstack` and does **not** switch -- right, because it is
+  already the interrupt stack;
+- on a thread stack such as `0x08b78fd0`, far above `0x1ca000`, the
+  branch is not taken and the switch happens. **This is the failing
+  case.**
+
+Every runtime value observed in this investigation lies in that 4 KB
+region: `install_special_handler` at `esp = 0x1c9f30`, 208 bytes from
+the top, and the corrupted `set_spl_noi` write at `esp = 0x1c9ff4`, just
+12 bytes from the top.
+
+## A typo in start.S, harmless
+
+`start.S:249` defines the label with the colon inside the macro
+argument:
+
+```asm
+        .globl  EXT(eintstack)
+EXT(eintstack:)                 <- should be EXT(eintstack):
+```
+
+Line 246 gets it right for `intstack`. It assembles and resolves
+correctly -- `nm` shows `eintstack` at `0x1ca000` as intended -- because
+`EXT(x)` expands to `x` here and `EXT(eintstack:)` therefore yields
+`eintstack:`, a valid label. It works under the underscore convention
+too. **Not a bug, and not to be "fixed";** recorded only so the next
+reader does not spend time on it, as this one did.
+
+## Where the search now stands
+
+The structure is understood and is correct as written:
+
+- entry stub, switch guard and both arms -- examined, consistent
+- `interrupt`'s push/pop accounting -- verified instruction by
+  instruction
+- `intnull` -- balances exactly, 28 bytes
+- stack layout and sharing -- confirmed, deliberate
+- `ivect` registration -- correct, handlers installed
+
+And yet `pop %eax` at `0x154d4c` retrieves the interrupted EIP. Every
+individual piece checks out while the whole does not, which means the
+wrong assumption is still somewhere unexamined rather than in any of the
+pieces above.
+
+The most likely remaining place is the **transition between the two
+arms**: what happens when an interrupt arrives on a thread stack,
+switches to the shared 4 KB region, and the code already using that
+region -- the boot stack context -- is still live. The shared-stack
+design is only safe if the boot stack is abandoned before threads run.
+`install_special_handler` was observed running at `esp = 0x1c9f30`, on
+the boot stack, *while* threads existed. That combination is worth
+checking directly: if boot-stack code is still executing when a
+thread-stack interrupt switches onto the same region, the two will
+overwrite each other.
+
+
+---
+
+# Instrument failure: only one breakpoint services at a time
+
+Setting two breakpoints and continuing services only one of them,
+silently. Three runs against the same build:
+
+```
+bps at 0x154d39 + 0x154d4c  ->  only 0x154d39 fired, 23 times
+bps at 0x154d41 + 0x154d48  ->  only 0x154d41 fired, 16 times
+bp  at 0x154d48 alone       ->  fires normally, 8 for 8
+```
+
+The natural reading of the first two is "the code between A and B is
+never reached". That produced a confident and completely wrong
+conclusion here: that `kdintr` never returns, and therefore that the
+interrupt path never completes and never restores the saved IPL. Tested
+in isolation, the handler returns every time.
+
+A second error rode along with it. With those breakpoints set, `%ecx`
+was read as the interrupt vector and reported as `vec=1`, the keyboard.
+At `0x154d48`, `%ecx` has been reused and reads `97`. The vector
+attribution was wrong too.
+
+## Measurements this invalidates
+
+Any run in this file that used **two or more simultaneous breakpoints**
+must be re-taken. Known cases:
+
+- "`install_special_handler` entered 22 times, all on the boot stack" --
+  used a breakpoint plus `splxpanic`. **Suspect.**
+- "4,000 `set_spl` writes, all in range" -- used two breakpoints.
+  **Suspect.**
+
+Measurements that remain sound:
+
+- The A/C/E chain capture, which used `break`, measure, `delete`,
+  `break` sequentially -- **valid**.
+- All watchpoint scans. Two *watchpoints* behave differently from two
+  breakpoints and are in fact required; see `DEBUGGING.md`.
+- Everything from `-d int` and `-d exec`, which do not involve gdb.
+- All disassembly.
+
+## Required technique
+
+**One breakpoint at a time.** Set it, measure, `delete`, set the next.
+Never infer "the code between A and B was not reached" from two
+breakpoints; verify the second in isolation first.
+
+## Where the search stands
+
+No progress on the defect itself this round. The circularity is
+unchanged: `curr_ipl` first goes bad at watchpoint write #51 with 45
+good writes before it, every writer checks out, every stack accounting
+checks out, and `set_spl` returns the old `curr_ipl` -- which says it
+was already bad.
+
+Because two of the measurements that shaped the current picture are now
+suspect, the honest next step is to re-take them with single
+breakpoints before drawing any further conclusions from them.

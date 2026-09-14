@@ -15,6 +15,7 @@ ordinary user tasks and can be built and debugged at runtime.
 | `build/` | everything we write. |
 | `AGENTS.md` | operational rules — read before changing anything. |
 | `WORKFLOW.md` | how work is done here — read this first. |
+| `ENVIRONMENT.md` | toolchain, ODE, MIG, and how to reproduce the build. |
 | `DEBUGGING.md` | how to find out why the kernel misbehaves; read before debugging. |
 | `docs/` | design notes, open decisions, and the current blocker. |
 | `tools/` | debugging helpers. |

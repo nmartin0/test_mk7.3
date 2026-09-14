@@ -210,11 +210,84 @@ better by address than by name: gdb frequently reports
 Asynchronous `interrupt` after `continue &` does not work reliably in
 batch mode here. Use a breakpoint you know will be hit instead.
 
-**Breakpoint conditions do not work at all.** `break *ADDR if $eax != 8`
-stops with `$eax == 8`; the condition is ignored and the breakpoint
-behaves as unconditional. This silently produces wrong answers rather
-than an error, so never filter with a condition -- count and filter with
-a `-d exec` trace instead.
+**Hardware watchpoints do work**, unlike conditions, and they catch
+writes through computed addresses that grepping the disassembly cannot.
+**But you must watch the LINEAR address, and watching both is what
+actually works:**
+
+```
+(gdb) watch *(unsigned int*)0x1e0a08      # link address
+(gdb) watch *(unsigned int*)0xc01e0a08    # linear address
+```
+
+Watching only the link address makes gdb fall back to a *software*
+watchpoint, which single-steps the guest: the first `continue` then
+never returns and looks like a hang. With both set, the hardware path
+engages and it runs at roughly **30 hits per second**, which is fast
+enough to scan thousands of writes. This difference is the whole reason
+a bug that had resisted several days of indirect searching was found in
+under a second.
+
+They report EIP *after* the storing instruction. This found `bzero`
+writing a variable via `rep stos`, which no search for direct stores to
+that address would have shown. But they have only proved reliable for
+the first few hits: a loop of 25 `continue`s produced nothing at all,
+twice. Use them to answer "what writes this, early", validate against a
+known write first, and do not yet trust them to scan.
+
+**`-d exec` counts are not execution counts.** Measured against
+breakpoints in the same build:
+
+| function | trace said | breakpoints show |
+|---|---|---|
+| `set_spl` | 7 | thousands |
+| `splx` | 1574 | >4000 |
+| `install_special_handler` | 1 | at least 22 |
+
+Two causes. A **fallthrough** from one function into the next does not
+start a new translated block, so only `call`-entries are counted; `splx`
+falls through into `set_spl`. And QEMU **chains** translated blocks, so
+a block re-executed through a chain is not re-logged.
+
+Use `-d exec` for "was this reached" and for the *order* of first entry.
+Never use it for "how many times", to size a brute-force search, or to
+conclude something runs only once. That last error was made here and
+three separate conclusions were built on it.
+
+**Only ONE breakpoint works at a time.** Setting two and continuing
+services only one of them, silently, forever. Demonstrated three ways
+against the same build:
+
+| breakpoints set | which fired |
+|---|---|
+| `0x154d39` + `0x154d4c` | only `0x154d39`, 23 times in a row |
+| `0x154d41` + `0x154d48` | only `0x154d41`, 16 times in a row |
+| `0x154d48` **alone** | fires normally, every time |
+
+This is the most dangerous limitation of the lot, because the natural
+reading of "breakpoint A fired 23 times and B never did" is that the
+code between them is never reached. Here it produced a confident,
+completely wrong conclusion that an interrupt handler never returned.
+
+**Set one breakpoint, measure, `delete`, set the next.** Sequential
+single breakpoints work reliably and were used for the chain
+measurements in `docs/current-blocker.md`. Two *watchpoints* are
+different and are required -- see above.
+
+Any measurement using two or more simultaneous breakpoints must be
+re-taken.
+
+**Every gdb feature that evaluates and resumes is broken.** Setting
+breakpoints and stopping at them works. Anything where gdb must decide
+at a stop and continue on its own does not, and fails silently:
+
+- `break *ADDR if $eax != 8` stops with `$eax == 8`. The condition is
+  ignored.
+- `ignore 1 50` prints nothing, and `info breakpoints` afterwards still
+  says "ignore next 50 hits" -- the count is never decremented.
+
+Only manual stop-and-read loops work, at roughly six stops per second.
+Budget accordingly: a search needing thousands of stops is not viable.
 
 **gdb often cannot read kernel data at a breakpoint** even when reading
 registers works. Both the link address and the linear address return
@@ -404,8 +477,32 @@ The last row is the positive control and matters as much as the others.
 
 ## 9. Instrument hygiene
 
-- **`pkill -f qemu` matches your own shell's command line** and kills
-  the session mid-command. Use `pkill -x qemu-system-i386`.
+- **Killing stale QEMU processes is harder than it looks, and getting it
+  wrong silently corrupts every measurement.**
+
+  `pkill -f qemu` matches your own shell's command line and kills the
+  session mid-command. But `pkill -x qemu-system-i386` **never matches
+  anything**: Linux truncates `comm` to 15 characters and
+  `qemu-system-i386` is 16, so the process is named `qemu-system-i38`.
+
+  ```sh
+  pkill -x qemu-system-i38        # correct
+  ps -eo pid,etimes,comm | grep qemu    # always verify
+  ```
+
+  The failure mode is vicious. A stale QEMU keeps port 1234 bound, so
+  the next `gdb -ex 'target remote :1234'` attaches to the **old,
+  already-failed guest** instead of the new one -- even though the new
+  one was started with `-S` and cannot have run. It looks like a guest
+  that booted and failed instantly. Symptoms seen here: `curr_ipl`
+  already `0x1704f4` before the first `continue`, `eip` already at
+  `halt_all_cpus+36`, watchpoint hit sequences differing between
+  supposedly identical runs, and breakpoints "not firing" because the
+  stale guest was already past them.
+
+  **Always confirm no QEMU survives before starting a new one**, and
+  treat any measurement where the guest appears to be past the failure
+  at attach time as invalid.
 - Verify a compiler shim actually takes effect before trusting a
   negative result. A PATH shim intended to force gcc-14 silently never
   applied, which produced a confident and wrong "not reproducible here".

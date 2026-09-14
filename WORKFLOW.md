@@ -206,6 +206,23 @@ Writing the `git am` command in your message is not the same as
 attaching the file. This was got wrong on this branch: the patch was
 built, verified, described, and never sent.
 
+**Check the remote before sending.** A dry-run clones the remote *before*
+the maintainer applies anything, so it always tests the pre-patch state
+and cannot tell you a patch has already landed. Compare the remote HEAD
+against the patch's expected base immediately before handing it over.
+
+An already-applied patch fails with a plain conflict:
+
+```
+error: patch failed: DEBUGGING.md:243
+error: DEBUGGING.md: patch does not apply
+```
+
+Nothing in that message suggests duplication, and the instinct is to go
+looking for a corrupted patch. Check `git log --oneline -1` on the
+remote first; if the commit is already there, the correct action is
+`git am --abort` and nothing else.
+
 **Check your commit actually happened.** A fresh clone has no git
 identity configured; `git commit` fails, and `git format-patch -1` then
 cheerfully packages the *previous* commit. The dry-run catches this.
