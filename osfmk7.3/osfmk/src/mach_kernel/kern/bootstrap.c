@@ -342,6 +342,28 @@ do_bootstrap_compat(void)
 				bss_start = ph->p_vaddr + ph->p_filesz;
 				bss_size = ph->p_memsz - ph->p_filesz;
 			}
+			else if (ph->p_flags == PF_R && ph->p_vaddr > ehdr->e_entry) {
+				/*
+				 * AI-ONLY NOTE: read-only PT_LOAD, e.g. .rodata.
+				 * The arms above match p_flags by exact equality,
+				 * so a read-only segment matches neither and is
+				 * never mapped. A 1995 toolchain emitted only R+X
+				 * and R+W; a modern linker also emits read-only
+				 * segments. The task then faults on .rodata and
+				 * blocks forever.
+				 *
+				 * The p_vaddr test excludes the ELF header
+				 * segment, which precedes the entry point and is
+				 * not needed by the running program; mapping it
+				 * as well breaks the boot.
+				 */
+				printf("Found read-only region\n");
+				regions[boot_region_count].prot = VM_PROT_READ;
+				regions[boot_region_count].addr = trunc_page(ph->p_vaddr);
+				regions[boot_region_count].size = round_page(ph->p_filesz);
+				regions[boot_region_count].offset = trunc_page(ph->p_offset);
+				regions[boot_region_count].mapped = TRUE;
+			}
 			else {
 				printf("Found PT_LOAD region with unknown flags\n");
 				continue;
@@ -552,6 +574,28 @@ exec_load(vm_offset_t start, vm_size_t size)
 					ph->p_memsz - ph->p_filesz);
 				bss_start = ph->p_vaddr + ph->p_filesz;
 				bss_size = ph->p_memsz - ph->p_filesz;
+			}
+			else if (ph->p_flags == PF_R && ph->p_vaddr > ehdr->e_entry) {
+				/*
+				 * AI-ONLY NOTE: read-only PT_LOAD, e.g. .rodata.
+				 * The arms above match p_flags by exact equality,
+				 * so a read-only segment matches neither and is
+				 * never mapped. A 1995 toolchain emitted only R+X
+				 * and R+W; a modern linker also emits read-only
+				 * segments. The task then faults on .rodata and
+				 * blocks forever.
+				 *
+				 * The p_vaddr test excludes the ELF header
+				 * segment, which precedes the entry point and is
+				 * not needed by the running program; mapping it
+				 * as well breaks the boot.
+				 */
+				printf("Found read-only region\n");
+				regions[boot_region_count].prot = VM_PROT_READ;
+				regions[boot_region_count].addr = trunc_page(ph->p_vaddr);
+				regions[boot_region_count].size = round_page(ph->p_filesz);
+				regions[boot_region_count].offset = trunc_page(ph->p_offset);
+				regions[boot_region_count].mapped = TRUE;
 			}
 			else {
 				printf("Found PT_LOAD region with unknown flags\n");
