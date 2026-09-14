@@ -254,6 +254,29 @@ Never use it for "how many times", to size a brute-force search, or to
 conclude something runs only once. That last error was made here and
 three separate conclusions were built on it.
 
+**Only ONE breakpoint works at a time.** Setting two and continuing
+services only one of them, silently, forever. Demonstrated three ways
+against the same build:
+
+| breakpoints set | which fired |
+|---|---|
+| `0x154d39` + `0x154d4c` | only `0x154d39`, 23 times in a row |
+| `0x154d41` + `0x154d48` | only `0x154d41`, 16 times in a row |
+| `0x154d48` **alone** | fires normally, every time |
+
+This is the most dangerous limitation of the lot, because the natural
+reading of "breakpoint A fired 23 times and B never did" is that the
+code between them is never reached. Here it produced a confident,
+completely wrong conclusion that an interrupt handler never returned.
+
+**Set one breakpoint, measure, `delete`, set the next.** Sequential
+single breakpoints work reliably and were used for the chain
+measurements in `docs/current-blocker.md`. Two *watchpoints* are
+different and are required -- see above.
+
+Any measurement using two or more simultaneous breakpoints must be
+re-taken.
+
 **Every gdb feature that evaluates and resumes is broken.** Setting
 breakpoints and stopping at them works. Anything where gdb must decide
 at a stop and continue on its own does not, and fails silently:

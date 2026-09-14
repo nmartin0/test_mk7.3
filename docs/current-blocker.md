@@ -1547,3 +1547,65 @@ the boot stack, *while* threads existed. That combination is worth
 checking directly: if boot-stack code is still executing when a
 thread-stack interrupt switches onto the same region, the two will
 overwrite each other.
+
+
+---
+
+# Instrument failure: only one breakpoint services at a time
+
+Setting two breakpoints and continuing services only one of them,
+silently. Three runs against the same build:
+
+```
+bps at 0x154d39 + 0x154d4c  ->  only 0x154d39 fired, 23 times
+bps at 0x154d41 + 0x154d48  ->  only 0x154d41 fired, 16 times
+bp  at 0x154d48 alone       ->  fires normally, 8 for 8
+```
+
+The natural reading of the first two is "the code between A and B is
+never reached". That produced a confident and completely wrong
+conclusion here: that `kdintr` never returns, and therefore that the
+interrupt path never completes and never restores the saved IPL. Tested
+in isolation, the handler returns every time.
+
+A second error rode along with it. With those breakpoints set, `%ecx`
+was read as the interrupt vector and reported as `vec=1`, the keyboard.
+At `0x154d48`, `%ecx` has been reused and reads `97`. The vector
+attribution was wrong too.
+
+## Measurements this invalidates
+
+Any run in this file that used **two or more simultaneous breakpoints**
+must be re-taken. Known cases:
+
+- "`install_special_handler` entered 22 times, all on the boot stack" --
+  used a breakpoint plus `splxpanic`. **Suspect.**
+- "4,000 `set_spl` writes, all in range" -- used two breakpoints.
+  **Suspect.**
+
+Measurements that remain sound:
+
+- The A/C/E chain capture, which used `break`, measure, `delete`,
+  `break` sequentially -- **valid**.
+- All watchpoint scans. Two *watchpoints* behave differently from two
+  breakpoints and are in fact required; see `DEBUGGING.md`.
+- Everything from `-d int` and `-d exec`, which do not involve gdb.
+- All disassembly.
+
+## Required technique
+
+**One breakpoint at a time.** Set it, measure, `delete`, set the next.
+Never infer "the code between A and B was not reached" from two
+breakpoints; verify the second in isolation first.
+
+## Where the search stands
+
+No progress on the defect itself this round. The circularity is
+unchanged: `curr_ipl` first goes bad at watchpoint write #51 with 45
+good writes before it, every writer checks out, every stack accounting
+checks out, and `set_spl` returns the old `curr_ipl` -- which says it
+was already bad.
+
+Because two of the measurements that shaped the current picture are now
+suspect, the honest next step is to re-take them with single
+breakpoints before drawing any further conclusions from them.
