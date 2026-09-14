@@ -1,0 +1,348 @@
+# Handoff
+
+Read this first, then `WORKFLOW.md`, then `DEBUGGING.md`. Everything
+below is committed and pushed; nothing is in flight.
+
+---
+
+## Where the kernel is
+
+It boots. From a clean clone it builds to a 1,025,800 byte i386 ELF and
+runs user code at ring 3 on **two independent bootstrap paths**.
+
+```sh
+# default: the GNU Hurd path (bootstrap_create)
+qemu-system-i386 -kernel mach_kernel.PRODUCTION -initrd bootstrap,bootstrap \
+    -display none -no-reboot -m 64 -monitor unix:/tmp/mon,server,nowait
+
+# OSF's own path (bootstrap_create_old), selected with -o
+qemu-system-i386 -kernel mach_kernel.PRODUCTION -append "-o" -initrd bootstrap \
+    -display none -no-reboot -m 64 -monitor unix:/tmp/mon,server,nowait
+
+python3 tools/vgadump.py /tmp/mon /tmp/vga.bin 10
+```
+
+Working: memory sizing, VM (14,705 free pages), IPC bootstrap, task and
+thread creation, the scheduler, timer interrupts, device
+autoconfiguration (floppy, keyboard, serial, VGA), both clocks, boot
+module parsing, task creation, `task_resume`, and **user-mode execution
+at cpl=3 with demand paging**.
+
+| path | page faults | user-mode entries |
+|---|---|---|
+| default (Hurd) | 16 | yes |
+| `-o` (OSF) | 12 | yes |
+
+Both stop with the user task failing, not the kernel. On the default
+path that is expected: the boot module used in testing is OSF's own
+`bootstrap` binary passed twice as a stand-in for `ext2fs.static`, so it
+is invoked with Hurd arguments it does not understand.
+
+## The -o path is not failing — it is idle, correctly
+
+Measured after the handoff was first written, on a clean guest.
+
+Over 20 seconds on the `-o` path:
+
+```
+timer interrupts (v=40):  260     scheduler running steadily
+page faults (v=0e):        12     all from the initial load, none since
+any other vector:           0     no faults, no errors
+```
+
+and the last kernel blocks executed are `idle_thread_continue` cycling
+through `splvm` and `splx` — the idle loop.
+
+So the bootstrap task **loads, runs at ring 3, demand-pages its 12 pages
+and then blocks**, and the scheduler correctly goes idle because nothing
+is runnable. That is what OSF's bootstrap task should do when there is
+nothing to bootstrap: it is waiting on a Mach RPC for a server that does
+not exist.
+
+The 12 user faults are an orderly progression — an instruction fetch at
+`0x08063e80`, a stack page at `0xbfffffec`, then code and data pages
+through `0x0805`–`0x0806`. Nothing anomalous.
+
+**Consequence: there is no bug to chase on this path.** The next step is
+to give the bootstrap task something to do — a server to load — rather
+than to debug the kernel. `-o` is now a working reference for what a
+successful OSF-path boot looks like.
+
+## Earlier framing of this, kept for the record
+
+On the `-o` path the console stops after ELF section scanning:
+
+```
+Found text region / Found data region / I've found: 2 sections
+```
+
+and then nothing. The task is created and runs at ring 3 (12 cpl=3
+entries), so it is user code failing rather than the kernel.
+
+**One hypothesis was investigated and disproved, so do not repeat it.**
+`user_bootstrap_old` consumes `boot_region_desc` and `boot_region_count`
+without populating them, which looked like the same disconnection
+pattern described below. It is not: `SYS_REBOOT_COMPAT` is defined as
+`defined(i386) || defined(i860) || defined(hp_pa)`, which is **true** on
+i386, so `do_bootstrap_compat()` runs inside `bootstrap_create_old` and
+fills the region table. The producer is wired up. That is also what
+prints the "Found text region" messages.
+
+So the next step is to find out what the user task does after
+`thread_bootstrap_return()` — this is **userland** debugging, a
+different problem from everything in `DEBUGGING.md`, which is about the
+kernel.
+
+## The framing that keeps paying off
+
+**OSFMK 7.3 retains the original OSF machinery but has it disconnected
+in places.** When this tree was adapted to boot GNU Hurd, original
+functions were renamed with an `_old` suffix and put behind `#if 0`,
+new Hurd equivalents were written, and the wiring between the old halves
+was not always kept consistent. Because the old code never compiled, no
+diagnostic ever appeared.
+
+That produced the last two bugs found:
+
+- `bootstrap_create_old()` called `thread_start(..., user_bootstrap)`.
+  After the rename that bare name resolved to the **Hurd** loader, not
+  its own. Both functions were `#if 0`'d, so it never compiled.
+  Un-guarding `bootstrap_create_old` alone therefore started OSF's task
+  creation at Hurd's loader, and the result was 792,853 page faults.
+  Pointing it at `user_bootstrap_old` reduced that to 12.
+
+**The technique:** diff against
+`github.com/nmartin0/osfmk6.1`, where the originals are still live and
+wired to each other. This found that bug in about ten minutes after days
+of indirect searching.
+
+**6.1 is a reference, not a source to port from.** 7.3 already retains
+`user_bootstrap_old`, `copy_bootstrap`, `move_bootstrap`,
+`ovbcopy_ints`, `load_info_print` and `build_args_and_stack`. Nothing
+needed copying. Its licence is compatible anyway — OSF permissive,
+marked "OSF Research Institute MK6.1 (unencumbered) 1/31/1995" — should
+something be needed later.
+
+Look for more of the same: functions suffixed `_old`, blocks behind
+`#if 0`, and old callers referring to names that a rename has since
+repointed.
+
+## The userland: what exists, what builds, what is missing
+
+The bootstrap task carries its own default configuration
+(`src/bootstrap/bootstrap.c:82`):
+
+```c
+const char default_config[] = "\
+name_server name_server\n\
+default_pager default_pager\n\
+unix startup -s\n\
+";
+```
+
+Three servers. Status of each, measured by building them:
+
+| server | status |
+|---|---|
+| `name_server` | **in tree and builds.** It is `mach_services/servers/netname`, whose Makefile links `netname.o nprocs.o netnameServer.o` into a binary literally named `name_server`, 140,396 bytes. `netname.c:117` prints "(name_server): started". Needs `mach_services/lib/libservice` built first. |
+| `default_pager` | **in tree and builds**, 211,100 bytes. Needs libcthreads, libsa_mach, libmach and libmach_maxonstack in the same MK_BUILD first -- it is only a build-ordering problem, the code is fine. |
+| `unix` | **absent.** This is the BSD4.3 personality, the UX lineage, which was always distributed separately because it was licence-encumbered. |
+
+OSFMK 6.1 was checked and ships the **same** set -- bootstrap,
+default_pager, mach_services, stand, usr. The missing servers are not
+there either. 7.3 actually has *more* than 6.1: `file_systems/` with
+`ext2fs` and `bext2fs`, `xkern/` and `tgdb/`.
+
+### On replacing the `unix` server
+
+UX is based on 4.3BSD and was licence-encumbered. The argument that
+Caldera's 2002 grant implicitly freed it is **not safe to rely on**:
+that grant names UNIX V1-V7 and 32V specifically rather than
+derivatives, 4.3BSD contains much more than 32V-derived material, the
+*USL v. BSDi* settlement is what actually addressed 4.3BSD's encumbered
+files and produced 4.4BSD-Lite as the clean branch, and Caldera's own
+authority over the UNIX copyrights was contested afterwards in
+*SCO v. Novell*. It might be fine; it would need a lawyer.
+
+**LITES is the better candidate on both grounds.** It is 4.4BSD-Lite
+based, so post-settlement and permissively licensed, and it was
+developed against Mach 3.0/Mach 4 -- the same CMU lineage OSFMK 7.3
+descends from via OSF, and therefore a closer relative than GNU Mach.
+It carries the same *kind* of RPC-dialect risk as the Hurd servers and
+should be tested cheaply before any investment.
+
+## The real blocker for both paths: there is no disk
+
+The bootstrap task does not consume multiboot modules. It **reads
+servers from a filesystem on a device**:
+
+```c
+bootstrap.c:346   result = open_file(bootstrap_root_device_port, pathname, &f);
+bootstrap.c:1454  result = open_file(bootstrap_root_device_port, filename, &f);
+```
+
+Passing `name_server` and `default_pager` with `-initrd` therefore
+changes nothing -- verified, the boot is byte-identical with one module
+or three, because the kernel never tells the task they exist.
+
+This is the same blocker the Hurd path has, where the boot script mounts
+`hd2s2`. Both need a block device with a filesystem, and this
+configuration has **no IDE driver** -- which is why `ivect[14]`, the
+primary IDE channel, is `intnull`.
+
+Three routes, in increasing effort:
+
+1. **Floppy.** `fd0` and `fd1` *are* configured with a working `fdintr`,
+   and QEMU emulates a floppy controller. A small filesystem image is
+   far less work than a disk driver, and 7.3 ships `ext2fs`/`bext2fs`
+   under `file_systems/` which the bootstrap task may be able to read.
+2. **Teach the bootstrap path to consume multiboot modules**, which is
+   what the Hurd adaptation did. Changes OSF's code rather than
+   supplying the environment it expects.
+3. **Write or port an IDE driver.** Most work, most general.
+
+Route 1 was tried and is **premature**. See below.
+
+## The floppy is not the blocker: the task blocks before any I/O
+
+Measured. The bootstrap task **prints nothing of its own** -- no
+`(bootstrap)` messages and, crucially, not the
+`ERROR: bootstrap task cannot find configuration file` that
+`bootstrap.c:352` emits when `open_file` fails. It executes (12 user
+page faults prove it) and then blocks **before it ever tries to open
+anything**.
+
+Attaching a floppy with `-fda` and forcing the boot device to it changed
+nothing, which is consistent: the task is not failing to find files, it
+is blocking earlier.
+
+**Do not build a floppy image yet.** Find out where the task blocks
+first. It is almost certainly its first Mach RPC -- cthread
+initialisation, a port it was not given, or a `service_checkin` against
+a `name_server` that is not running.
+
+### What was learned about the boot device anyway
+
+Worth keeping, because it will matter once the task gets that far, and
+because it is a **fourth instance of the `#if 0` disconnection pattern**.
+
+```c
+model_dep.c:606   char bootdev_name[10] = "hd0s1";   /* hardcoded IDE partition */
+model_dep.c:645   if (p = getenv("BOOTDEV"))         /* always NULL */
+bootstrap.c:389   #if 0  env_start = (vm_offset_t) env_buf;   /* env block DISABLED */
+```
+
+`getenv` reads `env_start`/`env_size`, which stay at `0` because the
+code populating them in `do_bootstrap_compat` is behind `#if 0`. So
+`BOOTDEV` can never be set, and `boot_device` is aliased to an IDE
+partition for which there is no driver.
+
+Both devices exist in the table -- `conf.c:154` defines `hdname "hd"`
+and `:160` defines `fdname "fd"`, each with full open/close/read entries
+-- so selecting the floppy is a matter of configuration, not a missing
+driver.
+
+Two ways to fix it when the time comes:
+
+1. Change `bootdev_name` to `"fd"`. One line, immediately testable.
+   Verified to build and boot; it simply does not change anything yet.
+2. Re-enable the env block and feed it from the multiboot command line,
+   restoring OSF's own documented `BOOTDEV` mechanism. More principled.
+
+The diagnostic either way is the kernel's own
+`Warning: unable to set boot_device`, printed between the `vga0` line
+and `realtime clock configured` if `dev_name_lookup` fails. Its absence
+today confirms the lookup currently succeeds.
+
+### The path convention, for later
+
+A bare server name in `default_config` is expanded by
+`bootstrap.c:723` to `/dev/boot_device/mach_servers/<name>`, and an
+absolute path not beginning `/dev/` gets a `/dev/boot_device` prefix. So
+the image will need `/mach_servers/name_server` and
+`/mach_servers/default_pager`.
+
+Also settled: `get_root_master_device_port()` returning `IP_NULL` is
+**not** a bug and not a blocker. It is `#if PARAGON860`/NORMA-only, 6.1
+has the identical stub, and the AT386 arm of `bootstrap.c:348` uses
+`bootstrap_master_device_port` instead.
+
+## The architectural decision, still open
+
+`docs/bootstrap-fork.md`. Both paths now work to the same depth, so the
+choice is informed rather than speculative.
+
+**A — boot GNU Hurd.** `bootstrap_create()` is hardcoded to start
+`ext2fs.static` and `exec.static`. Two blockers: the boot script mounts
+`hd2s2`, an **IDE partition**, and this configuration has no IDE driver
+— which is why `ivect[14]`, the primary IDE channel, is `intnull`. And
+Hurd servers are built against **GNU Mach's** interfaces, which have
+diverged from OSFMK 7.3; a real `ext2fs.static` may not speak this
+kernel's RPC dialect at all. **Test that cheaply before investing.**
+
+**B — OSF's multiserver.** Now revived and running at ring 3. Keeps the
+project permissively licensed.
+
+Using Hurd as a *build host* for permissive code is clean — GPL governs
+distribution of the GPL work, not what you compile with it.
+
+## Known latent defects, none blocking
+
+| where | defect |
+|---|---|
+| `i386/spl.h` | `spl_t` is `unsigned char` while the spl assembly returns 32 bits. Harmless while IPLs stay in 0..8. |
+| `i386/pic.c` + `spl.S`, `interrupt.S` | `master_icw`/`master_ocw` are 2-byte but read with `movl`. Harmless — only `%dx` reaches the `outb`. |
+| `i386/AT386/model_dep.c` | OSF's own debug `printf`s in `parse_multiboot` clutter the console. |
+| `i386/start.S:249` | `EXT(eintstack:)` — colon inside the macro argument. Resolves correctly by luck. **Do not "fix" it.** |
+| interrupt dispatch | `set_spl` is reachable by `call` at `0x159e08`, bypassing the bounds check `splx` does before falling through into it. |
+
+## Instrument warnings — read these before measuring anything
+
+All were learned expensively and all are still live. Full detail in
+`DEBUGGING.md`.
+
+- **`pkill -x qemu-system-i386` never matches.** `comm` truncates to 15
+  characters; the process is `qemu-system-i38`. A stale QEMU holds port
+  1234 and gdb silently attaches to the **old, already-failed guest**.
+  This invalidated a whole round of measurements.
+- **Assert `eip == 0xfff0` at attach.** Any run not at the reset vector
+  is talking to a stale guest and is invalid.
+- **Only one breakpoint services at a time.** Set one, measure,
+  `delete`, set the next. Two breakpoints silently service only one,
+  which reads as "the code between them is unreachable" and produced a
+  confident wrong conclusion.
+- **Breakpoint conditions and ignore counts silently do nothing.**
+- **Hardware watchpoints work well** — but watch *both* the link address
+  and the linear address, or gdb falls back to software watchpoints and
+  `continue` hangs forever.
+- **`-d exec` counts are not execution counts.** Fallthrough and block
+  chaining make them undercount by orders of magnitude. Use them for
+  *whether* code ran and the *order* of first entry, never for how many
+  times.
+- **The kernel is relocated by segmentation**, `cs_base = 0xC0000000`.
+  Breakpoints need linear addresses; register-derived pointers need
+  `+0xC0000000` before the monitor can read them.
+- **The console is VGA and may be at `0xa0000`, not `0xb8000`.**
+  `tools/vgadump.py` tries both.
+- **Check whether the failure is deterministic before reasoning about
+  it.** The bug fixed this session reported a different value every
+  boot; comparing two measurements from different runs produced an
+  impossible conclusion and three rounds of wasted work.
+
+## On method
+
+This session produced about ten corrections, three of them retractions
+of already-committed claims. Every one came from trusting an instrument
+without validating it first. The findings that stuck came from slowing
+down and checking the instrument before the result.
+
+`docs/archive/splx-investigation.md` records the whole hunt including
+the retractions. It is worth reading not for the conclusion — which is
+fixed — but for the shape of the mistakes.
+
+Two rules that would have prevented most of it:
+
+1. **Validate the instrument on a known-good case before believing a
+   result**, especially a negative one.
+2. **Enumerate every instance in a class before proposing a fix for one
+   of them.** Three patches were withdrawn this session for skipping it.

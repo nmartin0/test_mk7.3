@@ -995,6 +995,59 @@ user_bootstrap_old(void)
 	 */  
 	set_bootstrap_args();
 #endif
+#if	defined(i386)
+	/*
+	 * AI-ONLY NOTE: this arm is required, and mirrors the hp_pa one
+	 * above.
+	 *
+	 * do_bootstrap_compat() sets thread_state.esp to a bare STACK_PTR,
+	 * which its own comment marks XXX:
+	 *
+	 *	#define STACK_PTR	(VM_MAX_ADDRESS-0x10)
+	 *
+	 * Nothing is placed there, so the task starts on a zero filled
+	 * page. libsa_mach's crt0.c reads its arguments straight off the
+	 * stack and gates all of its startup on the first one:
+	 *
+	 *	struct kframe { int kargc; char *kargv[1]; };
+	 *	if (kfp->kargv[0]) {
+	 *	    __argc = kfp->kargc;
+	 *	    __argv = kfp->kargv;
+	 *	    if (*_mach_init_routine)
+	 *		(*_mach_init_routine)();
+	 *	    ...
+	 *	}
+	 *
+	 * With a zero stack kargv[0] is 0, the gate never opens and the
+	 * task never completes initialisation. Measured: it re-enters
+	 * mach_init indefinitely, issuing host_page_size forever -- 300
+	 * consecutive RPCs of msgh_id 2644 and counting, every one served
+	 * correctly by the kernel.
+	 *
+	 * hp_pa does not hit this because its crt0 takes argc and argv as
+	 * parameters, which set_bootstrap_args() passes in registers. i386
+	 * has no equivalent arm, so it gets no arguments at all.
+	 *
+	 * build_args_and_stack() already lays out exactly the frame crt0
+	 * expects: it vm_allocates a stack, calls set_user_regs() to point
+	 * thread_state.esp at the argument base, then copies out arg_count
+	 * followed by the argv pointers, a null terminator and the strings.
+	 * It is simply never called on this path -- the Hurd
+	 * user_bootstrap() is its only other caller. Nothing new is needed
+	 * and nothing is taken from OSFMK 6.1.
+	 *
+	 * It must run before thread_setstatus() below, which is what
+	 * installs thread_state into the new thread.
+	 */
+	{
+	    char	*bootstrap_argv[2];
+
+	    bootstrap_argv[0] = boot_args_buf;
+	    bootstrap_argv[1] = (char *) 0;
+
+	    build_args_and_stack(bootstrap_argv, (char **) 0);
+	}
+#endif	/* defined(i386) */
 
 	/*
 	 * set the bootstrap task thread state.
