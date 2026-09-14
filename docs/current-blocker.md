@@ -326,3 +326,82 @@ Do not read more disassembly. Instrument the loop directly: break inside
 the first subsystem, for `j` beyond 0. That distinguishes "the loop does
 not run" from "the loop runs and every `stub_routine` reads as null",
 which are different bugs with different fixes.
+
+
+---
+
+# CONFIRMED by direct measurement: mig_init inserts only routine[0]
+
+The previous section retracted the claim that only `routine[0]` is ever
+examined. **That retraction was wrong.** The claim is correct, and is
+now established by a measurement that does not involve reading
+disassembly at all.
+
+## The measurement
+
+Scanning all 1024 buckets of `mig_buckets` at the moment the bootstrap
+task makes its first RPC:
+
+```
+populated buckets: 8 of 1024
+2644 present? NO
+ids: [2000, 2200, 2600, 3200, 3800, 5000, 617000, 3125000]
+```
+
+Those eight values are **exactly the `start` field of each subsystem**,
+and exactly the eight subsystems whose `routine[0].stub_routine` is
+non-null. The two that are missing, `999999` (bootstrap) and `2800`,
+are precisely the two whose `routine[0]` is a null placeholder.
+
+`nentry = j + mig_e[i]->start`, so a bucket holding exactly `start`
+means `j == 0`. Eight buckets, each holding a subsystem's `start`, can
+only mean one entry was inserted per subsystem. **The inner loop does
+not iterate.**
+
+## Why this evidence is better than the original
+
+The original claim came from reading the compiled `mig_init` and
+following a branch, which is the error mode that has recurred most in
+this project. This one is a direct read of the resulting data structure
+and admits no alternative reading.
+
+It also explains an earlier contradiction. `mig_buckets` was reported
+empty; it is not. The buckets sampled were 0, 1, 2 and 596, none of
+which is a natural index for any of the eight ids that are present.
+`bucket[976]` holds `{2000, 0x12f0d0}` and was simply never looked at.
+
+## The full chain, now sound
+
+```
+only routine[0] inserted per subsystem
+  -> exactly 8 message ids are dispatchable, all subsystem starts
+  -> host_page_size (2644) is not among them -> MIG_BAD_ID (-303)
+  -> mach_init discards the error with (void); vm_page_size stays 0
+  -> probe_stack computes ~(0-1) == 0, every derived size 0
+  -> cthread_stack_size = 0
+  -> alloc_stack chains from base 0 and writes to *0
+```
+
+This also explains why `ipc_kobject_server` was observed running while
+no handler ever did: the eight ids that would dispatch are subsystem
+starts the task never sends.
+
+## Still unproven: why the loop does not iterate
+
+`mach/rpc.h:228` declares the array as `routine[1]` with a comment
+saying "Actually, (start-end+1)" -- the pre-C99 flexible-array idiom,
+and the obvious candidate. A reduced test case with that shape did
+**not** reproduce the collapse under this build's flags, so the reduced
+case is missing something the real code has rather than the theory being
+dead. The real inner loop contains a nested hash-probe loop with two
+`panic()` calls, which the test omitted and which could change GCC's
+analysis.
+
+Settle it by instrumenting, not by reading more disassembly or writing
+more reduced cases: break in `mig_init` after the `j == 0` insert for
+subsystem 0 and single-step to see whether control reaches a `j == 1`
+iteration or goes to the outer increment. The live single-step already
+done confirms the `j == 0` path is taken correctly -- `range` reads
+0x67 (103), `routine[0].stub` reads `0x12f0d0`, the null test is not
+taken, and the bucket index computes to 976 -- so the question is purely
+what happens after that insert.
