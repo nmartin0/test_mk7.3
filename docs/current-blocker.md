@@ -1394,3 +1394,77 @@ are not affected. Readings already re-confirmed on clean guests:
 Not yet re-verified, and currently unsafe to rely on: `intpri` contents,
 the gdb conditions and ignore-count limitations, and the
 `install_special_handler` boot-stack readings.
+
+
+---
+
+# The interrupt entry switches stacks; that is where to look next
+
+`return_from_interrupt`'s `pop %eax` does **not** run on the stack the
+interrupt arrived on. `all_intrs`, the IDT stub at `0x1005da`, switches
+to a dedicated interrupt stack first:
+
+```asm
+1005da:  push %ecx
+1005db:  push %edx
+1005dc:  cld
+1005dd:  cmp  %ss:0x1ca000,%esp     ; already on the interrupt stack?
+1005e4:  jb   10063e <int_from_intstack>   ; yes -> do not switch
+1005e6:  push %ds
+1005e7:  push %es
+1005e8:  mov  %ss,%dx
+1005eb:  mov  %edx,%ds
+1005ed:  mov  %edx,%es
+1005ef:  mov  $0x48,%dx
+1005f3:  mov  %edx,%gs
+1005f5:  mov  0x1ca004,%ecx         ; int_stack_top
+1005fb:  xchg %ecx,%esp             ; SWITCH to the interrupt stack
+1005fd:  push %ecx                  ; save the old esp
+1005fe:  mov  $0x8,%edx
+100603:  incl %gs:(%edx)            ; cpu_data interrupt nesting count
+100606:  call 154ce4 <interrupt>    ; dispatch; contains the IPL push/pop
+10060b:  mov  $0x8,%edx
+100610:  decl %gs:(%edx)
+100613:  pop  %esp                  ; switch back
+```
+
+This ties the observations together:
+
+- The interrupt was taken with `SP = 0x08b78fd0`, a thread stack.
+- The corrupted `set_spl_noi` write had `esp = 0x1c9ff4`, which is just
+  below `0x1ca000` -- the **interrupt stack**, exactly where the push
+  and pop of the saved IPL happen after the switch.
+
+So the `push %eax` at `0x154d39` and the `pop %eax` at `0x154d4c` both
+execute on the interrupt stack, inside the `call interrupt` at
+`0x100606`. Their accounting was verified correct in isolation, and
+`intnull` balances, so if the popped value is wrong the discrepancy must
+come from the surrounding structure rather than from those instructions.
+
+## What to examine
+
+1. **The switch guard.** `cmp %ss:0x1ca000,%esp` then `jb`. A thread
+   stack at `0x08b78fd0` is far above `0x1ca000`, so the branch is not
+   taken and the switch happens -- correct. A nested interrupt already
+   on the interrupt stack would be below `0x1ca000` and would take
+   `int_from_intstack` -- also correct on the face of it. Both arms need
+   checking against what `interrupt` and `return_from_interrupt` assume.
+2. **`int_from_intstack` at `0x10063e`.** This is the no-switch arm. If
+   it reaches `return_from_interrupt` with a different stack shape than
+   the switching arm, that is the defect. It was never examined.
+3. **The interrupt stack itself.** `0x1ca000` is also where `vstart` put
+   the boot stack (`lea 0x1ca000,%esp`). If the boot stack and the
+   interrupt stack are the same memory, an interrupt arriving while the
+   kernel is still on the boot stack would switch onto a region it is
+   already using. Worth confirming; `int_stack_top` is read from
+   `0x1ca004` and the guard compares against `0x1ca000`.
+
+Point 3 is the most suspicious and the cheapest to check.
+
+## Reminder on trust
+
+Everything above is disassembly of the linked image, which is not
+affected by the stale-guest defect. The runtime readings quoted --
+`SP = 0x08b78fd0` and `esp = 0x1c9ff4` -- come from a `-d int` log and
+from a watchpoint run on a guest verified at the reset vector
+respectively, so both are sound.
