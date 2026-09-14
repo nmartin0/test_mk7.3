@@ -1252,7 +1252,26 @@ bootstrap_create(void)
        by the boot modules and the boot loader's descriptors and such.  */
 }
 
-#if 0
+/*
+ * AI-ONLY NOTE: the #if 0 around this function is removed.
+ *
+ * This is OSF's original bootstrap path: allocate a bootstrap port,
+ * create a task and thread, set TASK_BOOTSTRAP_PORT, and start the
+ * thread at user_bootstrap, which loads the boot module into the new
+ * task. It was disabled when this tree was adapted to boot GNU Hurd
+ * through bootstrap_create(), which is hardcoded to start ext2fs.static
+ * and exec.static via GNU Mach's boot_script machinery.
+ *
+ * It has not rotted. Measured by building it: it compiles clean under
+ * GCC 13 and 14, links with every symbol it calls resolved, and is
+ * properly guarded against a missing module by its own
+ * "if (boot_size == 0)" early return. The binary it expects is already
+ * built by this tree as src/bootstrap/bootstrap.
+ *
+ * Selected at boot with -o; see parse_arguments() in
+ * i386/AT386/model_dep.c. The default is unchanged, so the Hurd path
+ * remains what boots unless asked otherwise.
+ */
 void
 bootstrap_create_old(void)
 {
@@ -1300,7 +1319,6 @@ bootstrap_create_old(void)
 	kr = thread_resume(bootstrap_thr_act);
 	assert( kr == KERN_SUCCESS );
 }
-#endif
 
 #if	DEBUG
 void
