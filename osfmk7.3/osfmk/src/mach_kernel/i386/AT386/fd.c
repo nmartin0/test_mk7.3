@@ -1653,6 +1653,43 @@ rstout(
 	outb(CTRLREG(uip->addr), outd);
 	outd |= DMAREQ;
 	outb(CTRLREG(uip->addr), outd);
+
+	/*
+	 * AI-ONLY NOTE: drain the reset interrupt.
+	 *
+	 * Releasing FDC_RST above makes the controller raise an
+	 * interrupt, and the 82077 will not execute another command
+	 * until that interrupt has been acknowledged with SENSE
+	 * INTERRUPT STATUS -- once per drive, so up to four times.
+	 *
+	 * Nothing did that. fdintr() switches on cmdp->c_intr, which is
+	 * CMDRST (zero) at reset time, so the switch matches no case and
+	 * the handler returns without sensing anything. The controller
+	 * then silently ignored every subsequent command.
+	 *
+	 * Measured before this change: fdopen() entered rbrate(), which
+	 * issued a recalibrate and slept on uip with no timeout, and
+	 * never woke. At the hang, ctrl_info[0].b_cmd.c_intr was still
+	 * 0x10, exactly WUPFLAG, so fdintr() had not taken that branch
+	 * since rbrate set it -- the completion interrupt never arrived.
+	 * Exactly two IRQ 6 interrupts occur in a boot, which is the
+	 * reset, and nothing after it.
+	 *
+	 * Everything else on that path was checked and is correct:
+	 * wup equals uip, the switch value is exactly WUPFLAG, curr_ipl
+	 * is 0 with IF set and IRQ 6 unmasked in curr_pic_mask, and the
+	 * DOR byte computes to 0x1C -- motor on, reset released, DMA and
+	 * IRQ enabled.
+	 *
+	 * Real hardware tolerated the missing acknowledge; a strict
+	 * 82077 implementation does not.
+	 */
+	{
+	    register int	i;
+
+	    for (i = 0; i < 4; i++)
+		(void) sis(uip);
+	}
 }
 /*****************************************************************************
  *
