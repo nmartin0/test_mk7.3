@@ -116,3 +116,128 @@ All of these are in `DEBUGGING.md` and all were learned expensively:
   hangs.
 - `-d exec` counts are **not** execution counts; fallthrough and block
   chaining make them undercount badly.
+
+
+---
+
+# ROOT CAUSE: the MIG dispatch table is never populated
+
+No kernel RPC has ever dispatched in this tree. Everything the bootstrap
+task does fails at its first Mach call, and every symptom chased since
+is downstream of this.
+
+## The chain, measured end to end
+
+```
+mig_buckets empty
+  -> every ipc_kobject_server hash lookup misses
+  -> the server returns MIG_BAD_ID (-303)
+  -> host_page_size() fails; mach_init discards the error with (void)
+  -> vm_page_size stays 0
+  -> probe_stack computes ~(0-1) == 0, so every size is 0
+  -> cthread_stack_size = 0
+  -> alloc_stack chains its free list from base 0 and writes to *0
+```
+
+The last step is the fault the investigation started from:
+
+```
+at alloc_stack+255:  ebx = 0x0  eax = 0x0   CR2 = 0x00000000
+vm_page_size       = 0
+cthread_stack_size = 0
+```
+
+and the RPC failure is directly observable at the call site:
+
+```
+at 'call host_page_size':  host_port (eax) = 0x203
+after it returns:          eax = 0xfffffed1  (-303, MIG_BAD_ID)
+                           vm_page_size = 0
+```
+
+`MIG_BAD_ID` is a **server**-side error -- the kernel could not find a
+routine for the message id.
+
+## Why the table is empty
+
+`mig_init()` in `kern/ipc_kobject.c:245` builds `mig_buckets` from
+`mig_e[]`. Its loop is:
+
+```c
+for (j = 0; j < range; j++) {
+    if (mig_e[i]->routine[j].stub_routine) {     /* the gate */
+        nentry = j + mig_e[i]->start;
+        ...insert...
+    }
+}
+```
+
+In the compiled image the insert path at `0x113e1a` writes `.num`,
+`.routine` and `.size` correctly at stride 12, and then falls straight
+into `add $0x1,%ebp` / `cmp $0xa` -- the **outer** subsystem counter.
+The slot it reads for `.size` is `0x28(%eax)`, which is
+`routine[0].max_reply_msg`. Only `routine[0]` of each subsystem is ever
+examined.
+
+And `routine[0]` is a null placeholder in every MIG-generated table.
+From `mach/bootstrap_server.c`:
+
+```c
+{
+        {0, 0, 0, 0, 0, 0},      /* routine[0] */
+        {0, 0, 0, 0, 0, 0},      /* routine[1] */
+  { (mig_impl_routine_t) do_bootstrap_ports, ... },   /* routine[2] */
+```
+
+So the gate fails on the only entry considered, nothing is inserted, and
+the table stays empty.
+
+## What is measured and what is not
+
+Measured, with the instrument validated each time:
+
+| fact | evidence |
+|---|---|
+| `mig_init()` is reached | breakpoint at `0xc0113d00` fires |
+| `mig_buckets` is empty **at mig_init's exit** | read at `0xc0113e63`; so nothing clears it afterwards |
+| the memory read is trustworthy | validated against `intpri`, which reads `08 06 00 00`, matching the boot log exactly |
+| outer loop is correct | `n = 10`, `start` at `+4`, `end` at `+8`, matching the generated structs |
+| hash arithmetic is correct | `MIG_HASH` is identity, `% 1024`, stride 12, linear probe |
+| insert code is correct | writes all three fields at the right offsets |
+| `ipc_bootstrap()` calls `mig_init()` | `ipc/ipc_init.c:233` |
+
+**Not established:** *why* the compiled loop only examines `routine[0]`.
+The source says `for (j = 0; j < range; j++)`. Either `range` is 1 at
+runtime for every subsystem, or the generated struct layout disagrees
+with `struct routine_descriptor` in `mach/rpc.h` so the kernel walks the
+array with the wrong stride. Reading `range` inside the loop at runtime,
+and comparing `sizeof(struct routine_descriptor)` against the stride the
+compiled code uses, settles it.
+
+## Corrections made during this investigation
+
+Both were caught before being committed, and are recorded so the
+reasoning is not repeated.
+
+- **"`mig_init()` has no caller."** Wrong. It is called from
+  `ipc/ipc_init.c:233`. The grep that produced that claim covered
+  `kern/` and `i386/` but not `ipc/`.
+- **"`mig_buckets[596]` is empty" read against a stale address.** The
+  first validation used `intpri` at `0x1d3920`, its address in an
+  earlier build; adding code shifted it to `0x1d4920`. Re-validated at
+  the correct address before the finding was accepted.
+
+## Hypotheses eliminated
+
+All by measurement, none to be retried:
+
+- the bootstrap port has no server -- `ipc_port_alloc_kernel()` is
+  `ipc_port_alloc_special(ipc_space_kernel)`, so it is kernel-serviced
+- dispatch wiring is missing -- `do_bootstrap_subsystem` is in `mig_e[]`
+- the message id range is wrong -- `999999 <= 1000002 < 1000005`, and
+  `2600 <= 2644 < 2711`
+- the routine tables are wrong -- `routine[3]` is
+  `do_bootstrap_arguments`, `routine[44]` is `host_page_size`
+- the MIG user stub retries -- it does not; single send, returns on error
+- something clears `mig_buckets` after init -- it is already empty when
+  `mig_init` returns
