@@ -235,6 +235,23 @@ the first few hits: a loop of 25 `continue`s produced nothing at all,
 twice. Use them to answer "what writes this, early", validate against a
 known write first, and do not yet trust them to scan.
 
+**A trace miss proves nothing unless the symbol exists.** The kernel
+aliases many routines through macros, so tracing a name that is not a
+symbol always reports "no":
+
+```
+device/buf.h:148        #define biodone  iodone
+device/ds_routines.h:92 #define iodone(ior)  io_completed(ior, FALSE)
+```
+
+Three separate "the I/O never completes" conclusions were drawn in one
+session by tracing `biodone`, then `iodone`, neither of which exists in
+the image. The real symbol is `io_completed`, and it runs fine.
+
+**Check `nm` for the symbol before believing its absence from a trace.**
+This is the same failure mode as trusting a breakpoint that does not
+fire, by a different mechanism.
+
 **`-d exec` counts are not execution counts.** Measured against
 breakpoints in the same build:
 

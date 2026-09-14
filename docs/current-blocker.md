@@ -40,7 +40,58 @@ python3 tools/vgadump.py /tmp/mon /tmp/vga.bin 10
 Without `-o` the GNU Hurd path runs instead; both are fixed by the same
 changes and both reach user code.
 
-## The live blocker: no readable boot device
+## The floppy works. Invocation:
+
+```sh
+qemu-system-i386 -kernel mach_kernel.PRODUCTION \
+    -append "BOOTDEV=fd BOOTPART=1 -o" \
+    -initrd bootstrap -fda boot.img \
+    -display none -no-reboot -m 64 \
+    -monitor unix:/tmp/mon,server,nowait
+```
+
+`BOOTPART=1` is required and is **not** a partition number here. The
+boot device minor is `unit + BOOTPART`, and `MEDIATYPE(dev)` is
+`dev & 0x03`, indexing `m765f[]`:
+
+```c
+80, 18, 1440,  9   /* [0] 3.50" 720  Kb  */
+80, 36, 2880, 18   /* [1] 3.50" 1.44 Meg */
+40, 18,  720,  9   /* [2] 5.25" 360  Kb  */
+80, 30, 2400, 15   /* [3] 5.25" 1.20 Meg */
+```
+
+Without it the minor is 0, the driver uses 720 Kb geometry with 9
+sectors per track, and every seek past that fails against the 18 the
+image really has. Measured: `c_intr` sat at `SKFLAG|SKEFLAG`, seek error
+recovery. With `BOOTPART=1` the error counters are zero.
+
+This was found using the environment mechanism restored in
+"i386/AT386/model_dep.c: populate the environment from the command
+line", and is the first concrete payoff from that work -- a pure
+configuration fix with no source change.
+
+### Driver state: working
+
+The floppy read completes end to end:
+
+```
+rbrate YES   fdseek YES   geteblk YES  setqueue YES  m765io YES
+rwintr YES   quechk YES   iowait YES   io_completed YES
+```
+
+Two driver bugs were fixed to get here. The reset interrupt drain in
+`rstout()` is committed. The geometry is configuration.
+
+## The live blocker: the task's read RPC
+
+`ds_device_read` never runs, so the bootstrap task is not issuing its
+read even though the device beneath it now works. `open_file` reaches
+the device layer for `device_open` but not for `device_read`.
+
+That is where to look next.
+
+## Superseded: the old device blocker
 
 The task builds server paths as
 `/dev/boot_device/mach_servers/<name>` (`src/bootstrap/bootstrap.c:723`)
