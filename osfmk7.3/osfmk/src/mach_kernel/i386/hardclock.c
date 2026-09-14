@@ -199,7 +199,53 @@ int paranoid_current = 0;
 int paranoid_cpu = 0;
 #endif	/* PARANOID_KDB */
 
+/*
+ * AI-ONLY NOTE: the attribute is required, and only on this function.
+ *
+ * hardclock is declared with four parameters but is reached through the
+ * generic interrupt dispatcher, which pushes only one:
+ *
+ *   i386/AT386/pic_isa.c, via take_irq(pic, 0, SPLHI, (intr_t)hardclock)
+ *   dispatcher (interrupt.S):  pushl %eax          <- the saved IPL
+ *                              pushl iunit(,%ecx,4) <- the one argument
+ *                              call  *ivect(,%ecx,4)
+ *
+ * That layout is deliberate: old_ipl is read from the slot the
+ * dispatcher pushed, ret_addr from the call's own return address, and
+ * regs from the interrupt frame beneath. Reading them is fine.
+ *
+ * The problem is writing. GCC turns the trailing call to hertz_tick
+ * into a sibling call and rebuilds the outgoing arguments in the
+ * incoming argument area, which it is entitled to assume it owns:
+ *
+ *   mov %edx,0x24(%esp)   <- old_ipl's slot = the dispatcher's saved IPL
+ *   mov %eax,0x20(%esp)   <- ivect's slot
+ *   jmp hertz_tick
+ *
+ * hardclock's frame is 28 bytes, so 0x24(%esp) is argument two, which
+ * is the saved IPL. The dispatcher pops that slot after the handler
+ * returns and passes it to set_spl_noi, which writes curr_ipl with no
+ * bounds check. Every spl value the kernel produces afterwards is
+ * garbage, and splx eventually panics with a byte-sized nonsense level
+ * that differs per boot because the overwritten value is a code address.
+ *
+ * GCC 2.7, which this tree was written against, did not perform sibling
+ * call optimization, so the assumption held. It is a documented change
+ * in compiler behaviour, not a defect in OSF's code.
+ *
+ * Only hardclock needs this. Every other handler reached through
+ * ivect[] takes exactly the one argument the dispatcher pushes, so the
+ * slots it rewrites are its own: fdintr(int ctrl) writes 0x20(%esp)
+ * with a 28 byte frame, and aha_intr(int unit) writes 0x40(%esp) with a
+ * 60 byte frame -- argument one in both cases, which the dispatcher
+ * discards with add $0x4,%esp. Verified against the linked image.
+ *
+ * The attribute is preferred over -fno-optimize-sibling-calls for the
+ * whole kernel because the defect is a property of this one function's
+ * calling convention, not of the tree.
+ */
 void
+__attribute__((optimize("no-optimize-sibling-calls")))
 hardclock(
 	int				ivect,
 				/* interrupt number */
