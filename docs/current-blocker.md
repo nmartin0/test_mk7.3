@@ -1327,3 +1327,70 @@ hardware frame.
 Question 2 is the cheaper one and may be the real fix: a kernel whose
 configured devices register their handlers would not exercise this path
 at all.
+
+
+---
+
+# RETRACTION: com0 and fdc0 DO have handlers registered
+
+The previous section claimed `ivect[4]` and `ivect[6]` were `intnull`,
+i.e. that com0 and fdc0 configured without registering handlers. **That
+is wrong.** The reading was taken through gdb against a stale guest,
+before the `pkill` defect was found.
+
+Re-read on a guest verified at the reset vector, stopped at the panic:
+
+```
+  ivect[ 0] = 0x001540a0  hardclock
+  ivect[ 1] = 0x0016d220  kdintr
+  ivect[ 4] = 0x0015e740  comintr      <- real handler
+  ivect[ 6] = 0x00161240  fdintr       <- real handler
+  ivect[13] = 0x00153f30  fpintr
+  ivect[14] = 0x00158410  intnull      <- the only null stub
+```
+
+The device table was right all along: `autoconf.c:600` carries
+`(intr_t)comintr` and `:406` carries `(intr_t)fdintr`, `take_dev_irq`
+passes `dev->intr` through to `take_irq`, and `take_irq` installs it.
+Autoconfiguration works correctly. There is no missing-handler defect.
+
+So the "cheaper question" recommended at the end of the previous section
+does not exist. Only question 1 remains: **why the interrupt exit path
+reaches the hardware frame.**
+
+## What still stands from that section
+
+The interrupt evidence itself came from standalone `-d int` runs, which
+write to their own log file and do not use gdb or port 1234, so they are
+not affected by the stale-process defect. Still valid:
+
+```
+Servicing hardware INT=0x44
+  v=44  IP=0008:00121591  SP=0010:08b78fd0  EAX=00000008  EFL=00000202
+Servicing hardware INT=0x46
+  v=46  IP=0008:00121591  SP=0010:08b78fd0  EAX=00000008
+```
+
+Two interrupts are taken at `thread_continue+49`, with `IF` set and
+`curr_ipl` healthy at 8. `0x121591` is the interrupted EIP from the
+hardware frame, and it is the value that later appears in `curr_ipl`.
+
+But the reading changes. These are **IRQ 4 and IRQ 6 being serviced
+normally by `comintr` and `fdintr`** -- ordinary device interrupts on a
+working kernel, not unclaimed interrupts hitting a null stub. The path
+that corrupts `curr_ipl` is therefore the *normal* interrupt path, not
+an error path, which makes it a more serious defect than described and
+removes the possibility of side-stepping it.
+
+## Lesson
+
+Every gdb-derived reading taken before the `pkill` defect was found must
+be re-verified before being relied on. The `-d int` and `-d exec` runs
+are not affected. Readings already re-confirmed on clean guests:
+
+- the `set_spl_noi` out-of-range write at t=0.7s -- **holds**
+- `ivect` contents -- **retracted, was wrong**
+
+Not yet re-verified, and currently unsafe to rely on: `intpri` contents,
+the gdb conditions and ignore-count limitations, and the
+`install_special_handler` boot-stack readings.
