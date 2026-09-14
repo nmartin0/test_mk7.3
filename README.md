@@ -14,7 +14,8 @@ ordinary user tasks and can be built and debugged at runtime.
 | `osfmk7.3/` | verbatim vendor import of OSF MK 7.3. Modified only where necessary and always with justification. |
 | `build/` | everything we write. |
 | `AGENTS.md` | operational rules — read before changing anything. |
-| `WORKFLOW.md` | how work is done here — read this first. |
+| `HANDOFF.md` | **start here** — current state, next question, and the traps. |
+| `WORKFLOW.md` | how work is done here. |
 | `ENVIRONMENT.md` | toolchain, ODE, MIG, and how to reproduce the build. |
 | `DEBUGGING.md` | how to find out why the kernel misbehaves; read before debugging. |
 | `docs/` | design notes, open decisions, and the current state. |
