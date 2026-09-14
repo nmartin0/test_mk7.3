@@ -201,7 +201,71 @@ Three routes, in increasing effort:
    supplying the environment it expects.
 3. **Write or port an IDE driver.** Most work, most general.
 
-Route 1 is the one to try first.
+Route 1 was tried and is **premature**. See below.
+
+## The floppy is not the blocker: the task blocks before any I/O
+
+Measured. The bootstrap task **prints nothing of its own** -- no
+`(bootstrap)` messages and, crucially, not the
+`ERROR: bootstrap task cannot find configuration file` that
+`bootstrap.c:352` emits when `open_file` fails. It executes (12 user
+page faults prove it) and then blocks **before it ever tries to open
+anything**.
+
+Attaching a floppy with `-fda` and forcing the boot device to it changed
+nothing, which is consistent: the task is not failing to find files, it
+is blocking earlier.
+
+**Do not build a floppy image yet.** Find out where the task blocks
+first. It is almost certainly its first Mach RPC -- cthread
+initialisation, a port it was not given, or a `service_checkin` against
+a `name_server` that is not running.
+
+### What was learned about the boot device anyway
+
+Worth keeping, because it will matter once the task gets that far, and
+because it is a **fourth instance of the `#if 0` disconnection pattern**.
+
+```c
+model_dep.c:606   char bootdev_name[10] = "hd0s1";   /* hardcoded IDE partition */
+model_dep.c:645   if (p = getenv("BOOTDEV"))         /* always NULL */
+bootstrap.c:389   #if 0  env_start = (vm_offset_t) env_buf;   /* env block DISABLED */
+```
+
+`getenv` reads `env_start`/`env_size`, which stay at `0` because the
+code populating them in `do_bootstrap_compat` is behind `#if 0`. So
+`BOOTDEV` can never be set, and `boot_device` is aliased to an IDE
+partition for which there is no driver.
+
+Both devices exist in the table -- `conf.c:154` defines `hdname "hd"`
+and `:160` defines `fdname "fd"`, each with full open/close/read entries
+-- so selecting the floppy is a matter of configuration, not a missing
+driver.
+
+Two ways to fix it when the time comes:
+
+1. Change `bootdev_name` to `"fd"`. One line, immediately testable.
+   Verified to build and boot; it simply does not change anything yet.
+2. Re-enable the env block and feed it from the multiboot command line,
+   restoring OSF's own documented `BOOTDEV` mechanism. More principled.
+
+The diagnostic either way is the kernel's own
+`Warning: unable to set boot_device`, printed between the `vga0` line
+and `realtime clock configured` if `dev_name_lookup` fails. Its absence
+today confirms the lookup currently succeeds.
+
+### The path convention, for later
+
+A bare server name in `default_config` is expanded by
+`bootstrap.c:723` to `/dev/boot_device/mach_servers/<name>`, and an
+absolute path not beginning `/dev/` gets a `/dev/boot_device` prefix. So
+the image will need `/mach_servers/name_server` and
+`/mach_servers/default_pager`.
+
+Also settled: `get_root_master_device_port()` returning `IP_NULL` is
+**not** a bug and not a blocker. It is `#if PARAGON860`/NORMA-only, 6.1
+has the identical stub, and the AT386 arm of `bootstrap.c:348` uses
+`bootstrap_master_device_port` instead.
 
 ## The architectural decision, still open
 
