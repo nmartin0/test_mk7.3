@@ -241,3 +241,88 @@ All by measurement, none to be retried:
 - the MIG user stub retries -- it does not; single send, returns on error
 - something clears `mig_buckets` after init -- it is already empty when
   `mig_init` returns
+
+
+---
+
+## Retraction: routine[1] is NOT why the table is empty
+
+The previous section left "why the table is empty" explicitly open. Two
+lines of reasoning were then pursued in conversation and both are wrong.
+They are recorded here so neither is repeated.
+
+### Wrong: a struct layout mismatch
+
+`sizeof(struct routine_descriptor)` compiled with the kernel's own flags
+is **24**, and `routine[]` begins at offset 20 in `struct
+rpc_subsystem`, so `routine[0].stub_routine` is at offset 24 -- exactly
+the `0x18(%eax)` the compiled `mig_init` reads. The offsets agree. There
+is no layout disagreement between `mach/rpc.h` and the MIG-generated
+tables.
+
+### Wrong: the `routine[1]` flexible-array idiom
+
+`mach/rpc.h:228` declares
+
+```c
+	struct routine_descriptor	/* Array of routine descriptors */
+			routine[1       /* Actually, (start-end+1) */
+				 ];
+```
+
+the pre-C99 flexible-array idiom, and the theory was that modern GCC
+takes `routine[1]` at its word, proves `j < 1`, and collapses the inner
+loop to a single `j == 0` test -- which would explain everything, since
+`routine[0]` is a null placeholder in every MIG-generated table.
+
+**Disproved by direct test.** A reduced case with the same shape --
+`struct rd routine[1]`, an outer loop over a table of pointers, an inner
+`for (j = 0; j < end - start; j++)` -- compiled with this build's flags
+(`-m32 -O2 -std=gnu89 -fno-pic`) produces a *proper* inner loop with a
+24 byte stride:
+
+```asm
+	addl	$24, %eax
+	cmpl	$1, (%eax)
+	addl	$24, %eax
+	cmpl	%edx, %ebx
+	jne	.L4
+```
+
+So `routine[1]` does not cause the collapse.
+
+### What that implies about the disassembly reading
+
+In the real `mig_init`, `113d5b` sets `%esi` to 1 immediately after the
+`j == 0` path. That is consistent with GCC having **peeled the first
+iteration** rather than collapsing the loop. If so, the `je 113d10` that
+was read as "null stub_routine abandons the whole subsystem" is only the
+peeled-iteration path, and the real loop continues elsewhere in the
+function.
+
+That reading was made by interpreting a branch target without following
+the other paths -- the same error that has recurred throughout this
+project. Treat the earlier claim that "only `routine[0]` is ever
+examined" as unproven.
+
+## What still stands
+
+Measured, with the instrument validated each time, and unaffected by the
+above:
+
+- `mig_buckets` is empty **at `mig_init`'s exit**, so nothing clears it
+  afterwards
+- every kobject RPC returns `MIG_BAD_ID` (-303)
+- `vm_page_size` stays 0, `cthread_stack_size` stays 0, and
+  `alloc_stack+255` writes to address 0 with `ebx = eax = 0`
+- `mig_init()` is reached; `ipc_bootstrap()` calls it
+- the outer loop, hash arithmetic, insert code and all struct offsets
+  are correct
+
+## How to settle it
+
+Do not read more disassembly. Instrument the loop directly: break inside
+`mig_init` and read `range` and `mig_e[i]->routine[j].stub_routine` for
+the first subsystem, for `j` beyond 0. That distinguishes "the loop does
+not run" from "the loop runs and every `stub_routine` reads as null",
+which are different bugs with different fixes.
