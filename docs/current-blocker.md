@@ -83,7 +83,57 @@ rwintr YES   quechk YES   iowait YES   io_completed YES
 Two driver bugs were fixed to get here. The reset interrupt drain in
 `rstout()` is committed. The geometry is configuration.
 
-## The live blocker: the bootstrap task is blocked, cause unknown
+## CORRECTION: the task DOES read. device_read is a trap, not an RPC.
+
+The framing below -- that no read is ever issued -- is **wrong**, and
+several rounds were built on it.
+
+`device_read` is a Mach trap, exactly like `vm_allocate`:
+
+```
+MACH_TRAP(syscall_device_read, 6),   /* 77 */   kern/syscall_sw.c:367
+```
+
+so `ds_device_read` and `_Xdevice_read`, the MIG message-path symbols,
+are never on the code path and their absence from traces means nothing.
+
+The last user-mode blocks the task executes, from a `-d exec` trace
+symbolised against `src/bootstrap/bootstrap`:
+
+```
+cthread_malloc+228     the mallocs succeed
+ufs_open_file+64
+memset+0               succeeds
+ufs_open_file+82
+strcpy+0               succeeds
+ufs_open_file+106
+device_read+0          the read IS issued
+syscall_device_read+0  via the trap
+```
+
+And the whole kernel-side path runs:
+
+```
+syscall_device_read YES   port_name_to_device YES
+ds_device_read_common YES device_read_alloc YES
+fdread YES                fdstrategy YES            io_completed YES
+```
+
+So the read is issued, the driver performs it, and the I/O completes.
+The task blocks **after** that -- inside the `IO_SYNC` wait in
+`ds_device_read_common`, or on the `copyout` of the result.
+
+`syscall_device_read` itself is fully implemented: it resolves the port,
+calls `ds_device_read_common` with `IO_READ|IO_SYNC`, panics on
+`MIG_NO_REPLY`, then copies out `data` and `data_count`. No panic
+occurs, so the sync operation is not returning `MIG_NO_REPLY`.
+
+**Watch `ds_device_read_common`, not `ds_device_read`.** That is the
+third time in this investigation that a conclusion came from tracing a
+name that is not on the path -- after `biodone`/`iodone` and
+`_Xvm_allocate`.
+
+## Superseded framing: the bootstrap task is blocked, cause unknown
 
 The task loads, runs, initialises its console, prints, opens the floppy
 and gets its record size. Then it stops. It is **blocked** -- not
