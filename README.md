@@ -17,7 +17,8 @@ ordinary user tasks and can be built and debugged at runtime.
 | `WORKFLOW.md` | how work is done here — read this first. |
 | `ENVIRONMENT.md` | toolchain, ODE, MIG, and how to reproduce the build. |
 | `DEBUGGING.md` | how to find out why the kernel misbehaves; read before debugging. |
-| `docs/` | design notes, open decisions, and the current blocker. |
+| `docs/` | design notes, open decisions, and the current state. |
+| `docs/archive/` | solved investigations, kept for their eliminated hypotheses and instrument traps. |
 | `tools/` | debugging helpers. |
 | `PRINCIPLES.md` | why the decisions are what they are. |
 
