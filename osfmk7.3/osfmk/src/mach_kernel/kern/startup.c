@@ -248,6 +248,8 @@ void	cpu_launch_first_thread(
 		thread_t	th);
 
 void	start_kernel_threads(void);
+extern void bootstrap_create_old(void);
+extern int  use_old_bootstrap;
 
 #if   KERNEL_TEST
 
@@ -514,7 +516,16 @@ start_kernel_threads(void)
 	/*
 	 *	Start the user bootstrap.
 	 */
-	bootstrap_create();
+	/*
+	 * AI-ONLY NOTE: bootstrap_create() is hardcoded to start the
+	 * GNU Hurd servers; bootstrap_create_old() is OSF's own path
+	 * and uses the bootstrap task this tree builds. Selected with
+	 * -o at boot. The default is unchanged.
+	 */
+	if (use_old_bootstrap)
+		bootstrap_create_old();
+	else
+		bootstrap_create();
 
 #if	XPR_DEBUG
 	xprinit();		/* XXX */

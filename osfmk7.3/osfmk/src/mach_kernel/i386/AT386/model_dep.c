@@ -296,6 +296,8 @@ extern vm_offset_t exec_start;
 extern vm_size_t exec_size;
 extern pt_entry_t *kpde;
 
+int		use_old_bootstrap = 0;	/* -o: use bootstrap_create_old() */
+
 int		cnvmem = 0;		/* must be in .data section */
 int		extmem = 0;
 
@@ -499,6 +501,17 @@ parse_arguments(void)
 		    break;
 		case 'r':
 		    cons_is_com1 = 1;
+		    break;
+		case 'o':	/* -o: OSF's original bootstrap path */
+		    /*
+		     * AI-ONLY NOTE: selects bootstrap_create_old() over
+		     * bootstrap_create(). The latter is hardcoded to
+		     * start the GNU Hurd servers ext2fs.static and
+		     * exec.static; the former starts the bootstrap task
+		     * this tree builds in src/bootstrap. Default is
+		     * unchanged.
+		     */
+		    use_old_bootstrap = 1;
 		    break;
 		case 'm':	/* -m??:  memory size Mbytes*/
 		    mem_size = atoi_term(p, &p)*1024*1024;
