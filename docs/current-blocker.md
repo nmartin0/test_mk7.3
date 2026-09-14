@@ -83,7 +83,74 @@ rwintr YES   quechk YES   iowait YES   io_completed YES
 Two driver bugs were fixed to get here. The reset interrupt drain in
 `rstout()` is committed. The geometry is configuration.
 
-## The live blocker: the task's read RPC
+## The live blocker: the bootstrap task is blocked, cause unknown
+
+The task loads, runs, initialises its console, prints, opens the floppy
+and gets its record size. Then it stops. It is **blocked** -- not
+faulting, not spinning -- with a healthy heap and a working device
+beneath it.
+
+### What is proven working
+
+```
+floppy driver      rbrate, fdseek, geteblk, setqueue, m765io,
+                   rwintr, quechk, iowait, io_completed   all run
+device layer       device_open, device_get_status         both served
+task heap          mapped; free-list nodes contain valid forward
+                   pointers into their own arena
+vm_allocate        a Mach trap (#65), not an RPC; it works
+fs_switch table    [ufs_ops, ext2fs_ops, minixfs_ops, 0], each
+                   ops[0] pointing at the right *_open_file
+```
+
+Execution reaches `ufs_open_file` through a well-formed indirect call.
+`ds_device_read` never runs, so no reader ever issues its first read.
+
+### Four hypotheses, all measured and all wrong
+
+Recorded so they are not retried:
+
+- **"the I/O never completes"** -- traced `biodone`, then `iodone`;
+  neither is a symbol. `device/buf.h` defines `biodone` as `iodone` and
+  `device/ds_routines.h` defines `iodone(ior)` as
+  `io_completed(ior, FALSE)`. `io_completed` runs fine.
+- **"`fs_switch` is malformed"** -- read from the binary, it is perfect.
+- **"the task's `vm_allocate` RPC is not dispatched"** -- it is not an
+  RPC. The stub is `mov $0xffffffbf,%eax; lcall $0x7,$0x0`, Mach trap
+  65, matching `MACH_TRAP(syscall_vm_allocate, 4)` in `syscall_sw.c`.
+  No GP fault occurs, and it works.
+- **"the heap is corrupt"** -- `0x1e80` holds `0x1e00`, a valid chain
+  into the same arena, and `0x1000` is mapped.
+
+### A measurement trap to avoid
+
+`eip` read at attach is **the idle loop**, not the task. It differs every
+time -- `0x122455`, `0x15a589`, `0x154bfb` -- because the task is
+blocked and the kernel is idling. Those values say nothing about where
+the task stopped. Several rounds were wasted on them.
+
+### What to measure next
+
+The blocked **thread's** saved context, not the idle loop's registers.
+The task is waiting on something; find the wait. Candidates in order:
+
+1. Walk the bootstrap task's thread list and read the blocked thread's
+   saved `eip`/`esp` from its PCB, which gives the real stop point.
+2. Check what `ufs_open_file` does between entry and `mount_fs` --
+   two `malloc` calls and a `memset` -- and whether any of them is the
+   stop.
+3. Check whether `open_file`'s `device_open` on the *filesystem* path
+   differs from the one that succeeded. `open_file` opens the device
+   with `D_READ|D_WRITE`; a read-only medium would fail that.
+
+### Instrument that works
+
+Attach **without** `-S` to the hung guest and read globals by address.
+Kernel breakpoints have been unreliable all session; this method has
+not failed. Task globals are addressable via `nm` on
+`src/bootstrap/bootstrap`.
+
+## Superseded: the old read-RPC framing
 
 `ds_device_read` never runs, so the bootstrap task is not issuing its
 read even though the device beneath it now works. `open_file` reaches
