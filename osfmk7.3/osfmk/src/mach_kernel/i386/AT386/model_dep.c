@@ -418,6 +418,10 @@ struct multiboot_module *mb_module = 0;
 void
 parse_multiboot(void)
 {
+	extern char		env_buf[256];
+	extern vm_offset_t	env_start;
+	extern vm_size_t	env_size;
+
 	/* Get memory info */
 	cnvmem = mb_info.mem_lower;
 	extmem = mb_info.mem_upper;
@@ -472,6 +476,66 @@ parse_multiboot(void)
 
 	kern_args_start = mb_info.cmdline;
 	kern_args_size = strlen((char *) kern_args_start);
+
+	/*
+	 * AI-ONLY NOTE: populate the environment from the command line.
+	 *
+	 * getenv() below walks env_start for NUL separated KEY=VALUE
+	 * strings, and OSF documented BOOTDEV and BOOTUNIT as the way to
+	 * select the boot device. But nothing ever filled that buffer:
+	 * the code that did so lives in do_bootstrap_compat() in
+	 * kern/bootstrap.c behind an #if 0, so env_start and env_size
+	 * stayed 0 and getenv() always returned NULL. bootdev_name was
+	 * therefore always its compiled-in default, "hd0s1", an IDE
+	 * partition this configuration has no driver for.
+	 *
+	 * Re-enabling that block in place would not help. It runs in
+	 * do_bootstrap_compat(), long after the device configuration at
+	 * the end of machine_init() that calls getenv("BOOTDEV").
+	 * Filling the buffer here is early enough: parse_multiboot() runs
+	 * from machine_init() well before probeio() and the
+	 * dev_name_lookup() that consumes the result.
+	 *
+	 * The source is the multiboot command line, which is already in
+	 * hand. Any whitespace delimited token containing '=' is copied
+	 * in as an environment entry, so
+	 *
+	 *   qemu-system-i386 ... -append "BOOTDEV=fd -o"
+	 *
+	 * selects the floppy with no source change, which is what OSF
+	 * documented. Tokens without '=' are left alone; parse_arguments()
+	 * reads those separately from kern_args_start for its -h, -r, -m,
+	 * -k and -o flags.
+	 */
+	{
+	    register char	*src = (char *) kern_args_start;
+	    register char	*end = src + kern_args_size;
+	    register char	*dst = env_buf;
+	    char		*limit = env_buf + sizeof(env_buf) - 1;
+	    char		*tok;
+	    boolean_t		has_eq;
+
+	    while (src < end) {
+		while (src < end && (*src == ' ' || *src == '\t'))
+		    src++;
+		tok = src;
+		has_eq = FALSE;
+		while (src < end && *src != ' ' && *src != '\t') {
+		    if (*src == '=')
+			has_eq = TRUE;
+		    src++;
+		}
+		if (has_eq && (dst + (src - tok) + 1) <= limit) {
+		    while (tok < src)
+			*dst++ = *tok++;
+		    *dst++ = '\0';
+		}
+	    }
+	    if (dst != env_buf) {
+		env_start = (vm_offset_t) env_buf;
+		env_size = dst - env_buf;
+	    }
+	}
 
  	//boot_args_start = mb_module->cmdline;
  	//boot_args_size = strlen(boot_args_start);
@@ -569,6 +633,7 @@ machine_boot_info(char *buf, vm_size_t size)
 	return buf;
 }
 
+extern char env_buf[256];
 extern vm_offset_t env_start;
 extern vm_size_t env_size;
 
