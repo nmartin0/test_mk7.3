@@ -1468,3 +1468,82 @@ affected by the stale-guest defect. The runtime readings quoted --
 `SP = 0x08b78fd0` and `esp = 0x1c9ff4` -- come from a `-d int` log and
 from a watchpoint run on a guest verified at the reset vector
 respectively, so both are sound.
+
+
+---
+
+# Stack layout confirmed: boot and interrupt stacks are one 4 KB region
+
+Point 3 of the previous section is confirmed, and it is **by design**,
+not a defect.
+
+```
+intstack        = 0x1c9000
+eintstack       = 0x1ca000        interrupt stack is exactly 4 KB
+int_stack_high  @ 0x1ca000, value 0x1ca000
+int_stack_top   @ 0x1ca004, value 0x1ca000
+vstart          : lea 0x1ca000,%esp
+```
+
+`start.S` declares the region as "Interrupt and bootup stack for initial
+processor" -- OSF deliberately shares it. `vstart` sets `%esp` to
+`eintstack`, so the boot stack **is** the interrupt stack.
+
+The switch guard is therefore correct in both directions:
+
+- on the boot stack, `esp` is just under `0x1ca000`, so
+  `cmp int_stack_high,%esp; jb` takes the branch to
+  `int_from_intstack` and does **not** switch -- right, because it is
+  already the interrupt stack;
+- on a thread stack such as `0x08b78fd0`, far above `0x1ca000`, the
+  branch is not taken and the switch happens. **This is the failing
+  case.**
+
+Every runtime value observed in this investigation lies in that 4 KB
+region: `install_special_handler` at `esp = 0x1c9f30`, 208 bytes from
+the top, and the corrupted `set_spl_noi` write at `esp = 0x1c9ff4`, just
+12 bytes from the top.
+
+## A typo in start.S, harmless
+
+`start.S:249` defines the label with the colon inside the macro
+argument:
+
+```asm
+        .globl  EXT(eintstack)
+EXT(eintstack:)                 <- should be EXT(eintstack):
+```
+
+Line 246 gets it right for `intstack`. It assembles and resolves
+correctly -- `nm` shows `eintstack` at `0x1ca000` as intended -- because
+`EXT(x)` expands to `x` here and `EXT(eintstack:)` therefore yields
+`eintstack:`, a valid label. It works under the underscore convention
+too. **Not a bug, and not to be "fixed";** recorded only so the next
+reader does not spend time on it, as this one did.
+
+## Where the search now stands
+
+The structure is understood and is correct as written:
+
+- entry stub, switch guard and both arms -- examined, consistent
+- `interrupt`'s push/pop accounting -- verified instruction by
+  instruction
+- `intnull` -- balances exactly, 28 bytes
+- stack layout and sharing -- confirmed, deliberate
+- `ivect` registration -- correct, handlers installed
+
+And yet `pop %eax` at `0x154d4c` retrieves the interrupted EIP. Every
+individual piece checks out while the whole does not, which means the
+wrong assumption is still somewhere unexamined rather than in any of the
+pieces above.
+
+The most likely remaining place is the **transition between the two
+arms**: what happens when an interrupt arrives on a thread stack,
+switches to the shared 4 KB region, and the code already using that
+region -- the boot stack context -- is still live. The shared-stack
+design is only safe if the boot stack is abandoned before threads run.
+`install_special_handler` was observed running at `esp = 0x1c9f30`, on
+the boot stack, *while* threads existed. That combination is worth
+checking directly: if boot-stack code is still executing when a
+thread-stack interrupt switches onto the same region, the two will
+overwrite each other.
