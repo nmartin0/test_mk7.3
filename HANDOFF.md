@@ -38,7 +38,37 @@ path that is expected: the boot module used in testing is OSF's own
 `bootstrap` binary passed twice as a stand-in for `ext2fs.static`, so it
 is invoked with Hurd arguments it does not understand.
 
-## The immediate next question
+## The -o path is not failing — it is idle, correctly
+
+Measured after the handoff was first written, on a clean guest.
+
+Over 20 seconds on the `-o` path:
+
+```
+timer interrupts (v=40):  260     scheduler running steadily
+page faults (v=0e):        12     all from the initial load, none since
+any other vector:           0     no faults, no errors
+```
+
+and the last kernel blocks executed are `idle_thread_continue` cycling
+through `splvm` and `splx` — the idle loop.
+
+So the bootstrap task **loads, runs at ring 3, demand-pages its 12 pages
+and then blocks**, and the scheduler correctly goes idle because nothing
+is runnable. That is what OSF's bootstrap task should do when there is
+nothing to bootstrap: it is waiting on a Mach RPC for a server that does
+not exist.
+
+The 12 user faults are an orderly progression — an instruction fetch at
+`0x08063e80`, a stack page at `0xbfffffec`, then code and data pages
+through `0x0805`–`0x0806`. Nothing anomalous.
+
+**Consequence: there is no bug to chase on this path.** The next step is
+to give the bootstrap task something to do — a server to load — rather
+than to debug the kernel. `-o` is now a working reference for what a
+successful OSF-path boot looks like.
+
+## Earlier framing of this, kept for the record
 
 On the `-o` path the console stops after ELF section scanning:
 
