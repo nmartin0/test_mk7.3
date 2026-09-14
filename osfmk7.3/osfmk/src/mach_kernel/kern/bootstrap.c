@@ -867,7 +867,8 @@ user_bootstrap(void)
 	/*NOTREACHED*/
 }
 
-#if 0
+/* AI-ONLY NOTE: #if 0 removed; this is the user_bootstrap that
+ * bootstrap_create_old() needs. See the note on that function. */
 static void
 user_bootstrap_old(void)
 {
@@ -1009,7 +1010,7 @@ user_bootstrap_old(void)
 	thread_bootstrap_return();
 	/*NOTREACHED*/
 }
-#endif
+
 
 kern_return_t
 do_bootstrap_ports(
@@ -1315,7 +1316,7 @@ bootstrap_create_old(void)
 	/*
 	 * Start the bootstrap thread.
 	 */
-	thread_start(bootstrap_thr_act->thread, user_bootstrap);
+	thread_start(bootstrap_thr_act->thread, user_bootstrap_old);
 	kr = thread_resume(bootstrap_thr_act);
 	assert( kr == KERN_SUCCESS );
 }
