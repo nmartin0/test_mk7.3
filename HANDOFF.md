@@ -127,6 +127,82 @@ Look for more of the same: functions suffixed `_old`, blocks behind
 `#if 0`, and old callers referring to names that a rename has since
 repointed.
 
+## The userland: what exists, what builds, what is missing
+
+The bootstrap task carries its own default configuration
+(`src/bootstrap/bootstrap.c:82`):
+
+```c
+const char default_config[] = "\
+name_server name_server\n\
+default_pager default_pager\n\
+unix startup -s\n\
+";
+```
+
+Three servers. Status of each, measured by building them:
+
+| server | status |
+|---|---|
+| `name_server` | **in tree and builds.** It is `mach_services/servers/netname`, whose Makefile links `netname.o nprocs.o netnameServer.o` into a binary literally named `name_server`, 140,396 bytes. `netname.c:117` prints "(name_server): started". Needs `mach_services/lib/libservice` built first. |
+| `default_pager` | **in tree and builds**, 211,100 bytes. Needs libcthreads, libsa_mach, libmach and libmach_maxonstack in the same MK_BUILD first -- it is only a build-ordering problem, the code is fine. |
+| `unix` | **absent.** This is the BSD4.3 personality, the UX lineage, which was always distributed separately because it was licence-encumbered. |
+
+OSFMK 6.1 was checked and ships the **same** set -- bootstrap,
+default_pager, mach_services, stand, usr. The missing servers are not
+there either. 7.3 actually has *more* than 6.1: `file_systems/` with
+`ext2fs` and `bext2fs`, `xkern/` and `tgdb/`.
+
+### On replacing the `unix` server
+
+UX is based on 4.3BSD and was licence-encumbered. The argument that
+Caldera's 2002 grant implicitly freed it is **not safe to rely on**:
+that grant names UNIX V1-V7 and 32V specifically rather than
+derivatives, 4.3BSD contains much more than 32V-derived material, the
+*USL v. BSDi* settlement is what actually addressed 4.3BSD's encumbered
+files and produced 4.4BSD-Lite as the clean branch, and Caldera's own
+authority over the UNIX copyrights was contested afterwards in
+*SCO v. Novell*. It might be fine; it would need a lawyer.
+
+**LITES is the better candidate on both grounds.** It is 4.4BSD-Lite
+based, so post-settlement and permissively licensed, and it was
+developed against Mach 3.0/Mach 4 -- the same CMU lineage OSFMK 7.3
+descends from via OSF, and therefore a closer relative than GNU Mach.
+It carries the same *kind* of RPC-dialect risk as the Hurd servers and
+should be tested cheaply before any investment.
+
+## The real blocker for both paths: there is no disk
+
+The bootstrap task does not consume multiboot modules. It **reads
+servers from a filesystem on a device**:
+
+```c
+bootstrap.c:346   result = open_file(bootstrap_root_device_port, pathname, &f);
+bootstrap.c:1454  result = open_file(bootstrap_root_device_port, filename, &f);
+```
+
+Passing `name_server` and `default_pager` with `-initrd` therefore
+changes nothing -- verified, the boot is byte-identical with one module
+or three, because the kernel never tells the task they exist.
+
+This is the same blocker the Hurd path has, where the boot script mounts
+`hd2s2`. Both need a block device with a filesystem, and this
+configuration has **no IDE driver** -- which is why `ivect[14]`, the
+primary IDE channel, is `intnull`.
+
+Three routes, in increasing effort:
+
+1. **Floppy.** `fd0` and `fd1` *are* configured with a working `fdintr`,
+   and QEMU emulates a floppy controller. A small filesystem image is
+   far less work than a disk driver, and 7.3 ships `ext2fs`/`bext2fs`
+   under `file_systems/` which the bootstrap task may be able to read.
+2. **Teach the bootstrap path to consume multiboot modules**, which is
+   what the Hurd adaptation did. Changes OSF's code rather than
+   supplying the environment it expects.
+3. **Write or port an IDE driver.** Most work, most general.
+
+Route 1 is the one to try first.
+
 ## The architectural decision, still open
 
 `docs/bootstrap-fork.md`. Both paths now work to the same depth, so the
