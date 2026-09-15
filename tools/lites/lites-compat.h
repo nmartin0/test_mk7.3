@@ -37,7 +37,13 @@ typedef mig_reply_error_t mig_reply_header_t;
  * Both arities work: malloc(n) and malloc(n, M_RTABLE, M_DONTWAIT) both
  * reach the one-argument allocator.
  */
-extern void *malloc(unsigned long);
+/*
+ * i386: size_t is unsigned int. LITES declares malloc as
+ * void *malloc(unsigned int) in emulator/e_mach_msg_server.c, so this
+ * must agree or the macro below rewrites that declaration into a
+ * conflicting one.
+ */
+extern void *malloc(unsigned int);
 extern void  free(void *);
 
 #define malloc(sz, ...)  (malloc)(sz)
