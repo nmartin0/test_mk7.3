@@ -83,7 +83,93 @@ rwintr YES   quechk YES   iowait YES   io_completed YES
 Two driver bugs were fixed to get here. The reset interrupt drain in
 `rstout()` is committed. The geometry is configuration.
 
-# WORKING: the bootstrap task reads its config off a minix floppy
+# MILESTONE: the OSF multiserver userland runs
+
+```
+(bootstrap): loading /dev/boot_device/mach_servers/name_server
+ELF: Unknown program header flags 0x4
+ELF: Unknown program header flags 0x4
+(bootstrap): loading /dev/boot_device/mach_servers/default_pager
+ELF: Unknown program header flags 0x4
+ELF: Unknown program header flags 0x4
+(bootstrap): started
+(name_server): started
+(default_pager): started
+```
+
+Both servers -- `name_server` at 140,396 bytes and `default_pager` at
+211,100 bytes -- are read off a minix floppy, ELF parsed, loaded and
+started. The whole chain works:
+
+```
+kernel boots -> VM, IPC, devices -> user task at ring 3
+-> cthreads init -> Mach IPC -> console device
+-> floppy driver -> minix filesystem
+-> /mach_servers/bootstrap.conf read and parsed
+-> name_server  loaded and STARTED
+-> default_pager loaded and STARTED
+-> (bootstrap): started
+```
+
+That takes about 34 minutes of wall time in this environment. See the
+timing note below before concluding anything is wrong.
+
+## The invocation
+
+```sh
+qemu-system-i386 -kernel mach_kernel.PRODUCTION \
+    -append "-r BOOTDEV=fd BOOTPART=1 -o" \
+    -initrd bootstrap -fda minix.img \
+    -serial file:/tmp/console.log -display none -no-reboot -m 64
+tail -f /tmp/console.log
+```
+
+`-r` selects the serial console, which gives full scrollback. Do not use
+`tools/vgadump.py` for this -- it reads a 25 line framebuffer that
+scrolls.
+
+## Building the image
+
+```sh
+dd if=/dev/zero of=minix.img bs=1024 count=1440
+mkfs.minix -1 -n 14 minix.img
+python3 tools/mkminix.py minix.img \
+    $MK_BUILD/obj/at386/mach_services/servers/netname/name_server \
+    $MK_BUILD/obj/at386/default_pager/default_pager
+```
+
+Two things are easy to get wrong. `minixfs.c:560` accepts only
+`MINIX_SUPER_MAGIC` `0x137F`, and `mkfs.minix -1` defaults to 30
+character names giving `0x138F`, so **`-n 14` is required**. And
+`tools/mkminix.py` writes directories and files by hand, including
+single indirect blocks for files over 7 KB, because a loop mount needs
+privileges the build environment does not have.
+
+The servers must be built first:
+
+| server | needs |
+|---|---|
+| `name_server` | `mach_services/lib/libservice` |
+| `default_pager` | libcthreads, libsa_mach, libmach, libmach_maxonstack |
+
+## Still open
+
+**`BOOTPART=1` is required and should not be.** The boot device minor is
+`unit + BOOTPART`, and `MEDIATYPE(dev)` is `dev & 0x03`, indexing
+`m765f[]`; without it the driver picks entry [0], 720 Kb with 9 sectors
+per track, and every seek past that fails. Selecting 1.44 Meg through a
+partition number is a workaround, not a fix.
+
+**About 26 seconds per floppy read.** Much of this is the environment:
+no KVM, TCG on a single CPU, guest advancing about six times slower than
+wall clock. Measure on a machine with KVM before treating it as a driver
+bug.
+
+**`ELF: Unknown program header flags 0x4` prints twice per load.** That
+is the ELF header segment, correctly skipped by the `p_vaddr > entry`
+test but noisily. Cosmetic.
+
+## Superseded: the bootstrap task reads its config
 
 ```
 (bootstrap): loading /dev/boot_device/mach_servers/name_server
