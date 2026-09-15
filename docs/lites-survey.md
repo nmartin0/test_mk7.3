@@ -193,6 +193,42 @@ bsd_types_gen.symc:8:6: error: missing terminating " character
 `gensym.awk` emits output a modern cpp rejects -- structurally the same
 problem OSFMK's own `genassym` had, and the next thing to fix.
 
+### Further: MIG interoperates, and the server tree starts building
+
+With `tools/lites/gensym-newline.patch` applied and
+`tools/lites/mig-shim.sh` in place of `$MACH_RELEASE_DIR/bin/mig`:
+
+- `bsd_types_gen.symc` compiles and `bsd_types_gen.h` is generated
+- **our `mig` runs LITES's `.defs` against our `mach_types.defs`** and
+  produces `bsd_1_server.c` and `bsd_1_server.h`
+- `-DOSF_LEDGERS=1 -DUNTYPED_IPC=1` appear on the compile lines, so the
+  `osfmach3` arms are live
+
+That is the interoperation this survey set out to test, working at the
+tool level: LITES source, our MIG, our definitions, one output.
+
+The build then stops on a LITES packaging inconsistency rather than
+anything to do with OSFMK. `conf/files:303` lists
+`serv/bsd_server.c`, while the MIG rule derives its output name from
+`bsd_1.srv` and so produces `bsd_1_server.c`. The two disagree, and make
+passes the unresolved bare name to gcc:
+
+```
+cc1: fatal error: bsd_server.c: No such file or directory
+```
+
+Untangling that is LITES build-system work and is where the next session
+should start.
+
+### Shims kept in this tree
+
+Both are ours, so nothing in LITES or OSFMK is modified:
+
+| file | purpose |
+|---|---|
+| `tools/lites/mig-shim.sh` | LITES invokes `mig -cc <cmd>`; OSF's `mig` spells it `-cpp`, and silently treats `-cc` as a cpp flag so the command name becomes a filename. The shim translates and passes everything else through. |
+| `tools/lites/gensym-newline.patch` | a one-line change to LITES's `conf/gensym.awk`, carried as a patch rather than a fork |
+
 ## Build issues found so far
 
 All are 1990s-toolchain modernisation, none are interface problems:
@@ -203,7 +239,9 @@ All are 1990s-toolchain modernisation, none are interface problems:
 | `-nostdinc` without GCC's own include path, so `stdarg.h` is missing | solved with `-isystem $(gcc -m32 -print-file-name=include)` |
 | builds 64-bit by default, so `movl %%esp, %0` fails to assemble | solved with `-m32` via `CXXX`/`CHXXX` |
 | device call arity | solved by `--with-config=...+osfmach3` |
-| `gensym.awk` output rejected by modern cpp | **open, current blocker** |
+| `gensym.awk` output rejected by modern cpp | solved by `tools/lites/gensym-newline.patch` |
+| `mig -cc` vs OSF's `-cpp` | solved by `tools/lites/mig-shim.sh` |
+| `conf/files` names `bsd_server.c`, MIG produces `bsd_1_server.c` | **open, current blocker** |
 | `-I-` deprecated, `#endif KERNEL` extra tokens | warnings only |
 
 ## Known work before it can be tried
