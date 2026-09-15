@@ -180,6 +180,36 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
+### The root device: hd0c, and why
+
+`server_init.c:301` had `char default_root[] = "hd0a"`, used because
+`argc == 0`. The patch series now makes it `hd0c`, and the reason is in
+the kernel's `hd` driver.
+
+`hdopen` refuses unless `getvtoc(dev)` succeeds **and** the partition
+has non-zero size. `getvtoc` builds the partition table by calling
+`read_bios_partitions(dev, 0, ...)` -- reading sector 0 as a DOS/BIOS
+partition table -- and when that fails it does this:
+
+```c
+/* make partition 'c' the whole disk in case of failure */
+label->d_partitions[PART_DISK].p_offset = 0;
+label->d_partitions[PART_DISK].p_size =
+        ncyl * nheads * nsec;
+```
+
+`PART_DISK` is 2 (`disk.h:149`), and `dev_name_lookup` maps partition
+letters `a`-`h` onto indices 0-7, so index 2 is `c`.
+
+So **an unpartitioned disk image gives `hd0c` = the whole disk**, with
+no MBR, no BSD disklabel and no partition arithmetic to get right.
+`hd0a` would have required a real DOS partition table.
+
+Note also that this driver is **CHS, not LBA**: `hd_ssend` computes
+sector, head and cylinder from `label->d_nsectors` and `d_ntracks`, so
+the geometry QEMU presents has to be consistent with what the driver
+reads from CMOS.
+
 ### What is needed
 
 A filesystem LITES can mount as root. The code above takes **either**:

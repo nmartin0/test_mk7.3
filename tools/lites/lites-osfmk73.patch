@@ -145,6 +145,34 @@ index a0798b7..6e9f6cf 100644
  		/*
  		 * take default action
  		 */
+diff --git a/server/serv/server_init.c b/server/serv/server_init.c
+index 25907d4..ec1123f 100644
+--- a/server/serv/server_init.c
++++ b/server/serv/server_init.c
+@@ -298,7 +298,22 @@ void init_ports()
+ 				       &default_processor_set);
+ }
+ 
+-char default_root[] = "hd0a"; /* XXX */
++/*
++ * OSFMK 7.3's hd driver builds its partition table in getvtoc() by
++ * reading sector 0 as a DOS/BIOS partition table. When that fails --
++ * which it does on an unpartitioned image -- it falls back to
++ *
++ *     "make partition 'c' the whole disk in case of failure"
++ *
++ * setting d_partitions[PART_DISK], and PART_DISK is 2, which
++ * dev_name_lookup spells 'c' since it maps partition letters a-h onto
++ * indices 0-7.
++ *
++ * So "hd0c" is the whole of an unpartitioned disk and needs no MBR,
++ * no BSD disklabel and no partition arithmetic. "hd0a" would require
++ * a real DOS partition table.
++ */
++char default_root[] = "hd0c";
+ 
+ void parse_arguments(
+ 	int	argc,
 diff --git a/server/serv/user_copy.c b/server/serv/user_copy.c
 index b23cb19..327e9f0 100644
 --- a/server/serv/user_copy.c
