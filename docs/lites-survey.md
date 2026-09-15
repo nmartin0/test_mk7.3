@@ -370,6 +370,58 @@ So LITES's file name is the clue that was there all along --
 `xmm_interface.c`. Its OSFMACH3 arm targets a NORMA-enabled OSF Mach,
 and the name says so.
 
+#### MkLinux confirms the fix, and supplies the idiom
+
+`github.com/slp/osfmk-mklinux` settles it. Its OSFMK is the **same
+generation as ours**: no `norma/` directory, and `mach.defs:247` reads
+the identical `skip; /* was memory_object_establish; old
+port_set_backlog */`. So MkLinux ran a real personality on an OSFMK with
+NORMA already removed, which is exactly our situation, and its pager is
+the canonical example.
+
+`mklinux/src/osfmach3/server/inode_pager.c:905`, `inode_object_init`,
+ends with:
+
+```c
+/*
+ * Tell the micro-kernel that the memory object is ready on our side.
+ */
+attributes.copy_strategy    = imo->imo_copy_strategy;
+attributes.cluster_size     = PAGE_SIZE;     /* or 0 for the default */
+attributes.may_cache_object = imo->imo_cacheable;
+attributes.temporary        = FALSE;
+kr = memory_object_change_attributes(mem_obj_control,
+                                     MEMORY_OBJECT_ATTRIBUTE_INFO,
+                                     (memory_object_info_t) &attributes,
+                                     MEMORY_OBJECT_ATTR_INFO_COUNT,
+                                     MACH_PORT_NULL);
+```
+
+Its own comment -- "tell the micro-kernel that the memory object is
+ready on our side" -- is precisely what `object_ready = TRUE` meant in
+the NORMA establish call. The semantic did not disappear; it moved into
+`change_attributes`, and the field vanished because being ready is now
+implied by making the call.
+
+This also confirms the second half. MkLinux's
+`inode_object_discard_request` at line 895 is a one-line `panic()`. A
+stub is the correct implementation, because this generation of OSFMK
+never initiates the discard protocol.
+
+One difference worth noting: MkLinux uses the **plain**
+`memory_object_server`, not the sequence-numbered one -- zero `seqnos_`
+references in its whole server. LITES chose the seqnos variant, and our
+`libmach` does provide `Smem_svr`, so that choice remains workable. But
+if the seqnos path gives trouble later, the plain interface is the
+better-trodden one for this kernel.
+
+Cross-checked against OSFMK 6.1 (`github.com/nmartin0/osfmk6.1`), whose
+`norma/xmm_user.c:410` shows the NORMA layer doing the same thing by
+either `K_SET_READY(mobj, OBJECT_READY_TRUE, MAY_CACHE_FALSE, modwc,
+MEMORY_OBJECT_COPY_SYMMETRIC, PAGE_SIZE, ...)` or a plain
+`memory_object_init`. Same four attributes, same intent, three
+different spellings across three kernel generations.
+
 #### The practical consequence: one function
 
 Mapping the conditionals in `xmm_interface.c` shows `#if OSFMACH3` wraps
