@@ -16,3 +16,29 @@
 #include <mach/mig_errors.h>
 typedef mig_reply_error_t mig_reply_header_t;
 #endif
+
+/*
+ * BSD kernel malloc arity.
+ *
+ * LITES's include/sys/malloc.h supplies MALLOC, FREE, bsd_malloc and
+ * bsd_free, all resolving to a one-argument malloc, because the server
+ * links against a normal allocator rather than a BSD kernel one. But 53
+ * call sites across 46 BSD-derived files in server/net, server/netccitt
+ * and server/isofs were never converted and still call
+ *
+ *	malloc(size, type, flags)
+ *	free(addr, type)
+ *
+ * directly. Converting them all would be a large patch against LITES.
+ * These macros drop the extra arguments instead, so the existing calls
+ * compile unchanged. The parentheses around the function names stop the
+ * macro recursing into its own expansion.
+ *
+ * Both arities work: malloc(n) and malloc(n, M_RTABLE, M_DONTWAIT) both
+ * reach the one-argument allocator.
+ */
+extern void *malloc(unsigned long);
+extern void  free(void *);
+
+#define malloc(sz, ...)  (malloc)(sz)
+#define free(p, ...)     (free)(p)
