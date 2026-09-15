@@ -353,7 +353,32 @@ ln -sf libcthreads.a libthreads.a
 ln -sf libsa_mach.a  libmach_sa.a
 ```
 
-### Remaining: the link step
+### The link runs; 1055 undefined symbols remain
+
+The link now executes over all 150 objects. Getting there needed:
+
+| issue | fix |
+|---|---|
+| `CRT0` unset, resolving to the literal `crt0-not-found` | `ar x libsa_mach.a crt0.o` into `$MACH_RELEASE_DIR/lib`; OSFMK keeps crt0 inside the archive rather than standalone |
+| `ld: unrecognised emulation mode: 32` | the link rule calls `ld` directly, not `gcc`, so it is `LDFLAGS="-m elf_i386"` and not `-m32` |
+| `liblites.a` built 64-bit | rebuild it from clean after adding `-m32`; the archive predated the flag |
+| `-lmach` missing from `LIBS` | LITES's non-OSF arm omits it. Overriding `LIBS` on the make line took undefined symbols from 2089 to 1055 |
+| `__stack_chk_fail_local` | `-fno-stack-protector` |
+
+What is left divides in two.
+
+**A 32-bit libgcc this host does not have.** `__divdi3` and `__moddi3`
+are libgcc helpers, and `gcc -m32 -print-libgcc-file-name` returns the
+x86_64 path because no multilib libgcc is installed. A machine with
+`gcc-multilib` properly set up should resolve these.
+
+**Mach RPCs our libraries do not export**, such as `clock_sleep` and
+`host_get_clock_service`. These are generated stubs, so the question is
+which `.defs` are compiled into which OSFMK library and whether the
+export tree is missing one. That is OSFMK-side work and the first task
+in this effort that is.
+
+### Superseded: the link step
 
 ```
 ld: cannot find crt0-not-found
