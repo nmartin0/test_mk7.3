@@ -141,7 +141,92 @@ dereferenced, that crt0's `else` branch skipped thread initialisation,
 and that the loader failed to pass arguments. All wrong. The measurement
 settled in one run what reading had not settled in four attempts.
 
-## The new blocker: no paging store
+## The blocker is the root filesystem, not paging
+
+`init_main.c:349` onward, immediately after the banner:
+
+```c
+printf("%s\n", version);
+printf(copyright);          /* <- last thing seen on the console */
+
+/* Mount the root file system. */
+kr = (*mountroot)();
+#if EXT2FS
+/* XXX if FFS fails, fall back to EXT2FS */
+if (kr == EINVAL)
+        kr = ext2_mountroot();
+#endif
+if (kr != KERN_SUCCESS)
+        panic("cannot mount root x%x %s", kr, mach_error_string(kr));
+```
+
+The panic is the next statement after the copyright text, and the
+copyright text is the last output. There is no other panic between them.
+**LITES panics because it has no root filesystem.**
+
+`panic: UWVS+` is that message mangled. `panic` does
+`printf("panic: %r\n", fmt, ap)`, and `%r` -- a BSD extension that
+re-expands a format string against a `va_list`, implemented at
+`subr_prf.c:473` -- destroys the text while the panic itself is real and
+correctly placed. Cosmetic, but it cost a detour and is worth fixing.
+
+**The paging messages are a consequence, not the cause.** In the console
+log the panic is line 48 and the pager complaints begin at line 49.
+`panic()` calls `boot(TRUE, RB_AUTOBOOT|RB_DUMP)`, and `RB_DUMP` asks
+for space to write a crash dump, which is what the pager cannot supply.
+Reading `swapon suggested` as the blocker sent this investigation in the
+wrong direction for a round; the line ordering said otherwise.
+
+`-m 256` changes nothing -- same panic, same position -- which correctly
+rules out memory pressure.
+
+### The root device: hd0c, and why
+
+`server_init.c:301` had `char default_root[] = "hd0a"`, used because
+`argc == 0`. The patch series now makes it `hd0c`, and the reason is in
+the kernel's `hd` driver.
+
+`hdopen` refuses unless `getvtoc(dev)` succeeds **and** the partition
+has non-zero size. `getvtoc` builds the partition table by calling
+`read_bios_partitions(dev, 0, ...)` -- reading sector 0 as a DOS/BIOS
+partition table -- and when that fails it does this:
+
+```c
+/* make partition 'c' the whole disk in case of failure */
+label->d_partitions[PART_DISK].p_offset = 0;
+label->d_partitions[PART_DISK].p_size =
+        ncyl * nheads * nsec;
+```
+
+`PART_DISK` is 2 (`disk.h:149`), and `dev_name_lookup` maps partition
+letters `a`-`h` onto indices 0-7, so index 2 is `c`.
+
+So **an unpartitioned disk image gives `hd0c` = the whole disk**, with
+no MBR, no BSD disklabel and no partition arithmetic to get right.
+`hd0a` would have required a real DOS partition table.
+
+Note also that this driver is **CHS, not LBA**: `hd_ssend` computes
+sector, head and cylinder from `label->d_nsectors` and `d_ntracks`, so
+the geometry QEMU presents has to be consistent with what the driver
+reads from CMOS.
+
+### What is needed
+
+A filesystem LITES can mount as root. The code above takes **either**:
+
+- BSD FFS, via `mountroot`
+- **ext2**, via `ext2_mountroot`, tried when FFS returns `EINVAL`
+
+ext2 is far easier to produce on a modern Linux host, and unlike the
+kernel's minix reader there is no exotic magic requirement to satisfy --
+this is LITES's own ext2 implementation, not the bootstrap task's.
+
+The root device comes from `rootname`/`rootdev_name` in
+`server_init.c`, with a compiled-in default in `argv_space` beginning
+`/dev/hd0f/mach_servers/startup`, so selecting the device is a separate
+question from creating the filesystem.
+
+## Superseded: the new blocker, no paging store
 
 ```
 panic: UWVS+
