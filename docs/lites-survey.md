@@ -516,7 +516,41 @@ Resolving it means writing the missing handlers against 7.3's actual
 what `memory_object_establish` did. That is real porting work rather
 than a shim, and it is the first task in this effort that is.
 
-### The 5 that remain
+### Done: every OSFMK-side symbol resolves
+
+`tools/lites/lites-osfmk73.patch` now carries the pager work, and the
+link is down to `__divdi3` and `__moddi3` alone -- libgcc helpers that
+are absent only where no 32-bit libgcc is installed. Every symbol that
+was ours is resolved.
+
+Three changes in `xmm_interface.c` did it.
+
+**`seqnos_memory_object_init` for the OSFMACH3 arm**, following
+MkLinux's `inode_object_init` exactly: fill a
+`memory_object_attr_info_data_t` with `copy_strategy`, `cluster_size`,
+`may_cache_object` and `temporary`, then call
+`memory_object_change_attributes` with `MEMORY_OBJECT_ATTRIBUTE_INFO`.
+The rest of the body -- vnode lookup, pager wiring, `ux_server_add_port`
+-- is identical to the `#else` arm's version.
+
+Worth recording why neither existing arm worked: the OSFMACH3 arm calls
+`memory_object_establish`, removed as a NORMA routine, and the `#else`
+arm calls `memory_object_ready`, which `mach.defs:864` shows was also
+removed ("was skip; memory_object_ready"). **Both** of LITES's pager
+initialisation paths target routines 7.3 deleted, and both were folded
+into `change_attributes`. That is why MkLinux is the only usable
+template rather than one of two options.
+
+**`seqnos_memory_object_discard_request`** as a panic stub, matching
+MkLinux's `inode_object_discard_request`.
+
+**`seqnos_memory_object_notify`'s establish call** replaced by a panic.
+That handler belongs to the NORMA notify protocol; `Smem_svr` does not
+reference `seqnos_memory_object_notify` at all, so it is unreachable on
+this kernel. The attribute setting it used to carry now happens in
+`init`.
+
+### Superseded: the 5 that remain
 
 ```
 __divdi3, __moddi3                      libgcc helpers

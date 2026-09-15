@@ -191,16 +191,29 @@ index 30d9f2c..7c1a9d0 100644
  					     MEMORY_OBJECT_BEHAVIOR_INFO,
  					     (memory_object_info_t) &behavior,
 diff --git a/server/serv/xmm_interface.c b/server/serv/xmm_interface.c
-index 4f92d09..d8a37ae 100644
+index 4f92d09..55ab08b 100644
 --- a/server/serv/xmm_interface.c
 +++ b/server/serv/xmm_interface.c
-@@ -106,9 +106,13 @@ kern_return_t seqnos_memory_object_notify (
+@@ -106,27 +106,106 @@ kern_return_t seqnos_memory_object_notify (
  	/* move port from waiting set to ux server set */
  	ux_server_add_port(memory_object);
  
 -	attributes.object_ready  = TRUE;
 -	attributes.copy_strategy = pager->copy_strategy;
 -	attributes.may_cache     = pager->may_cache;
+-
+-	kr = memory_object_establish(host_name,
+-				     memory_object,
+-#if OSF_LEDGERS
+-				     MACH_PORT_NULL,
+-#endif /* OSF_LEDGERS */
+-				     memory_control,
+-				     memory_object,
+-				     VM_PROT_ALL,
+-				     security_id,
+-				     MEMORY_OBJECT_ATTRIBUTE_INFO,
+-				     (memory_object_info_t) &attributes,
+-				     MEMORY_OBJECT_ATTR_INFO_COUNT);
 +	/*
 +	 * OSFMK 7.3's struct memory_object_attr_info is
 +	 * copy_strategy, cluster_size, may_cache_object, temporary.
@@ -208,6 +221,99 @@ index 4f92d09..d8a37ae 100644
 +	 */
 +	attributes.copy_strategy    = pager->copy_strategy;
 +	attributes.may_cache_object = pager->may_cache;
++
++	/*
++	 * memory_object_establish was a NORMA routine and OSFMK 7.3
++	 * removed it (mach.defs:247 keeps the id as a skip). This
++	 * handler belongs to the NORMA notify protocol, which this
++	 * kernel never initiates -- Smem_svr does not reference
++	 * seqnos_memory_object_notify at all -- so the call is
++	 * unreachable here. The attribute setting that establish used
++	 * to carry now happens in seqnos_memory_object_init above, via
++	 * memory_object_change_attributes.
++	 */
++	panic("seqnos_memory_object_notify: NORMA protocol not supported");
++	kr = KERN_FAILURE;
+ 	assert(kr == KERN_SUCCESS);
+ 	DEBUG_PRINT(("seqnos_memory_object_notify(x%x) end\n", memory_object));
+ 	XMM_END_SERVER();
+ }
  
- 	kr = memory_object_establish(host_name,
- 				     memory_object,
++/*
++ * OSFMK 7.3 has neither memory_object_establish (a NORMA routine; see
++ * mach.defs:247, "skip; was memory_object_establish") nor
++ * memory_object_ready (mach.defs:864, "was skip; memory_object_ready").
++ * Both were folded into memory_object_change_attributes, where setting
++ * the attributes is itself what declares the object ready.
++ *
++ * This follows MkLinux's inode_object_init in
++ * mklinux/src/osfmach3/server/inode_pager.c, which is written against
++ * this same kernel -- our osfmk is a copy of MkLinux's -- and whose
++ * comment on the call reads "tell the micro-kernel that the memory
++ * object is ready on our side".
++ */
++kern_return_t seqnos_memory_object_init (
++	mach_port_t memory_object,
++	mach_port_seqno_t seqno,
++	mach_port_t memory_control,
++	mach_port_t memory_object_name,
++	vm_size_t memory_object_page_size)
++{
++	struct vnode *vn;
++	vn_pager_t pager;
++	kern_return_t kr;
++	memory_object_attr_info_data_t attributes;
++
++	XMM_START_SERVER();
++	DEBUG_PRINT(("seqnos_memory_object_init(x%x) start\n", memory_object));
++	vn = port_to_vnode_lookup(memory_object, seqno);
++	if (!vn)
++	    panic("seqnos_memory_object_init no vn");
++	unix_master();		/* XXX */
++	pager = vn->v_vmdata;
++	if (!pager)
++	    panic("seqnos_memory_object_init no pager");
++	vref(vn);		/* the mapping is one reference */
++	assert(pager->control_port == MACH_PORT_NULL);
++	pager->control_port = memory_control;
++	pager->name_port = memory_object_name;
++	pager->page_size = memory_object_page_size;
++
++	/* move port from waiting set to ux server set */
++	ux_server_add_port(memory_object);
++
++	attributes.copy_strategy    = pager->copy_strategy;
++	attributes.cluster_size     = 0;	/* default cluster size */
++	attributes.may_cache_object = pager->may_cache;
++	attributes.temporary        = FALSE;
++	kr = memory_object_change_attributes(memory_control,
++					     MEMORY_OBJECT_ATTRIBUTE_INFO,
++					     (memory_object_info_t) &attributes,
++					     MEMORY_OBJECT_ATTR_INFO_COUNT,
++					     MACH_PORT_NULL);
++	assert(kr == KERN_SUCCESS);
++	DEBUG_PRINT(("seqnos_memory_object_init(x%x) end\n", memory_object));
++	XMM_END_SERVER();
++}
++
++/*
++ * Part of the NORMA discard protocol, which this kernel never
++ * initiates -- it has no norma/ directory at all. Smem_svr references
++ * the handler only because the message id is still reserved in the
++ * .defs. MkLinux's inode_object_discard_request is likewise a panic.
++ */
++kern_return_t seqnos_memory_object_discard_request (
++	mach_port_t memory_object,
++	mach_port_seqno_t seqno,
++	mach_port_t memory_control,
++	vm_offset_t offset,
++	vm_size_t length,
++	mach_port_t reply_to)
++{
++	panic("seqnos_memory_object_discard_request");
++	return KERN_FAILURE;
++}
++
+ #else /* OSFMACH3 */
+ 
+ kern_return_t seqnos_memory_object_init (
