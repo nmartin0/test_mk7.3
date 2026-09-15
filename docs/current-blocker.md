@@ -83,7 +83,90 @@ rwintr YES   quechk YES   iowait YES   io_completed YES
 Two driver bugs were fixed to get here. The reset interrupt drain in
 `rstout()` is committed. The geometry is configuration.
 
-# LOCALISED: ds_device_open calls fdopen eight times, reply never sent
+# WORKING: the bootstrap task reads its config off a minix floppy
+
+```
+(bootstrap): loading /dev/boot_device/mach_servers/name_server
+```
+
+The whole chain works end to end: kernel boots, user task at ring 3,
+cthreads init, Mach IPC, console device, floppy driver, minix
+filesystem, `/mach_servers/bootstrap.conf` read and parsed, first server
+being loaded.
+
+## The invocation
+
+```sh
+qemu-system-i386 -kernel mach_kernel.PRODUCTION \
+    -append "BOOTDEV=fd BOOTPART=1 -o" \
+    -initrd bootstrap -fda minix.img \
+    -display none -no-reboot -m 64 \
+    -monitor unix:/tmp/mon,server,nowait
+python3 tools/vgadump.py /tmp/mon /tmp/vga.bin 255     # NOTE: 255 seconds
+```
+
+## Building the image
+
+Minix v1, **14 character names**. `AT386/fs_switch.c` registers `ufs`,
+`ext2fs` and `minixfs`, and `minixfs.c:560` accepts only
+`MINIX_SUPER_MAGIC` `0x137F`. `mkfs.minix -1` defaults to 30 character
+names (`0x138F`), which is rejected, so `-n 14` is required:
+
+```sh
+dd if=/dev/zero of=minix.img bs=1024 count=1440
+mkfs.minix -1 -n 14 minix.img
+python3 tools/mkminix.py            # writes /mach_servers/bootstrap.conf
+```
+
+`tools/mkminix.py` writes the directory and file by hand, because a loop
+mount needs privileges the build environment does not have.
+
+## THE CRITICAL FACT: ~26 seconds per read
+
+Nothing in this investigation was ever hung. The floppy driver completes
+every read successfully -- `syscall_device_read` returns `KERN_SUCCESS`
+every time -- but takes about **26 seconds per read**:
+
+```
+read #0-#3   t =  54.1s   (a burst)
+read #4      t =  80.0s
+read #5      t = 107.1s
+```
+
+A directory walk plus inode reads is therefore minutes of work. Every
+console check made at 20-40 seconds looked frozen and was simply too
+early. The config file appears at roughly 250 seconds.
+
+**Always give the floppy path at least 255 seconds before concluding
+anything.**
+
+This also retracts the conclusion that `ext2fs_open_file` hangs on an
+ext2 image. It does not; it was reading at 26 seconds per operation and
+was never waited out. The ext2 path may well work too.
+
+## The live problem: the 26s-per-read driver bug
+
+The reads succeed, so this is performance rather than correctness, and
+the system functions meanwhile. ~26 seconds is the signature of a
+missing completion interrupt with each transfer falling back on a
+timeout. `fd.c` has `timeout((timeout_fcn_t)m765intrsub, uip, SEEKWAIT)`
+in the `SKFLAG`/`RBFLAG` arm of `fdintr`, which is the obvious place to
+look.
+
+Worth fixing, but it does not block progress.
+
+## Next: put the servers on the image
+
+The task is loading `name_server` and will fail because only
+`bootstrap.conf` is on the image. Both servers already build from this
+tree and fit on 1.44 MB:
+
+| server | size |
+|---|---|
+| `name_server` | 140,396 bytes (`mach_services/servers/netname`, needs `libservice`) |
+| `default_pager` | 211,100 bytes (needs libcthreads, libsa_mach, libmach, libmach_maxonstack) |
+
+## Superseded: ds_device_open calls fdopen eight times
 
 Every value below is a direct measurement.
 

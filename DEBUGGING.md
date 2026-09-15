@@ -235,6 +235,17 @@ the first few hits: a loop of 25 `continue`s produced nothing at all,
 twice. Use them to answer "what writes this, early", validate against a
 known write first, and do not yet trust them to scan.
 
+**The floppy runs at ~26 seconds per read. Wait 255 seconds.** Every
+read succeeds -- `syscall_device_read` returns `KERN_SUCCESS` -- but
+transfers are about 26 seconds apart. A filesystem directory walk is
+therefore minutes of work, and a console dump taken at 20-40 seconds
+looks identical to a hang.
+
+This produced a long series of wrong "it hangs in X" conclusions, each
+localised to whatever function happened to be executing when the
+too-early sample was taken. **Before concluding that anything on the
+floppy path is hung, let it run 255 seconds.**
+
 **A trace miss proves nothing unless the symbol exists.** The kernel
 aliases many routines through macros, so tracing a name that is not a
 symbol always reports "no":
