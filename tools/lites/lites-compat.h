@@ -38,13 +38,23 @@ typedef mig_reply_error_t mig_reply_header_t;
  * reach the one-argument allocator.
  */
 /*
- * i386: size_t is unsigned int. LITES declares malloc as
- * void *malloc(unsigned int) in emulator/e_mach_msg_server.c, so this
- * must agree or the macro below rewrites that declaration into a
- * conflicting one.
+ * No declaration of malloc or free here, deliberately.
+ *
+ * LITES declares malloc two different ways itself:
+ *
+ *   emulator/e_mach_msg_server.c:40   void *malloc(unsigned int);
+ *   server/serv/server_defs.h:101     void *malloc(size_t);
+ *
+ * and its size_t is long unsigned int, so the two disagree. That is
+ * harmless as long as each translation unit sees only its own, which
+ * is the case -- until a declaration is injected into every file from
+ * here, at which point one of the two always conflicts.
+ *
+ * The macros below are written so a declaration survives expansion
+ * unchanged: "void *malloc(size_t);" becomes "void *(malloc)(size_t);",
+ * which is legal C. So each file keeps its own declaration and no third
+ * one is needed.
  */
-extern void *malloc(unsigned int);
-extern void  free(void *);
 
 #define malloc(sz, ...)  (malloc)(sz)
 #define free(p, ...)     (free)(p)
