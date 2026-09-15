@@ -131,12 +131,20 @@ scrolls.
 ## Building the image
 
 ```sh
-dd if=/dev/zero of=minix.img bs=1024 count=1440
-mkfs.minix -1 -n 14 minix.img
 python3 tools/mkminix.py minix.img \
     $MK_BUILD/obj/at386/mach_services/servers/netname/name_server \
     $MK_BUILD/obj/at386/default_pager/default_pager
 ```
+
+`tools/mkminix.py` both **formats and populates**, so `mkfs.minix` is
+not needed -- which matters, because Debian 13 dropped it from
+util-linux and it is no longer packaged there at all.
+
+Formatting in the tool also removes a trap. The reader,
+`file_systems/minixfs/minixfs.c:560`, accepts only `MINIX_SUPER_MAGIC`
+`0x137F`, the original 14-character-name variant, while `mkfs.minix -1`
+defaults to 30-character names and magic `0x138F`, which is silently
+rejected.
 
 Two things are easy to get wrong. `minixfs.c:560` accepts only
 `MINIX_SUPER_MAGIC` `0x137F`, and `mkfs.minix -1` defaults to 30
