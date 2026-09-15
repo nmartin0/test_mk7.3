@@ -342,7 +342,21 @@ do_bootstrap_compat(void)
 				bss_start = ph->p_vaddr + ph->p_filesz;
 				bss_size = ph->p_memsz - ph->p_filesz;
 			}
-			else if (ph->p_flags == PF_R && ph->p_vaddr > ehdr->e_entry) {
+			else if (ph->p_flags == PF_R && ph->p_vaddr <= ehdr->e_entry) {
+				/*
+				 * ELF header segment: below the entry point and
+				 * not needed by the running program. Skipped
+				 * silently -- it is expected in every modern
+				 * binary and is not an error worth reporting.
+				 *
+				 * continue, not break: boot_region_count++ is
+				 * below the chain, so falling through would count
+				 * a region that was never filled in and leave an
+				 * uninitialised entry in regions[].
+				 */
+				continue;
+			}
+			else if (ph->p_flags == PF_R) {
 				/*
 				 * AI-ONLY NOTE: read-only PT_LOAD, e.g. .rodata.
 				 * The arms above match p_flags by exact equality,
@@ -575,7 +589,21 @@ exec_load(vm_offset_t start, vm_size_t size)
 				bss_start = ph->p_vaddr + ph->p_filesz;
 				bss_size = ph->p_memsz - ph->p_filesz;
 			}
-			else if (ph->p_flags == PF_R && ph->p_vaddr > ehdr->e_entry) {
+			else if (ph->p_flags == PF_R && ph->p_vaddr <= ehdr->e_entry) {
+				/*
+				 * ELF header segment: below the entry point and
+				 * not needed by the running program. Skipped
+				 * silently -- it is expected in every modern
+				 * binary and is not an error worth reporting.
+				 *
+				 * continue, not break: boot_region_count++ is
+				 * below the chain, so falling through would count
+				 * a region that was never filled in and leave an
+				 * uninitialised entry in regions[].
+				 */
+				continue;
+			}
+			else if (ph->p_flags == PF_R) {
 				/*
 				 * AI-ONLY NOTE: read-only PT_LOAD, e.g. .rodata.
 				 * The arms above match p_flags by exact equality,
