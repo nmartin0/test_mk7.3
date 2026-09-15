@@ -160,14 +160,23 @@ The servers must be built first:
 per track, and every seek past that fails. Selecting 1.44 Meg through a
 partition number is a workaround, not a fix.
 
-**About 26 seconds per floppy read.** Much of this is the environment:
-no KVM, TCG on a single CPU, guest advancing about six times slower than
-wall clock. Measure on a machine with KVM before treating it as a driver
-bug.
+**Floppy throughput.** Measured both ways: with KVM the full boot to
+three servers takes **a few minutes**; without it, on TCG with a single
+CPU, it takes about **35 minutes**, because the guest advances at
+roughly a sixth of wall clock. So most of the apparent slowness in the
+development logs was the environment, not the driver -- but the floppy
+is still slow in absolute terms even with KVM, so there may be a real
+driver inefficiency underneath. It does not block anything.
 
-**`ELF: Unknown program header flags 0x4` prints twice per load.** That
-is the ELF header segment, correctly skipped by the `p_vaddr > entry`
-test but noisily. Cosmetic.
+Note for anyone reading the development history: a long series of
+"it hangs in X" conclusions in `docs/archive/` were all this. Nothing
+was hung; the samples were taken too early.
+
+**Unrecognised CPU.** The console prints
+`Unrecognized processor (type = 0x0, family = 0x6, model = 0x6)` on a
+modern host. The identification table predates the processor. Harmless
+-- the machine configures and boots -- and cheap to extend if it ever
+matters.
 
 ## Superseded: the bootstrap task reads its config
 

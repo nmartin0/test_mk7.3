@@ -88,8 +88,7 @@ elf_load(struct file *fp, objfmt_t ofmt, void *hdr)
 		    (vm_size_t) ph->p_vaddr + ph->p_filesz - lp->data_start;
 		lp->bss_size = ph->p_memsz - ph->p_filesz;
 		lp->data_offset = trunc_page(ph->p_offset);
-	    } else if (ph->p_flags == PF_R &&
-		       (vm_offset_t) ph->p_vaddr > lp->entry_1) {
+	    } else if (ph->p_flags == PF_R) {
 		/*
 		 * AI-ONLY NOTE: fold a read-only segment into text.
 		 *
@@ -127,7 +126,15 @@ elf_load(struct file *fp, objfmt_t ofmt, void *hdr)
 		 */
 		vm_offset_t ro_end = (vm_offset_t) ph->p_vaddr + ph->p_filesz;
 
-		if (ro_end > lp->text_start + lp->text_size)
+		/*
+		 * Only a read-only segment above the entry point is real
+		 * content to map. One below it is the ELF header segment,
+		 * which the running program does not need; it is skipped
+		 * silently rather than reported, since it is expected in
+		 * every modern binary and is not an error.
+		 */
+		if ((vm_offset_t) ph->p_vaddr > lp->entry_1 &&
+		    ro_end > lp->text_start + lp->text_size)
 		    lp->text_size = ro_end - lp->text_start;
 	    } else {
 #ifndef ppc
