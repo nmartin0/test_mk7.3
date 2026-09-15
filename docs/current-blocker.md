@@ -83,7 +83,45 @@ rwintr YES   quechk YES   iowait YES   io_completed YES
 Two driver bugs were fixed to get here. The reset interrupt drain in
 `rstout()` is committed. The geometry is configuration.
 
-# The bootstrap task passes no arguments to the servers it loads
+# RETRACTED: the argument frame is correct by design
+
+The note below claimed `i386/set_regs.c` fails to write an argument
+block and called it a bug. That is wrong, and this retraction is kept
+because the claim was committed and pushed.
+
+`load.c:459` says what the block is for:
+
+```c
+/*
+ * Allocate space for:
+ *    dummy 0 argument count
+ *    dummy 0 pointer to arguments
+ *    dummy 0 pointer to environment variables
+ *    and align to integer boundary
+ */
+arg_len = sizeof(int) + 2 * sizeof(char *);
+```
+
+The zeros are **deliberate**. `vm_allocate` zero fills, and
+`uesp = stack_end - 0x10` leaves sixteen zero bytes where twelve are
+needed, so the task receives exactly the intended
+`argc = 0, argv = NULL, envp = NULL` frame. The `/* XXX */` marks the
+hardcoded sixteen rather than using `arg_len`; it does not mark missing
+data. HP700 computing `stack_start + arg_size + 32` is the same idea
+spelled differently, not evidence of an unfinished i386 port.
+
+Servers here are **designed** to start with no arguments. LITES is built
+for that: `init_second_server_flag` returns on `argc <= 0`,
+`parse_arguments` returns on `argc == 0`, and `get_config_info` falls
+through to `host_get_boot_info`, with a hardcoded default in
+`argv_space[10][40]` beginning "/dev/hd0f/mach_servers/startup".
+
+So adding `-s` to `bootstrap.conf` was never going to reach LITES, but
+not because of a defect -- the mechanism simply is not arguments. How
+LITES is meant to be configured is through the kernel boot info and its
+compiled-in defaults, and that is the thread to pull next.
+
+## Superseded claim follows
 
 LITES loads, is resumed, and terminates before any output. The argument
 path is broken, and that is proven; whether it is the whole cause of the
