@@ -269,6 +269,29 @@ localised to whatever function happened to be executing when the
 too-early sample was taken. **Before concluding that anything on the
 floppy path is hung, let it run 255 seconds.**
 
+**Read the linker's warnings.** `ld` reports a missing entry symbol and
+then silently carries on with a default:
+
+```
+ld: warning: cannot find entry symbol __start; defaulting to 08049000
+```
+
+That one line explained a task that loaded, resumed and died with no
+output, and it sat unread in build output for several rounds while four
+other theories were chased and disproved. A warning that says the
+program will start somewhere other than where you intended is not a
+warning, it is an error with bad manners.
+
+**Confirm an entry point with `readelf -h` before booting.** It costs
+nothing and would have caught this immediately:
+
+```sh
+readelf -h server/startup... | grep -i entry
+nm binary | grep -w '__start_mach\|main'
+```
+
+If the entry address does not match a plausible start symbol, stop.
+
 **Never filter C source with `grep -vE '^\s*\*'`.** It is meant to drop
 comment continuation lines, and it does -- but `^\s*\*` also matches a
 pointer dereference assignment:
