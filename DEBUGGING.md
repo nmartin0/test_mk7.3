@@ -269,6 +269,27 @@ localised to whatever function happened to be executing when the
 too-early sample was taken. **Before concluding that anything on the
 floppy path is hung, let it run 255 seconds.**
 
+**Never filter C source with `grep -vE '^\s*\*'`.** It is meant to drop
+comment continuation lines, and it does -- but `^\s*\*` also matches a
+pointer dereference assignment:
+
+```c
+	*hostp = bootstrap_master_host_port;      /* stripped */
+	*devicep = bootstrap_master_device_port;  /* stripped */
+```
+
+So a function whose body is mostly out-parameter assignments reads as an
+empty stub returning KERN_SUCCESS.
+
+This has now caused the same wrong conclusion about the same function,
+`do_bootstrap_ports`, **twice** in this project. Both times it produced a
+confident and completely wrong diagnosis of why a userland task was
+failing.
+
+Use `sed -n 'START,ENDp' file` with no filter, or view the file, and
+read the real text. If output must be filtered, match comments as
+`^\s*\*[^=]` or strip only `/*` and `*/` lines.
+
 **A trace miss proves nothing unless the symbol exists.** The kernel
 aliases many routines through macros, so tracing a name that is not a
 symbol always reports "no":

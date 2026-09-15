@@ -83,7 +83,109 @@ rwintr YES   quechk YES   iowait YES   io_completed YES
 Two driver bugs were fixed to get here. The reset interrupt drain in
 `rstout()` is committed. The geometry is configuration.
 
-# MILESTONE: the OSF multiserver userland runs
+# RETRACTED: the argument frame is correct by design
+
+The note below claimed `i386/set_regs.c` fails to write an argument
+block and called it a bug. That is wrong, and this retraction is kept
+because the claim was committed and pushed.
+
+`load.c:459` says what the block is for:
+
+```c
+/*
+ * Allocate space for:
+ *    dummy 0 argument count
+ *    dummy 0 pointer to arguments
+ *    dummy 0 pointer to environment variables
+ *    and align to integer boundary
+ */
+arg_len = sizeof(int) + 2 * sizeof(char *);
+```
+
+The zeros are **deliberate**. `vm_allocate` zero fills, and
+`uesp = stack_end - 0x10` leaves sixteen zero bytes where twelve are
+needed, so the task receives exactly the intended
+`argc = 0, argv = NULL, envp = NULL` frame. The `/* XXX */` marks the
+hardcoded sixteen rather than using `arg_len`; it does not mark missing
+data. HP700 computing `stack_start + arg_size + 32` is the same idea
+spelled differently, not evidence of an unfinished i386 port.
+
+Servers here are **designed** to start with no arguments. LITES is built
+for that: `init_second_server_flag` returns on `argc <= 0`,
+`parse_arguments` returns on `argc == 0`, and `get_config_info` falls
+through to `host_get_boot_info`, with a hardcoded default in
+`argv_space[10][40]` beginning "/dev/hd0f/mach_servers/startup".
+
+So adding `-s` to `bootstrap.conf` was never going to reach LITES, but
+not because of a defect -- the mechanism simply is not arguments. How
+LITES is meant to be configured is through the kernel boot info and its
+compiled-in defaults, and that is the thread to pull next.
+
+## Superseded claim follows
+
+LITES loads, is resumed, and terminates before any output. The argument
+path is broken, and that is proven; whether it is the whole cause of the
+termination is not yet proven.
+
+## What is proven
+
+`src/bootstrap/load.c:466` computes the size of an argument block:
+
+```c
+arg_len = sizeof(int) + 2 * sizeof(char *);   /* argc + argv[0] + NULL */
+arg_len = (arg_len + (sizeof(int) - 1)) & ~(sizeof(int)-1);
+...
+set_regs(master_host_port, user_task, user_thread, &ofmt.info,
+         mapend, arg_len);
+```
+
+Nothing writes that block. There is no `vm_write`, no copy, nowhere in
+`load.c` or `bootstrap.c` that puts `argc`, `argv` or `envp` into the
+new task's memory.
+
+`i386/set_regs.c` then discards the size as well:
+
+```c
+(void)vm_allocate(user_task, &stack_start, ..., FALSE);  /* zero filled */
+regs.eip  = lp->entry_1;
+regs.uesp = stack_end - 0x10;      /* XXX */
+```
+
+`arg_size` appears only in the parameter list, never in the body.
+
+Three things corroborate that this is unfinished rather than intended:
+
+- **HP700 honours it**: `HP700/set_regs.c:82` reads
+  `regs.sp = ((stack_start + arg_size + 32) & ~(sizeof(int)-1));`
+- the i386 offset carries the author's own `/* XXX */`
+- the parameter exists at all
+
+So every server the bootstrap task loads starts on a freshly
+`vm_allocate`d, zero-filled stack with no arguments.
+
+**This immediately explains one observation.** Adding `-s` to
+`bootstrap.conf` changed nothing, because the flag never reaches the
+server: `init_second_server_flag(argc, argv)` and LITES's `parse_args`
+both see `argc == 0`.
+
+This is the same defect, one level up, as the one already fixed in
+`kern/bootstrap.c`, where `user_bootstrap_old` did not build argc and
+argv for the bootstrap task and crt0 gates on `kargv[0]`. The kernel
+loads the bootstrap task; the bootstrap task loads the servers; both
+loaders had it.
+
+`i386/set_regs.c` is byte identical to MkLinux's, so this is not
+something introduced here.
+
+## What is NOT yet proven
+
+That this is why LITES terminates. With a zero-filled stack crt0 will
+read `argc == 0` and an `argv` pointing at zeros, so `argv[0]` is NULL;
+whether LITES dereferences it before its console exists has not been
+measured. The next step is a `-d exec` trace symbolised against `nm` on
+the `startup` binary, to find the last user-mode symbol reached.
+
+## Superseded: MILESTONE, the OSF multiserver userland runs
 
 ```
 (bootstrap): loading /dev/boot_device/mach_servers/name_server
