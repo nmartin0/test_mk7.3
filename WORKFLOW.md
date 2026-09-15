@@ -112,6 +112,13 @@ The vendor tree is MIT/X11. Keep it that way.
 - **Never copy code from a GPL source into this tree.** GNU Mach and
   Linux are both GPL-2 and both are tempting references for i386 and
   Mach questions.
+- The same applies to **XNU and Darwin**, whose `osfmk/` subdirectories
+  are descended from this very code and are therefore the closest
+  available reference for how OSF Mach was carried forward. Early XNU is
+  APSL, which is not compatible with this tree's permissive terms. Read
+  it, never copy from it, exactly as with GNU Mach. `xnu-123.5` is the
+  earliest tag; `xnu-1456.1.26` has the clearest record of the 64-bit
+  port, for if this tree ever grows 64-bit support.
 - Consulting them to understand a *design* is fine; copyright protects
   expression, not method. Describing another program's architecture in a
   comment is a statement of fact, not a reproduction.
