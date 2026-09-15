@@ -291,6 +291,61 @@ make CXXX="-m32 -fno-builtin -isystem $GI \
      CHXXX="-m32"
 ```
 
+### The whole LITES server now compiles
+
+Every object builds and the link is reached:
+
+```
+startup.Lites.1.1.u3.STD+WS+osfmach3.unstripped
+```
+
+`tools/lites/build-lites.sh` reproduces it end to end.
+
+Getting from ~35 objects to the link needed six more fixes, all the same
+kind:
+
+| issue | fix |
+|---|---|
+| `case SIG_DFL:` etc -- pointer constants as case labels, 11 in 2 files | cast the labels: `case (integer_t)SIG_DFL:` |
+| `*((char *)to)++` -- a cast is not an lvalue, 1 site | spell the post-increment out |
+| `cthread_mach_msg` declared differently by us and LITES | see below |
+| `memory_object_behave_info.write_completions` gone | set `silent_overwrite` and `advisory_pageout` instead |
+| `memory_object_attr_info.may_cache` / `.object_ready` | renamed to `may_cache_object`; `object_ready` has no counterpart |
+| assembly built 64-bit | `ASFLAGS=-m32`, a separate hook from `CXXX` |
+| generated `vers.c` had literal newlines in string literals | see below |
+
+**`cthread_mach_msg`.** LITES supplies its own in `server/serv/cprocs.c`
+with the nine-argument signature old cthreads had; its own comment says
+"These are missing from cthreads". OSFMK 7.3's libcthreads has one too,
+but collapsed into a single struct whose members map one to one onto
+those nine arguments. Nothing calls ours, so they collide only as
+declarations. `lites-compat.h` pulls `cthreads.h` in early with our name
+renamed away; the include guard makes every later include a no-op, so
+LITES's declaration and definition stand unopposed.
+
+**`vers.c`.** `conf/newvers.sh` emits `\\n` expecting a backslash-n to
+reach the C source, but `/bin/sh` on a modern Debian is dash, whose
+`echo` interprets backslash escapes, so a real newline landed inside a
+string literal. Changing those `echo` calls to `printf '%s\n'` fixes it.
+This is a second instance of the same 1990s assumption as `gensym.awk`,
+by a different mechanism -- there the C source was wrong, here the shell
+was.
+
+### Remaining: two link errors
+
+```
+ld: cannot find -lthreads
+ld: cannot find -lmach_sa
+multiple definition of `cthread_sp'
+```
+
+The first two are naming: ours are `libcthreads.a` and `libsa_mach.a`.
+The third is that `cthreads.h` declares `cthread_sp` and `spin_try_lock`
+`extern __inline__`, which under modern GCC's C99 inline rules emits a
+symbol in every translation unit that includes it; `-fgnu89-inline` or a
+`static` qualifier is the usual remedy. Both are small and neither
+touches OSFMK.
+
 ### Shims kept in this tree
 
 Both are ours, so nothing in LITES or OSFMK is modified:
@@ -319,7 +374,8 @@ All are 1990s-toolchain modernisation, none are interface problems:
 | `net/radix.h` calls `malloc` with BSD arity | superseded by the variadic macros below |
 | 53 raw BSD-arity `malloc`/`free` calls in 46 files | solved by variadic macros in `tools/lites/lites-compat.h` |
 | BSD kernel `log()` vs GCC's builtin | solved by `-fno-builtin` |
-| `case SIG_DFL:` -- pointer constant as a case label | **open, current blocker**; needs a LITES patch |
+| `case SIG_DFL:` -- pointer constant as a case label | solved by casting the labels |
+| library names and `extern __inline__` duplicate symbols | **open**; two link errors, see above |
 | `-I-` deprecated, `#endif KERNEL` extra tokens | warnings only |
 
 ## Known work before it can be tried
