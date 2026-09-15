@@ -141,7 +141,62 @@ dereferenced, that crt0's `else` branch skipped thread initialisation,
 and that the loader failed to pass arguments. All wrong. The measurement
 settled in one run what reading had not settled in four attempts.
 
-## The new blocker: no paging store
+## The blocker is the root filesystem, not paging
+
+`init_main.c:349` onward, immediately after the banner:
+
+```c
+printf("%s\n", version);
+printf(copyright);          /* <- last thing seen on the console */
+
+/* Mount the root file system. */
+kr = (*mountroot)();
+#if EXT2FS
+/* XXX if FFS fails, fall back to EXT2FS */
+if (kr == EINVAL)
+        kr = ext2_mountroot();
+#endif
+if (kr != KERN_SUCCESS)
+        panic("cannot mount root x%x %s", kr, mach_error_string(kr));
+```
+
+The panic is the next statement after the copyright text, and the
+copyright text is the last output. There is no other panic between them.
+**LITES panics because it has no root filesystem.**
+
+`panic: UWVS+` is that message mangled. `panic` does
+`printf("panic: %r\n", fmt, ap)`, and `%r` -- a BSD extension that
+re-expands a format string against a `va_list`, implemented at
+`subr_prf.c:473` -- destroys the text while the panic itself is real and
+correctly placed. Cosmetic, but it cost a detour and is worth fixing.
+
+**The paging messages are a consequence, not the cause.** In the console
+log the panic is line 48 and the pager complaints begin at line 49.
+`panic()` calls `boot(TRUE, RB_AUTOBOOT|RB_DUMP)`, and `RB_DUMP` asks
+for space to write a crash dump, which is what the pager cannot supply.
+Reading `swapon suggested` as the blocker sent this investigation in the
+wrong direction for a round; the line ordering said otherwise.
+
+`-m 256` changes nothing -- same panic, same position -- which correctly
+rules out memory pressure.
+
+### What is needed
+
+A filesystem LITES can mount as root. The code above takes **either**:
+
+- BSD FFS, via `mountroot`
+- **ext2**, via `ext2_mountroot`, tried when FFS returns `EINVAL`
+
+ext2 is far easier to produce on a modern Linux host, and unlike the
+kernel's minix reader there is no exotic magic requirement to satisfy --
+this is LITES's own ext2 implementation, not the bootstrap task's.
+
+The root device comes from `rootname`/`rootdev_name` in
+`server_init.c`, with a compiled-in default in `argv_space` beginning
+`/dev/hd0f/mach_servers/startup`, so selecting the device is a separate
+question from creating the filesystem.
+
+## Superseded: the new blocker, no paging store
 
 ```
 panic: UWVS+
