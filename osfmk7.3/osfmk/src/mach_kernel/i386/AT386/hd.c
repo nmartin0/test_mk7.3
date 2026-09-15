@@ -1328,10 +1328,39 @@ getvtoc(
 	} else {
 		/* make partition 'c' the whole disk in case of failure */
 		label->d_partitions[PART_DISK].p_offset = 0;
+		/*
+		 * AI-ONLY NOTE: size this from the label, not cmos_parm.
+		 *
+		 * cmos_parm is the BIOS fixed-disk parameter table, found
+		 * by reading the INT 41h vector at dev->address (0x104 for
+		 * unit 0, per autoconf.c). A -kernel direct boot never
+		 * populates that vector, so cmos_parm reads back all zeros
+		 * and this computed a zero-size partition. hdopen then
+		 * rejects it:
+		 *
+		 *	if (part_p->p_size <= 0)
+		 *		return(D_NO_SUCH_DEVICE);
+		 *
+		 * which makes the whole disk unopenable even though the
+		 * drive answered IDENTIFY correctly -- observed as
+		 * "hd0: 0 Meg, C:0 H:0 S:0 - QEMU HARDDISK", where the
+		 * model string proves the IDE transaction worked. Passing
+		 * cyls/heads/secs to QEMU does not help, because nothing
+		 * writes the BIOS table on this boot path.
+		 *
+		 * The label geometry comes from the IDENTIFY response just
+		 * above, and is what the I/O path itself uses: hd_ssend
+		 * computes sector, head and cylinder from
+		 * label->d_nsectors and label->d_ntracks. Sizing the
+		 * partition from the same source makes the two agree,
+		 * which is what they should have done all along -- a
+		 * partition should describe the disk the driver actually
+		 * addresses.
+		 */
 		label->d_partitions[PART_DISK].p_size =
-		  	drive->cmos_parm.ncyl *
-			drive->cmos_parm.nheads * 
-			drive->cmos_parm.nsec;
+			label->d_ncylinders *
+			label->d_ntracks *
+			label->d_nsectors;
 	}
 	return(TRUE);
 }
