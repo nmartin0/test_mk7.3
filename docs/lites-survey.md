@@ -372,8 +372,24 @@ and the name says so.
 
 #### MkLinux confirms the fix, and supplies the idiom
 
-`github.com/slp/osfmk-mklinux` settles it. Its OSFMK is the **same
-generation as ours**: no `norma/` directory, and `mach.defs:247` reads
+`github.com/slp/osfmk-mklinux` settles it, and more strongly than a
+comparison would: **our OSFMK 7.3 is a copy of MkLinux's**. Diffing
+`osfmk/src/mach_kernel` between the two trees gives exactly eleven
+differing files, and they are exactly our eleven fixes:
+
+```
+i386/pio.h              i386/locore.S           i386/i386_rpc.c
+i386/hardclock.c        i386/AT386/model_dep.c  i386/AT386/lpr.c
+i386/AT386/fd.c         intel/pmap.c            kern/bootstrap.c
+kern/ipc_kobject.c      kern/startup.c
+```
+
+Nothing else differs. So MkLinux's pager is not an analogous
+implementation on a similar kernel -- it is an implementation against
+*this* kernel, and its `memory_object` interface is byte-for-byte the
+one we export.
+
+Its OSFMK is therefore the **same generation as ours**: no `norma/` directory, and `mach.defs:247` reads
 the identical `skip; /* was memory_object_establish; old
 port_set_backlog */`. So MkLinux ran a real personality on an OSFMK with
 NORMA already removed, which is exactly our situation, and its pager is

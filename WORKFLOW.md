@@ -112,6 +112,13 @@ The vendor tree is MIT/X11. Keep it that way.
 - **Never copy code from a GPL source into this tree.** GNU Mach and
   Linux are both GPL-2 and both are tempting references for i386 and
   Mach questions.
+- **MkLinux (`github.com/slp/osfmk-mklinux`) is different from the
+  others: our `osfmk/` is a copy of its `osfmk/`.** Diffing the two
+  shows exactly our own eleven fixes and nothing else. So for anything
+  on the OSFMK side it is not a reference to be read at arm's length --
+  it is the same code, and its `mklinux/` personality is a worked
+  example written against this exact kernel. That makes it the first
+  place to look when adapting a personality, ahead of GNU Mach or XNU.
 - The same applies to **XNU and Darwin**, whose `osfmk/` subdirectories
   are descended from this very code and are therefore the closest
   available reference for how OSF Mach was carried forward. Early XNU is
