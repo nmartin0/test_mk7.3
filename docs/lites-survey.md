@@ -338,7 +338,219 @@ string literals, pointer constants as `case` labels in `kern_sig.c` and
 Mach structure members that moved on in `vn_pager_misc.c` and
 `xmm_interface.c`.
 
-### The 5 that remain
+### Researched: the gap is NORMA/XMM, and it is one function wide
+
+Comparing against OSFMK 6.1, XNU Rhapsody DR5.3 and the 7.3 tree itself
+identifies what LITES's OSFMACH3 pager arm was written for, and it is
+not a generic "older OSF Mach".
+
+**`memory_object_establish` is a NORMA routine.** In OSFMK 6.1 it lives
+in `norma/xmm_user.c`, is renamed to `k_memory_object_establish` by
+`norma/xmm_server_rename.h`, and its body is:
+
+```c
+panic("memory_object_establish is not implemented\n");
+```
+
+It was part of NORMA, Mach's multicomputer/distributed memory layer, and
+was **already unimplemented in 6.1**. The `memory_object.defs` comments
+describe the protocol it belonged to: a discard request is answered with
+either `memory_object_establish` or a discard. That is also where
+`seqnos_memory_object_discard_request` comes from.
+
+**OSFMK 7.3 removed NORMA entirely.** There is no `norma/` directory;
+the mentions in `conf/files` are historical log entries. `mach.defs:247`
+keeps the message id reserved as
+`skip; /* was memory_object_establish; old port_set_backlog */`.
+
+**XNU Rhapsody does not have it either**, which is consistent: the
+lineage that became XNU dropped NORMA at the same point.
+
+So LITES's file name is the clue that was there all along --
+`xmm_interface.c`. Its OSFMACH3 arm targets a NORMA-enabled OSF Mach,
+and the name says so.
+
+#### MkLinux confirms the fix, and supplies the idiom
+
+`github.com/slp/osfmk-mklinux` settles it, and more strongly than a
+comparison would: **our OSFMK 7.3 is a copy of MkLinux's**. Diffing
+`osfmk/src/mach_kernel` between the two trees gives exactly eleven
+differing files, and they are exactly our eleven fixes:
+
+```
+i386/pio.h              i386/locore.S           i386/i386_rpc.c
+i386/hardclock.c        i386/AT386/model_dep.c  i386/AT386/lpr.c
+i386/AT386/fd.c         intel/pmap.c            kern/bootstrap.c
+kern/ipc_kobject.c      kern/startup.c
+```
+
+Nothing else differs. So MkLinux's pager is not an analogous
+implementation on a similar kernel -- it is an implementation against
+*this* kernel, and its `memory_object` interface is byte-for-byte the
+one we export.
+
+Its OSFMK is therefore the **same generation as ours**: no `norma/` directory, and `mach.defs:247` reads
+the identical `skip; /* was memory_object_establish; old
+port_set_backlog */`. So MkLinux ran a real personality on an OSFMK with
+NORMA already removed, which is exactly our situation, and its pager is
+the canonical example.
+
+`mklinux/src/osfmach3/server/inode_pager.c:905`, `inode_object_init`,
+ends with:
+
+```c
+/*
+ * Tell the micro-kernel that the memory object is ready on our side.
+ */
+attributes.copy_strategy    = imo->imo_copy_strategy;
+attributes.cluster_size     = PAGE_SIZE;     /* or 0 for the default */
+attributes.may_cache_object = imo->imo_cacheable;
+attributes.temporary        = FALSE;
+kr = memory_object_change_attributes(mem_obj_control,
+                                     MEMORY_OBJECT_ATTRIBUTE_INFO,
+                                     (memory_object_info_t) &attributes,
+                                     MEMORY_OBJECT_ATTR_INFO_COUNT,
+                                     MACH_PORT_NULL);
+```
+
+Its own comment -- "tell the micro-kernel that the memory object is
+ready on our side" -- is precisely what `object_ready = TRUE` meant in
+the NORMA establish call. The semantic did not disappear; it moved into
+`change_attributes`, and the field vanished because being ready is now
+implied by making the call.
+
+This also confirms the second half. MkLinux's
+`inode_object_discard_request` at line 895 is a one-line `panic()`. A
+stub is the correct implementation, because this generation of OSFMK
+never initiates the discard protocol.
+
+One difference worth noting: MkLinux uses the **plain**
+`memory_object_server`, not the sequence-numbered one -- zero `seqnos_`
+references in its whole server. LITES chose the seqnos variant, and our
+`libmach` does provide `Smem_svr`, so that choice remains workable. But
+if the seqnos path gives trouble later, the plain interface is the
+better-trodden one for this kernel.
+
+Cross-checked against OSFMK 6.1 (`github.com/nmartin0/osfmk6.1`), whose
+`norma/xmm_user.c:410` shows the NORMA layer doing the same thing by
+either `K_SET_READY(mobj, OBJECT_READY_TRUE, MAY_CACHE_FALSE, modwc,
+MEMORY_OBJECT_COPY_SYMMETRIC, PAGE_SIZE, ...)` or a plain
+`memory_object_init`. Same four attributes, same intent, three
+different spellings across three kernel generations.
+
+#### The practical consequence: one function
+
+Mapping the conditionals in `xmm_interface.c` shows `#if OSFMACH3` wraps
+only the **initialisation** path:
+
+| handler | line | arm |
+|---|---|---|
+| `seqnos_memory_object_init` | 136 | `#else` of `#if OSFMACH3` |
+| `data_request` | 236 | top level |
+| `data_unlock` | 336 | top level |
+| `lock_completed` | 499 | top level |
+| `data_return` | 557 | top level |
+| `change_completed` | 572 | top level |
+| `terminate`, `copy` | 176, 224 | top level |
+
+Everything except initialisation is shared. The OSFMACH3 arm calls
+`memory_object_establish` where the other defines
+`seqnos_memory_object_init`, and that single substitution is the whole
+incompatibility.
+
+So the fix is not "write a pager". It is:
+
+1. Provide `seqnos_memory_object_init` for the OSFMACH3 arm, doing what
+   the establish call was meant to do, against 7.3's interface --
+   `memory_object_change_attributes` with a
+   `memory_object_attr_info` is the closest equivalent, and
+   `vn_pager_misc.c` already calls it.
+2. Provide `seqnos_memory_object_discard_request`, which can be a stub
+   returning failure: it is the NORMA discard protocol, which 7.3 never
+   initiates. `Smem_svr` references it only because the `.defs` still
+   reserves the message.
+
+Both belong in the OSFMACH3 arm of `xmm_interface.c`, which keeps the
+change inside LITES and inside the patch series already carried here.
+
+### Superseded framing: the real incompatibility
+
+The three non-libgcc symbols are one problem, and it is the first
+substantive mismatch found in this whole effort -- not a toolchain
+issue, an actual interface divergence.
+
+`memory_object_establish` does not exist in OSFMK 7.3.
+`mach/mach.defs:247` reads:
+
+```
+skip;	/* was memory_object_establish; old port_set_backlog */
+```
+
+It was removed. LITES's `xmm_interface.c` calls it from its
+`#if OSFMACH3` arm, so that arm targets an OSF Mach from before the
+removal.
+
+The two `seqnos_` handlers are the same divergence seen from the other
+side. `Smem_svr.o` inside our `libmach.a` is the MIG **server** for the
+sequence-numbered memory object interface: it provides
+`seqnos_memory_object_server` and expects the pager to implement seven
+handlers. LITES implements five of them in its OSFMACH3 arm. Of the
+other two, `seqnos_memory_object_init` **is** defined in
+`xmm_interface.c`, but at line 136, inside the `#else /* OSFMACH3 */`
+arm -- so enabling `osfmach3`, which is required for the device call
+arity, compiles it out. `seqnos_memory_object_discard_request` is not
+defined anywhere in LITES.
+
+So LITES has two pager implementations, and neither matches 7.3: the
+OSFMACH3 one calls a routine 7.3 deleted, and the other one is written
+against the older typed interface.
+
+This is unsurprising in hindsight. The external pager interface is the
+part of Mach that changed most between versions, and it is exactly where
+a personality built for one OSF Mach would diverge from another.
+
+Resolving it means writing the missing handlers against 7.3's actual
+`memory_object` interface, using the 21 `memory_object_*` routines
+`libmach` does export -- among them
+`memory_object_change_attributes`, which is the closest thing 7.3 has to
+what `memory_object_establish` did. That is real porting work rather
+than a shim, and it is the first task in this effort that is.
+
+### Done: every OSFMK-side symbol resolves
+
+`tools/lites/lites-osfmk73.patch` now carries the pager work, and the
+link is down to `__divdi3` and `__moddi3` alone -- libgcc helpers that
+are absent only where no 32-bit libgcc is installed. Every symbol that
+was ours is resolved.
+
+Three changes in `xmm_interface.c` did it.
+
+**`seqnos_memory_object_init` for the OSFMACH3 arm**, following
+MkLinux's `inode_object_init` exactly: fill a
+`memory_object_attr_info_data_t` with `copy_strategy`, `cluster_size`,
+`may_cache_object` and `temporary`, then call
+`memory_object_change_attributes` with `MEMORY_OBJECT_ATTRIBUTE_INFO`.
+The rest of the body -- vnode lookup, pager wiring, `ux_server_add_port`
+-- is identical to the `#else` arm's version.
+
+Worth recording why neither existing arm worked: the OSFMACH3 arm calls
+`memory_object_establish`, removed as a NORMA routine, and the `#else`
+arm calls `memory_object_ready`, which `mach.defs:864` shows was also
+removed ("was skip; memory_object_ready"). **Both** of LITES's pager
+initialisation paths target routines 7.3 deleted, and both were folded
+into `change_attributes`. That is why MkLinux is the only usable
+template rather than one of two options.
+
+**`seqnos_memory_object_discard_request`** as a panic stub, matching
+MkLinux's `inode_object_discard_request`.
+
+**`seqnos_memory_object_notify`'s establish call** replaced by a panic.
+That handler belongs to the NORMA notify protocol; `Smem_svr` does not
+reference `seqnos_memory_object_notify` at all, so it is unreachable on
+this kernel. The attribute setting it used to carry now happens in
+`init`.
+
+### Superseded: the 5 that remain
 
 ```
 __divdi3, __moddi3                      libgcc helpers
