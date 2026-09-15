@@ -338,7 +338,74 @@ string literals, pointer constants as `case` labels in `kern_sig.c` and
 Mach structure members that moved on in `vn_pager_misc.c` and
 `xmm_interface.c`.
 
-### The real incompatibility: the pager interface
+### Researched: the gap is NORMA/XMM, and it is one function wide
+
+Comparing against OSFMK 6.1, XNU Rhapsody DR5.3 and the 7.3 tree itself
+identifies what LITES's OSFMACH3 pager arm was written for, and it is
+not a generic "older OSF Mach".
+
+**`memory_object_establish` is a NORMA routine.** In OSFMK 6.1 it lives
+in `norma/xmm_user.c`, is renamed to `k_memory_object_establish` by
+`norma/xmm_server_rename.h`, and its body is:
+
+```c
+panic("memory_object_establish is not implemented\n");
+```
+
+It was part of NORMA, Mach's multicomputer/distributed memory layer, and
+was **already unimplemented in 6.1**. The `memory_object.defs` comments
+describe the protocol it belonged to: a discard request is answered with
+either `memory_object_establish` or a discard. That is also where
+`seqnos_memory_object_discard_request` comes from.
+
+**OSFMK 7.3 removed NORMA entirely.** There is no `norma/` directory;
+the mentions in `conf/files` are historical log entries. `mach.defs:247`
+keeps the message id reserved as
+`skip; /* was memory_object_establish; old port_set_backlog */`.
+
+**XNU Rhapsody does not have it either**, which is consistent: the
+lineage that became XNU dropped NORMA at the same point.
+
+So LITES's file name is the clue that was there all along --
+`xmm_interface.c`. Its OSFMACH3 arm targets a NORMA-enabled OSF Mach,
+and the name says so.
+
+#### The practical consequence: one function
+
+Mapping the conditionals in `xmm_interface.c` shows `#if OSFMACH3` wraps
+only the **initialisation** path:
+
+| handler | line | arm |
+|---|---|---|
+| `seqnos_memory_object_init` | 136 | `#else` of `#if OSFMACH3` |
+| `data_request` | 236 | top level |
+| `data_unlock` | 336 | top level |
+| `lock_completed` | 499 | top level |
+| `data_return` | 557 | top level |
+| `change_completed` | 572 | top level |
+| `terminate`, `copy` | 176, 224 | top level |
+
+Everything except initialisation is shared. The OSFMACH3 arm calls
+`memory_object_establish` where the other defines
+`seqnos_memory_object_init`, and that single substitution is the whole
+incompatibility.
+
+So the fix is not "write a pager". It is:
+
+1. Provide `seqnos_memory_object_init` for the OSFMACH3 arm, doing what
+   the establish call was meant to do, against 7.3's interface --
+   `memory_object_change_attributes` with a
+   `memory_object_attr_info` is the closest equivalent, and
+   `vn_pager_misc.c` already calls it.
+2. Provide `seqnos_memory_object_discard_request`, which can be a stub
+   returning failure: it is the NORMA discard protocol, which 7.3 never
+   initiates. `Smem_svr` references it only because the `.defs` still
+   reserves the message.
+
+Both belong in the OSFMACH3 arm of `xmm_interface.c`, which keeps the
+change inside LITES and inside the patch series already carried here.
+
+### Superseded framing: the real incompatibility
 
 The three non-libgcc symbols are one problem, and it is the first
 substantive mismatch found in this whole effort -- not a toolchain
