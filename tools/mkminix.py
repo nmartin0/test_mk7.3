@@ -64,7 +64,12 @@ def build(path, files):
     def ino_off(n):  return itab + (n - 1) * INOSZ
     def zone_off(z): return z * BS
 
-    def set_inode(n, mode, size, direct, indirect=0, nlinks=1):
+    # minix v1 inode: 7 direct zones, then i_zone[7] single indirect and
+    # i_zone[8] double indirect. A zone number is 2 bytes, so one
+    # indirect block addresses BS/2 = 512 zones.
+    PER_IND = BS // 2
+
+    def set_inode(n, mode, size, direct, indirect=0, dbl=0, nlinks=1):
         o = ino_off(n)
         struct.pack_into('<HHII', d, o, mode, 0, size, int(time.time()))
         d[o + 12] = nlinks
@@ -73,6 +78,16 @@ def build(path, files):
             struct.pack_into('<H', d, o + 14 + 2 * i,
                              direct[i] if i < len(direct) else 0)
         struct.pack_into('<H', d, o + 28, indirect)
+        struct.pack_into('<H', d, o + 30, dbl)
+
+    def write_indirect(zones):
+        """Store up to PER_IND zone numbers in a fresh indirect block."""
+        iz = alloc_zone()
+        blk = bytearray(BS)
+        for i, z in enumerate(zones):
+            struct.pack_into('<H', blk, 2 * i, z)
+        d[zone_off(iz):zone_off(iz) + BS] = blk
+        return iz
 
     def dirent(n, name):
         b = name.encode()
@@ -88,15 +103,17 @@ def build(path, files):
             chunk = data[i * BS:(i + 1) * BS]
             d[zone_off(z):zone_off(z) + len(chunk)] = chunk
         n = alloc_ino()
-        if nblk <= 7:
-            set_inode(n, mode, len(data), zones)
-        else:
-            iz = alloc_zone()
-            ind = bytearray(BS)
-            for i, z in enumerate(zones[7:]):
-                struct.pack_into('<H', ind, 2 * i, z)
-            d[zone_off(iz):zone_off(iz) + BS] = ind
-            set_inode(n, mode, len(data), zones[:7], iz)
+        direct, rest = zones[:7], zones[7:]
+        single = dbl = 0
+        if rest:
+            single = write_indirect(rest[:PER_IND])
+            rest = rest[PER_IND:]
+        if rest:
+            # double indirect: a block of pointers to indirect blocks
+            inds = [write_indirect(rest[i:i + PER_IND])
+                    for i in range(0, len(rest), PER_IND)]
+            dbl = write_indirect(inds)
+        set_inode(n, mode, len(data), direct, single, dbl)
         return n
 
     # root directory, inode 1
