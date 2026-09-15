@@ -331,7 +331,45 @@ This is a second instance of the same 1990s assumption as `gensym.awk`,
 by a different mechanism -- there the C source was wrong, here the shell
 was.
 
-### Remaining: two link errors
+### 150 objects, and the duplicate symbols are gone
+
+Two more flags clear every multiple-definition error:
+
+| flag | why |
+|---|---|
+| `-fgnu89-inline` | `cthreads.h` declares `cthread_sp`, `spin_unlock` and `spin_try_lock` `extern __inline__`. Under C99 rules that emits a symbol in every translation unit; gnu89 semantics are what the header was written for. |
+| `-fcommon` | `bufqueues`, `invalhash`, `bufhashtbl` and friends are tentative definitions in headers. GCC 10 and later default to `-fno-common`, so each object gets its own. |
+
+**Rebuild from clean when changing these.** Stale objects compiled
+without the flag keep their duplicate symbols and the link still fails,
+which looks exactly like the flag not working.
+
+Library naming is handled without touching LITES by making
+`$MACH_RELEASE_DIR/lib` a real directory of symlinks and adding the two
+aliases LITES asks for:
+
+```sh
+ln -sf libcthreads.a libthreads.a
+ln -sf libsa_mach.a  libmach_sa.a
+```
+
+### Remaining: the link step
+
+```
+ld: cannot find crt0-not-found
+ld: cannot find -lthreads
+ld: cannot find -lmach_sa
+```
+
+Both are the link step rather than compilation. `CXXX` feeds
+`TARGET_CFLAGS`, which the link rule does not use, so the link runs
+64-bit and silently passes over our 32-bit archives -- the aliases exist
+and `-L$MACH_RELEASE_DIR/lib` is on the command line, so "cannot find"
+here means "found nothing of the right architecture". The link needs its
+own `-m32`, and `CRT0` is unset, resolving to the literal
+`crt0-not-found`.
+
+### Superseded: two link errors
 
 ```
 ld: cannot find -lthreads
