@@ -291,6 +291,274 @@ make CXXX="-m32 -fno-builtin -isystem $GI \
      CHXXX="-m32"
 ```
 
+### Reproducible: one script, 159 objects, 5 undefined symbols
+
+```sh
+MK_BUILD=~/.cache/mk7.3 ./tools/lites/build-lites.sh ~/lites-1.1.u3 ~/lites-build
+```
+
+Verified from pristine clones of both repositories. It applies
+`tools/lites/lites-osfmk73.patch`, builds a `MACH_RELEASE_DIR` from the
+OSFMK export tree, configures with `osfmach3` and builds.
+
+The flag set, with the reason for each:
+
+| flag | why |
+|---|---|
+| `-std=gnu89` | GCC 14 makes K&R definitions and implicit int hard errors. GCC 13 did not, so this is easy to miss. |
+| `-fno-builtin` | BSD's kernel `log(level, fmt, ...)` vs GCC's builtin `log(double)` |
+| `-fgnu89-inline` | `cthreads.h` uses `extern __inline__`, which C99 rules emit per translation unit |
+| `-fcommon` | tentative definitions in headers; GCC 10+ defaults to `-fno-common` |
+| `-fno-stack-protector` | no `__stack_chk_fail_local` in this environment |
+| `-D__NO_UNDERSCORES__` | `i386/asm.h` decorates `ENTRY(htonl)` as `_htonl` unless this is set. Without it every `htonl`/`ntohl` reference is undefined -- 322 of them. |
+| `AWK=nawk` | the generators need nawk extensions; configure picks mawk |
+| `LIBS` repeated | `libsa_mach` and `libmach` reference each other, and ld reads archives once |
+
+Two more things the script handles:
+
+**`crt0.o` lives inside `libsa_mach.a`.** OSFMK does not ship it
+standalone, so `$MACH_RELEASE_DIR/lib` must be a real directory with the
+object extracted into it, not a symlink to the export tree.
+
+**The first make pass fails on `bsd_server.c`** and the second succeeds.
+Make resolves it through VPATH only once the MIG outputs exist. The
+script runs two passes.
+
+### What the patch fixes
+
+`tools/lites/lites-osfmk73.patch`, 8 files. The largest single win was
+`vnode_if.sh`: it calls `bail()`, which the script never defines, so
+both mawk and nawk abort at parse time and emit a 97 line stub instead
+of the full 727 line `vnode_if.c`. That alone accounted for about 700 of
+the undefined symbols. Defining `bail` fixes it.
+
+The rest: `gensym.awk` and `newvers.sh` emitting literal newlines inside
+string literals, pointer constants as `case` labels in `kern_sig.c` and
+`serv_syscalls.c`, a cast used as an lvalue in `user_copy.c`, and two
+Mach structure members that moved on in `vn_pager_misc.c` and
+`xmm_interface.c`.
+
+### The 5 that remain
+
+```
+__divdi3, __moddi3                      libgcc helpers
+memory_object_establish                 in mach.defs, not in any library
+seqnos_memory_object_discard_request    handlers for the MIG pager server
+seqnos_memory_object_init
+```
+
+The first two are absent only where no 32-bit libgcc is installed; on a
+host with working multilib they resolve. The other three are OSFMK-side:
+`memory_object_establish` is declared in our `mach/mach.defs` but is not
+compiled into `libmach` or `libsa_mach`, and the two `seqnos_` handlers
+are wanted by a generated MIG server inside our own libraries. Which
+`.defs` are compiled into which library, and whether the export tree is
+missing one, is the next question -- and the first in this whole effort
+that is ours rather than LITES's.
+
+## Licensing
+
+Compatible, and cleaner than UX.
+
+- **Core (UC Berkeley lineage):** 4-clause BSD text, but 4.4BSD-Lite
+  derived -- the post-settlement clean branch, marked by the "with the
+  permission of UNIX System Laboratories" note. UC retroactively
+  withdrew the advertising clause in 1999, so for UC-copyrighted files
+  it is effectively BSD-3-Clause today.
+- **Helander's Mach glue:** a permissive HPND-style grant, same family
+  as OSFMK 7.3's own notice, no advertising clause.
+
+Neither is copyleft.
+
+**On UX and the Caldera argument:** the claim that Caldera's 2002 grant
+implicitly freed 4.3BSD is not safe to rely on. That grant names UNIX
+V1-V7 and 32V rather than derivatives, 4.3BSD contains much more than
+32V-derived material, the *USL v. BSDi* settlement is what actually
+addressed 4.3BSD and produced 4.4BSD-Lite as the clean branch, and
+Caldera's authority was contested afterwards in *SCO v. Novell*. LITES
+avoids the question entirely.
+
+## Tried: configure and liblites build against our tree
+
+Not a thought experiment any more. The following was done and works.
+
+### Constructing a MACH_RELEASE_DIR
+
+LITES wants `$(MACH_RELEASE_DIR)/{include,include/mach,lib}` and
+`mig`/`migcom`. Our ODE export tree provides all of it:
+
+```sh
+MR=/tmp/machrel
+mkdir -p $MR/bin $MR/libexec
+ln -sfn $MK_BUILD/export/at386/include $MR/include
+ln -sfn $MK_BUILD/export/at386/lib     $MR/lib
+HB=osfmk7.3/osfmk/tools/i386/i386_linux/hostbin
+ln -sf $PWD/$HB/mig    $MR/bin/mig
+ln -sf $PWD/$HB/migcom $MR/bin/migcom
+ln -sf $PWD/$HB/migcom $MR/libexec/migcom
+```
+
+`export/at386/include/mach/` contains the `.defs` files, including
+`bootstrap.defs`, so LITES generates its Mach stubs from **our**
+definitions with **our** `mig`. That was the central claim of this
+survey and it is now demonstrated rather than argued.
+
+### Configure and build
+
+```sh
+sh /path/to/lites/configure \
+    --with-release=$MR \
+    --with-config="STD+WS+osfmach3" \
+    --host=i386-unknown-mach3 --target=i386-unknown-mach3
+
+GI=$(gcc -m32 -print-file-name=include)
+make CXXX="-m32 -isystem $GI" CHXXX="-m32"
+```
+
+`--with-config="STD+WS+osfmach3"` is **essential and not the default**.
+Without it `LITES_CONFIG` is `STD+WS`, `OSFMACH3` and `OSF_LEDGERS` stay
+undefined, and every device call has the wrong arity:
+
+```
+block_io.c:141: error: incompatible type for argument 4 of 'device_open'
+block_io.c:132: error: too few arguments to function 'device_open'
+```
+
+That is not an incompatibility. LITES already brackets the extra
+arguments correctly:
+
+```c
+rc = device_open(device_server_port,
+#if OSF_LEDGERS
+                 MACH_PORT_NULL,     /* ledger */
+#endif
+                 mode,
+#if OSFMACH3
+                 security_id,        /* security token */
+#endif
+```
+
+which matches our `device.defs` exactly -- OSFMK 7.3 replaced
+`device_open` with a ledger-and-token form and left the old message id
+as `skip; /* nmk15: device_open */`. There are 66 such call sites across
+`device_open`, `device_read`, `device_write`, `device_get_status`,
+`device_set_status` and `device_close`, and the single config option
+fixes all of them.
+
+`CXXX` and `CHXXX` are user hooks in `conf/Makerules` that append to
+`TARGET_CFLAGS` and `HOST_CFLAGS`, so the toolchain flags go in without
+patching LITES.
+
+### Result
+
+`liblites` **compiles**. The build reaches `server/` and then fails in a
+generated file:
+
+```
+bsd_types_gen.symc:8:6: error: missing terminating " character
+```
+
+`gensym.awk` emits output a modern cpp rejects -- structurally the same
+problem OSFMK's own `genassym` had, and the next thing to fix.
+
+### Further: MIG interoperates, and the server tree starts building
+
+With `tools/lites/gensym-newline.patch` applied and
+`tools/lites/mig-shim.sh` in place of `$MACH_RELEASE_DIR/bin/mig`:
+
+- `bsd_types_gen.symc` compiles and `bsd_types_gen.h` is generated
+- **our `mig` runs LITES's `.defs` against our `mach_types.defs`** and
+  produces `bsd_1_server.c` and `bsd_1_server.h`
+- `-DOSF_LEDGERS=1 -DUNTYPED_IPC=1` appear on the compile lines, so the
+  `osfmach3` arms are live
+
+That is the interoperation this survey set out to test, working at the
+tool level: LITES source, our MIG, our definitions, one output.
+
+The build then stops on a LITES packaging inconsistency rather than
+anything to do with OSFMK. `conf/files:303` lists
+`serv/bsd_server.c`, while the MIG rule derives its output name from
+`bsd_1.srv` and so produces `bsd_1_server.c`. The two disagree, and make
+passes the unresolved bare name to gcc:
+
+```
+cc1: fatal error: bsd_server.c: No such file or directory
+```
+
+Untangling that is LITES build-system work and is where the next session
+should start.
+
+### Further still: 22 objects, and the first real API difference
+
+Adding `tools/lites/lites-compat.h` via `-include` carried the build
+through `device_reply_hdlr.c` and 14 more objects.
+
+That header covers the one genuine API difference found so far.
+OSFMK 7.3 uses untyped (NDR) IPC, where the MIG error reply is
+`mig_reply_error_t` -- a `Head`, an `NDR_record_t` and a `RetCode`. LITES
+uses the typed-IPC name `mig_reply_header_t` in 13 places, which had a
+`mach_msg_type_t` where the NDR record now is. It touches the differing
+member, `RetCodeType`, in only two places and both are inside its `#else`
+arm for typed IPC, which `UNTYPED_IPC` compiles out -- so the two
+structures are interchangeable for every use that remains and a plain
+typedef suffices.
+
+The build then reaches `server/net/` and stops on a LITES internal
+inconsistency: `include/sys/malloc.h:272` defines
+`bsd_malloc(size, type, flags)` as `malloc(size)`, because the LITES
+server has a one-argument malloc rather than the BSD kernel's
+three-argument one, but `net/radix.h`'s KERNEL arm was never converted
+and still calls `malloc` and `free` with BSD arity directly.
+`tools/lites/radix-bsd-malloc.patch` routes it through the wrapper.
+
+### Further still: ~35 objects, and the shape is now clear
+
+Continuing past `server/net/` turned up three more issues, all the same
+kind, and each one unblocked a batch of files rather than a single file.
+
+**BSD malloc arity, 53 sites in 46 files.** LITES's `sys/malloc.h`
+supplies `MALLOC`, `FREE`, `bsd_malloc` and `bsd_free`, all resolving to
+a one-argument allocator, but the BSD-derived trees under `server/net`,
+`server/netccitt` and `server/isofs` were never converted and still call
+`malloc(size, type, flags)` and `free(addr, type)` directly. Patching 53
+sites would be a large change against LITES; two variadic macros in
+`tools/lites/lites-compat.h` drop the extra arguments instead and the
+existing calls compile unchanged.
+
+One detail matters there. The macros must expand so that a later
+*declaration* of `malloc` is still valid C:
+
+```c
+#define malloc(sz, ...)  (malloc)(sz)     /* right */
+#define malloc(sz, ...)  (malloc)((unsigned long)(sz))   /* wrong */
+```
+
+With the cast, a header declaring `void *malloc(unsigned long);` expands
+to `(malloc)((unsigned long)(unsigned long))` and fails. Without it the
+declaration becomes `extern void *(malloc)(unsigned long);`, which is
+legal. GCC reports such failures at the macro's *definition* site, which
+is misleading -- the real error is at whichever header declares the
+function.
+
+**`-fno-builtin` is required.** BSD's kernel `log(level, fmt, ...)`
+collides with GCC's builtin `log(double)`, giving "too many arguments to
+function 'log'". OSFMK's own build uses `-fno-builtin` for the same
+reason.
+
+**Pointer constants as case labels.** `kern_sig.c` has `case SIG_DFL:`
+where `SIG_DFL` is `(void(*)())0`. K&R C accepted it; modern C requires
+an integer constant expression. This is the current stopping point and
+needs a LITES patch rather than a shim.
+
+The full flag set that gets this far:
+
+```sh
+GI=$(gcc -m32 -print-file-name=include)
+make CXXX="-m32 -fno-builtin -isystem $GI \
+          -include /path/to/tools/lites/lites-compat.h" \
+     CHXXX="-m32"
+```
+
 ### The whole LITES server now compiles
 
 Every object builds and the link is reached:
@@ -331,7 +599,70 @@ This is a second instance of the same 1990s assumption as `gensym.awk`,
 by a different mechanism -- there the C source was wrong, here the shell
 was.
 
-### Remaining: two link errors
+### 150 objects, and the duplicate symbols are gone
+
+Two more flags clear every multiple-definition error:
+
+| flag | why |
+|---|---|
+| `-fgnu89-inline` | `cthreads.h` declares `cthread_sp`, `spin_unlock` and `spin_try_lock` `extern __inline__`. Under C99 rules that emits a symbol in every translation unit; gnu89 semantics are what the header was written for. |
+| `-fcommon` | `bufqueues`, `invalhash`, `bufhashtbl` and friends are tentative definitions in headers. GCC 10 and later default to `-fno-common`, so each object gets its own. |
+
+**Rebuild from clean when changing these.** Stale objects compiled
+without the flag keep their duplicate symbols and the link still fails,
+which looks exactly like the flag not working.
+
+Library naming is handled without touching LITES by making
+`$MACH_RELEASE_DIR/lib` a real directory of symlinks and adding the two
+aliases LITES asks for:
+
+```sh
+ln -sf libcthreads.a libthreads.a
+ln -sf libsa_mach.a  libmach_sa.a
+```
+
+### The link runs; 1055 undefined symbols remain
+
+The link now executes over all 150 objects. Getting there needed:
+
+| issue | fix |
+|---|---|
+| `CRT0` unset, resolving to the literal `crt0-not-found` | `ar x libsa_mach.a crt0.o` into `$MACH_RELEASE_DIR/lib`; OSFMK keeps crt0 inside the archive rather than standalone |
+| `ld: unrecognised emulation mode: 32` | the link rule calls `ld` directly, not `gcc`, so it is `LDFLAGS="-m elf_i386"` and not `-m32` |
+| `liblites.a` built 64-bit | rebuild it from clean after adding `-m32`; the archive predated the flag |
+| `-lmach` missing from `LIBS` | LITES's non-OSF arm omits it. Overriding `LIBS` on the make line took undefined symbols from 2089 to 1055 |
+| `__stack_chk_fail_local` | `-fno-stack-protector` |
+
+What is left divides in two.
+
+**A 32-bit libgcc this host does not have.** `__divdi3` and `__moddi3`
+are libgcc helpers, and `gcc -m32 -print-libgcc-file-name` returns the
+x86_64 path because no multilib libgcc is installed. A machine with
+`gcc-multilib` properly set up should resolve these.
+
+**Mach RPCs our libraries do not export**, such as `clock_sleep` and
+`host_get_clock_service`. These are generated stubs, so the question is
+which `.defs` are compiled into which OSFMK library and whether the
+export tree is missing one. That is OSFMK-side work and the first task
+in this effort that is.
+
+### Superseded: the link step
+
+```
+ld: cannot find crt0-not-found
+ld: cannot find -lthreads
+ld: cannot find -lmach_sa
+```
+
+Both are the link step rather than compilation. `CXXX` feeds
+`TARGET_CFLAGS`, which the link rule does not use, so the link runs
+64-bit and silently passes over our 32-bit archives -- the aliases exist
+and `-L$MACH_RELEASE_DIR/lib` is on the command line, so "cannot find"
+here means "found nothing of the right architecture". The link needs its
+own `-m32`, and `CRT0` is unset, resolving to the literal
+`crt0-not-found`.
+
+### Superseded: two link errors
 
 ```
 ld: cannot find -lthreads

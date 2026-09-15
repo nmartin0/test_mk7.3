@@ -1,0 +1,213 @@
+diff --git a/conf/gensym.awk b/conf/gensym.awk
+index cb657a0..0c8bae2 100644
+--- a/conf/gensym.awk
++++ b/conf/gensym.awk
+@@ -40,7 +40,7 @@ BEGIN {
+ 
+ # Take an arbitrarily complex C symbol or expression and constantize it.
+ /^expr/ {
+-	print "asm (\"";
++	printf "asm (\"\\n";
+ 	if ($3 == "")
+ 		printf "* %s mAgIc%%0\" : : \"i\" (%s));\n", $2, $2;
+ 	else
+@@ -49,14 +49,14 @@ BEGIN {
+ 
+ # Output a symbol defining the size of a C structure.
+ /^size/ {
+-	print "asm (\"";
++	printf "asm (\"\\n";
+ 	printf "* %s_SIZE mAgIc%%0\" : : \"i\" (sizeof(struct %s)));\n",
+ 		toupper($3), $2;
+ }
+ 
+ # Output a symbol defining the byte offset of an element of a C structure.
+ /^offset/ {
+-	print "asm (\"";
++	printf "asm (\"\\n";
+ 	if ($5 == "")
+ 	{
+ 		printf "* %s_%s mAgIc%%0\" : : \"i\" (&((struct %s*)0)->%s));\n",
+diff --git a/conf/newvers.sh b/conf/newvers.sh
+index 840cb30..fa0a63d 100644
+--- a/conf/newvers.sh
++++ b/conf/newvers.sh
+@@ -30,11 +30,11 @@ fi
+ CONFIG=`expr "$d" : '.*/\([^/]*\)$'`
+ d=`expr "$d" : '.*/\([^/]*/[^/]*\)$'`
+ (
+-  echo "char ostype[] = \"Lites\";" ;
+-  echo "char osrelease[] = \"${version}\";" ;
+-  echo "char version[] = \"${name} ${v}: ${t}; $config ($h)\\n\";" ;
+-  echo "char version_short[] = \"${version} ${config}\\n\";" ;
+-  echo "char cmu_copyright[] = \"\\" ;
++  printf "%s\n" "char ostype[] = \"Lites\";" ;
++  printf "%s\n" "char osrelease[] = \"${version}\";" ;
++  printf "%s\n" "char version[] = \"${name} ${v}: ${t}; $config ($h)\\n\";" ;
++  printf "%s\n" "char version_short[] = \"${version} ${config}\\n\";" ;
++  printf "%s\n" "char cmu_copyright[] = \"\\" ;
+   sed <$copyright -e '/^#/d' -e 's;[ 	]*$;;' -e '/^$/d' -e 's;$;\\n\\;' -e 's/"/\\"/g';
+   echo "\";";
+ ) > vers.c
+diff --git a/server/kern/kern_sig.c b/server/kern/kern_sig.c
+index f131504..057d880 100644
+--- a/server/kern/kern_sig.c
++++ b/server/kern/kern_sig.c
+@@ -1064,11 +1064,11 @@ run:
+ 		 */
+ 		SD(printf("%8x[%d]: psignalDIRECT %x[%d] %x\n",curproc,curproc->p_pid, p,p->p_pid, signum));
+ 		switch ((integer_t)p->p_sigacts->ps_sigact[signum]) {
+-		      case SIG_IGN:
+-		      case SIG_HOLD:
++		      case (integer_t)SIG_IGN:
++		      case (integer_t)SIG_HOLD:
+ 			break;
+ 
+-		      case SIG_DFL:
++		      case (integer_t)SIG_DFL:
+ 			sig_default(p, signum);
+ 			break;
+ 
+@@ -1167,7 +1167,7 @@ int issignal(p)
+ 		 */
+ 		switch ((integer_t)p->p_sigacts->ps_sigact[signum]) {
+ 
+-		case SIG_DFL:
++		case (integer_t)SIG_DFL:
+ 			/*
+ 			 * Don't take default actions on system processes.
+ 			 */
+@@ -1212,7 +1212,7 @@ int issignal(p)
+ 				return (signum);
+ 			/*NOTREACHED*/
+ 
+-		case SIG_IGN:
++		case (integer_t)SIG_IGN:
+ 			/*
+ 			 * Masking above should prevent us ever trying
+ 			 * to take action on an ignored signal other
+diff --git a/server/kern/vnode_if.sh b/server/kern/vnode_if.sh
+index 7a680a9..ad11d2c 100644
+--- a/server/kern/vnode_if.sh
++++ b/server/kern/vnode_if.sh
+@@ -184,7 +184,12 @@ struct vnodeop_desc vop_default_desc = {
+ END_OF_LEADING_COMMENT
+ 
+ # Awk script to take vnode_if.src and turn it into vnode_if.c.
+-$AWK 'function kill_surrounding_ws (s) {
++$AWK 'function bail (msg) {
++		print "vnode_if.sh: " msg > "/dev/stderr";
++		exit 1;
++	}
++
++	function kill_surrounding_ws (s) {
+ 		sub (/^[ \t]*/, "", s);
+ 		sub (/[ \t]*$/, "", s);
+ 		return s;
+diff --git a/server/serv/serv_syscalls.c b/server/serv/serv_syscalls.c
+index a0798b7..6e9f6cf 100644
+--- a/server/serv/serv_syscalls.c
++++ b/server/serv/serv_syscalls.c
+@@ -540,14 +540,14 @@ boolean_t thread_signal(struct proc *p, thread_t thread, int sig, int code)
+ 	}
+ 
+ 	switch ((vm_offset_t)p->p_sigacts->ps_sigact[sig]) {
+-	    case SIG_IGN:
+-	    case SIG_HOLD:
++	    case (integer_t)SIG_IGN:
++	    case (integer_t)SIG_HOLD:
+ 		/*
+ 		 * Should not get here unless traced.
+ 		 */
+ 		break;
+ 
+-	    case SIG_DFL:
++	    case (integer_t)SIG_DFL:
+ 		sig_default(p, sig);
+ 		break;
+ 
+@@ -697,15 +697,15 @@ bsd_take_signal(
+ 	p->p_siglist &= ~sigmask(sig);
+ 	action = ps->ps_sigact[sig];
+ 	switch ((vm_offset_t)action) {
+-	    case SIG_IGN:
+-	    case SIG_HOLD:
++	    case (integer_t)SIG_IGN:
++	    case (integer_t)SIG_HOLD:
+ 		/*
+ 		 * Should not get here.
+ 		 */
+ 		sig = 0;
+ 		break;
+ 
+-	    case SIG_DFL:
++	    case (integer_t)SIG_DFL:
+ 		/*
+ 		 * take default action
+ 		 */
+diff --git a/server/serv/user_copy.c b/server/serv/user_copy.c
+index b23cb19..327e9f0 100644
+--- a/server/serv/user_copy.c
++++ b/server/serv/user_copy.c
+@@ -211,8 +211,19 @@ copyinstr(from, to, max_len, len_copied)
+ 	    cp = data + ((vm_offset_t)from - start);
+ 	    while (count < cur_max) {
+ 		count++;
+-		if ((*((char *)to)++ = *cp++) == 0) {
+-		    goto done;
++		/*
++		 * Was: if ((*((char *)to)++ = *cp++) == 0)
++		 * A cast is not an lvalue in modern C, so the
++		 * post-increment is spelled out. Semantics unchanged:
++		 * copy one byte, advance both pointers, stop at NUL.
++		 */
++		{
++		    char _c = *cp++;
++
++		    *(char *)to = _c;
++		    to = (char *)to + 1;
++		    if (_c == 0)
++			goto done;
+ 		}
+ 	    }
+ 	    (void) vm_deallocate(mach_task_self(),
+diff --git a/server/serv/vn_pager_misc.c b/server/serv/vn_pager_misc.c
+index 30d9f2c..7c1a9d0 100644
+--- a/server/serv/vn_pager_misc.c
++++ b/server/serv/vn_pager_misc.c
+@@ -393,7 +393,13 @@ void vnode_pager_uncache(struct vnode *vn)
+ 	behavior.copy_strategy = pager->copy_strategy;
+ 	behavior.temporary = FALSE;
+ 	behavior.invalidate = FALSE;
+-	behavior.write_completions = FALSE;
++	/*
++	 * OSFMK 7.3 replaced write_completions in
++	 * struct memory_object_behave_info with silent_overwrite
++	 * and advisory_pageout. Set what exists.
++	 */
++	behavior.silent_overwrite = FALSE;
++	behavior.advisory_pageout = FALSE;
+ 	kr = memory_object_change_attributes(pager->control_port,
+ 					     MEMORY_OBJECT_BEHAVIOR_INFO,
+ 					     (memory_object_info_t) &behavior,
+diff --git a/server/serv/xmm_interface.c b/server/serv/xmm_interface.c
+index 4f92d09..d8a37ae 100644
+--- a/server/serv/xmm_interface.c
++++ b/server/serv/xmm_interface.c
+@@ -106,9 +106,13 @@ kern_return_t seqnos_memory_object_notify (
+ 	/* move port from waiting set to ux server set */
+ 	ux_server_add_port(memory_object);
+ 
+-	attributes.object_ready  = TRUE;
+-	attributes.copy_strategy = pager->copy_strategy;
+-	attributes.may_cache     = pager->may_cache;
++	/*
++	 * OSFMK 7.3's struct memory_object_attr_info is
++	 * copy_strategy, cluster_size, may_cache_object, temporary.
++	 * object_ready has no counterpart; may_cache was renamed.
++	 */
++	attributes.copy_strategy    = pager->copy_strategy;
++	attributes.may_cache_object = pager->may_cache;
+ 
+ 	kr = memory_object_establish(host_name,
+ 				     memory_object,

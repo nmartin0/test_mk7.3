@@ -1,42 +1,85 @@
 #!/bin/sh
 # Build LITES 1.1u3 against an OSFMK 7.3 export tree.
 #
-#   MK_BUILD=~/.cache/mk7.3 ./build-lites.sh /path/to/lites /path/to/builddir
+#   MK_BUILD=~/.cache/mk7.3 ./build-lites.sh <lites-src> <build-dir>
 #
-# Applies the shims in this directory, constructs a MACH_RELEASE_DIR
-# from the OSFMK export tree, configures, and builds.
+# Applies tools/lites/lites-osfmk73.patch to the LITES source (idempotent),
+# constructs a MACH_RELEASE_DIR from the OSFMK export tree, configures and
+# builds. Safe to re-run.
 set -e
 
 LITES=${1:?usage: build-lites.sh <lites-src> <build-dir>}
 BUILD=${2:?usage: build-lites.sh <lites-src> <build-dir>}
 MK_BUILD=${MK_BUILD:-$HOME/.cache/mk7.3}
 HERE=$(cd "$(dirname "$0")" && pwd)
-OSFMK=$HERE/../../osfmk7.3/osfmk
 
-MR=$BUILD/machrel
-mkdir -p "$MR/bin" "$MR/libexec" "$BUILD/obj"
-ln -sfn "$MK_BUILD/export/at386/include" "$MR/include"
-ln -sfn "$MK_BUILD/export/at386/lib"     "$MR/lib"
-HB=$OSFMK/tools/i386/i386_linux/hostbin
-ln -sf "$HERE/mig-shim.sh" "$MR/bin/mig"
-ln -sf "$HB/migcom"        "$MR/bin/migcom"
-ln -sf "$HB/migcom"        "$MR/libexec/migcom"
-OSFMK_TOOLS=$OSFMK export OSFMK_TOOLS
+OSFMK_TOOLS=$(cd "$HERE/../../osfmk7.3/osfmk" && pwd)
+export OSFMK_TOOLS
+HB=$OSFMK_TOOLS/tools/i386/i386_linux/hostbin
+EXPORT=$MK_BUILD/export/at386
 
-# LITES patches, applied once, idempotently
-for p in gensym-newline radix-bsd-malloc; do
-    [ -f "$HERE/$p.patch" ] || continue
-    patch -p1 -N -r /dev/null -d "$LITES" < "$HERE/$p.patch" >/dev/null 2>&1 || true
+for f in "$EXPORT/include" "$EXPORT/lib" "$HB/mig" "$HB/migcom"; do
+    [ -e "$f" ] || { echo "missing: $f" >&2; exit 1; }
 done
 
+# --- LITES patches (idempotent) -------------------------------------
+if ! grep -q 'function bail' "$LITES/server/kern/vnode_if.sh" 2>/dev/null; then
+    patch -p1 -d "$LITES" < "$HERE/lites-osfmk73.patch"
+else
+    echo "LITES already patched, skipping"
+fi
+
+# --- MACH_RELEASE_DIR ------------------------------------------------
+# lib must be a real directory: LITES wants library names we do not use,
+# and crt0.o which OSFMK keeps inside libsa_mach.a rather than standalone.
+MR=$BUILD/machrel
+rm -rf "$MR"
+mkdir -p "$MR/bin" "$MR/libexec" "$MR/lib" "$BUILD/obj"
+ln -sfn "$EXPORT/include" "$MR/include"
+for a in "$EXPORT"/lib/*.a; do ln -sf "$a" "$MR/lib/"; done
+( cd "$MR/lib"
+  ln -sf libcthreads.a libthreads.a
+  ln -sf libsa_mach.a  libmach_sa.a
+  ar x "$EXPORT/lib/libsa_mach.a" crt0.o )
+cp "$HERE/mig-shim.sh" "$MR/bin/mig"
+chmod +x "$MR/bin/mig"
+ln -sf "$HB/migcom" "$MR/bin/migcom"
+ln -sf "$HB/migcom" "$MR/libexec/migcom"
+
+# --- configure -------------------------------------------------------
+# osfmach3 is essential: without it OSFMACH3 and OSF_LEDGERS stay unset
+# and every device call has the wrong arity.
 cd "$BUILD/obj"
 sh "$LITES/configure" \
     --with-release="$MR" \
     --with-config="STD+WS+osfmach3" \
     --host=i386-unknown-mach3 --target=i386-unknown-mach3
 
+# --- build -----------------------------------------------------------
+# -std=gnu89          GCC 14 makes K&R definitions and implicit int errors
+# -fno-builtin        BSD's kernel log(level,fmt,...) vs GCC's log(double)
+# -fgnu89-inline      cthreads.h uses extern __inline__
+# -fcommon            tentative definitions in headers; GCC 10+ defaults off
+# -fno-stack-protector no __stack_chk_fail_local here
+# -D__NO_UNDERSCORES__ ELF symbol names; without it the asm defines _htonl
+# AWK=nawk            the generators need nawk extensions, not mawk
+# LIBS repeated       libsa_mach and libmach reference each other
 GI=$(gcc -m32 -print-file-name=include)
-exec make \
-    CXXX="-m32 -fno-builtin -isystem $GI -include $HERE/lites-compat.h" \
-    CHXXX="-m32" \
-    ASFLAGS="-m32"
+LG=$(gcc -m32 -print-libgcc-file-name)
+
+MAKEARGS="AWK=nawk \
+  CXXX=-m32 -std=gnu89 -fno-builtin -fgnu89-inline -fcommon -fno-stack-protector"
+
+# The first pass can fail on bsd_server.c: make resolves it through VPATH
+# only once the MIG outputs exist. A second pass always succeeds.
+for pass in 1 2; do
+    make \
+      AWK=nawk \
+      CXXX="-m32 -std=gnu89 -fno-builtin -fgnu89-inline -fcommon -fno-stack-protector -isystem $GI -include $HERE/lites-compat.h" \
+      CHXXX="-m32 -std=gnu89" \
+      ASFLAGS="-m32 -D__NO_UNDERSCORES__" \
+      LDFLAGS="-m elf_i386" \
+      LIBS="-llites -lthreads -lmach -lmach_sa -lmach -lthreads $LG" \
+      && break
+    [ $pass = 1 ] && echo "=== first pass failed (expected); retrying ===" || exit 1
+done
