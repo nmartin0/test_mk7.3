@@ -243,6 +243,54 @@ three-argument one, but `net/radix.h`'s KERNEL arm was never converted
 and still calls `malloc` and `free` with BSD arity directly.
 `tools/lites/radix-bsd-malloc.patch` routes it through the wrapper.
 
+### Further still: ~35 objects, and the shape is now clear
+
+Continuing past `server/net/` turned up three more issues, all the same
+kind, and each one unblocked a batch of files rather than a single file.
+
+**BSD malloc arity, 53 sites in 46 files.** LITES's `sys/malloc.h`
+supplies `MALLOC`, `FREE`, `bsd_malloc` and `bsd_free`, all resolving to
+a one-argument allocator, but the BSD-derived trees under `server/net`,
+`server/netccitt` and `server/isofs` were never converted and still call
+`malloc(size, type, flags)` and `free(addr, type)` directly. Patching 53
+sites would be a large change against LITES; two variadic macros in
+`tools/lites/lites-compat.h` drop the extra arguments instead and the
+existing calls compile unchanged.
+
+One detail matters there. The macros must expand so that a later
+*declaration* of `malloc` is still valid C:
+
+```c
+#define malloc(sz, ...)  (malloc)(sz)     /* right */
+#define malloc(sz, ...)  (malloc)((unsigned long)(sz))   /* wrong */
+```
+
+With the cast, a header declaring `void *malloc(unsigned long);` expands
+to `(malloc)((unsigned long)(unsigned long))` and fails. Without it the
+declaration becomes `extern void *(malloc)(unsigned long);`, which is
+legal. GCC reports such failures at the macro's *definition* site, which
+is misleading -- the real error is at whichever header declares the
+function.
+
+**`-fno-builtin` is required.** BSD's kernel `log(level, fmt, ...)`
+collides with GCC's builtin `log(double)`, giving "too many arguments to
+function 'log'". OSFMK's own build uses `-fno-builtin` for the same
+reason.
+
+**Pointer constants as case labels.** `kern_sig.c` has `case SIG_DFL:`
+where `SIG_DFL` is `(void(*)())0`. K&R C accepted it; modern C requires
+an integer constant expression. This is the current stopping point and
+needs a LITES patch rather than a shim.
+
+The full flag set that gets this far:
+
+```sh
+GI=$(gcc -m32 -print-file-name=include)
+make CXXX="-m32 -fno-builtin -isystem $GI \
+          -include /path/to/tools/lites/lites-compat.h" \
+     CHXXX="-m32"
+```
+
 ### Shims kept in this tree
 
 Both are ours, so nothing in LITES or OSFMK is modified:
@@ -268,7 +316,10 @@ All are 1990s-toolchain modernisation, none are interface problems:
 | `mig -cc` vs OSF's `-cpp` | solved by `tools/lites/mig-shim.sh` |
 | `conf/files` names `bsd_server.c` vs MIG's `bsd_1_server.c` | transient; VPATH resolves it once the MIG outputs exist |
 | `mig_reply_header_t` absent under untyped IPC | solved by `tools/lites/lites-compat.h` |
-| `net/radix.h` calls `malloc` with BSD arity | solved by `tools/lites/radix-bsd-malloc.patch` |
+| `net/radix.h` calls `malloc` with BSD arity | superseded by the variadic macros below |
+| 53 raw BSD-arity `malloc`/`free` calls in 46 files | solved by variadic macros in `tools/lites/lites-compat.h` |
+| BSD kernel `log()` vs GCC's builtin | solved by `-fno-builtin` |
+| `case SIG_DFL:` -- pointer constant as a case label | **open, current blocker**; needs a LITES patch |
 | `-I-` deprecated, `#endif KERNEL` extra tokens | warnings only |
 
 ## Known work before it can be tried
