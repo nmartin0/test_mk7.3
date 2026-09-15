@@ -338,6 +338,49 @@ string literals, pointer constants as `case` labels in `kern_sig.c` and
 Mach structure members that moved on in `vn_pager_misc.c` and
 `xmm_interface.c`.
 
+### The real incompatibility: the pager interface
+
+The three non-libgcc symbols are one problem, and it is the first
+substantive mismatch found in this whole effort -- not a toolchain
+issue, an actual interface divergence.
+
+`memory_object_establish` does not exist in OSFMK 7.3.
+`mach/mach.defs:247` reads:
+
+```
+skip;	/* was memory_object_establish; old port_set_backlog */
+```
+
+It was removed. LITES's `xmm_interface.c` calls it from its
+`#if OSFMACH3` arm, so that arm targets an OSF Mach from before the
+removal.
+
+The two `seqnos_` handlers are the same divergence seen from the other
+side. `Smem_svr.o` inside our `libmach.a` is the MIG **server** for the
+sequence-numbered memory object interface: it provides
+`seqnos_memory_object_server` and expects the pager to implement seven
+handlers. LITES implements five of them in its OSFMACH3 arm. Of the
+other two, `seqnos_memory_object_init` **is** defined in
+`xmm_interface.c`, but at line 136, inside the `#else /* OSFMACH3 */`
+arm -- so enabling `osfmach3`, which is required for the device call
+arity, compiles it out. `seqnos_memory_object_discard_request` is not
+defined anywhere in LITES.
+
+So LITES has two pager implementations, and neither matches 7.3: the
+OSFMACH3 one calls a routine 7.3 deleted, and the other one is written
+against the older typed interface.
+
+This is unsurprising in hindsight. The external pager interface is the
+part of Mach that changed most between versions, and it is exactly where
+a personality built for one OSF Mach would diverge from another.
+
+Resolving it means writing the missing handlers against 7.3's actual
+`memory_object` interface, using the 21 `memory_object_*` routines
+`libmach` does export -- among them
+`memory_object_change_attributes`, which is the closest thing 7.3 has to
+what `memory_object_establish` did. That is real porting work rather
+than a shim, and it is the first task in this effort that is.
+
 ### The 5 that remain
 
 ```
