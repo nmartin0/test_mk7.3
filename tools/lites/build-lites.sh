@@ -64,6 +64,16 @@ sh "$LITES/configure" \
 # -D__NO_UNDERSCORES__ ELF symbol names; without it the asm defines _htonl
 # AWK=nawk            the generators need nawk extensions, not mawk
 # LIBS repeated       libsa_mach and libmach reference each other
+# --defsym __start=__start_mach
+#                     LITES links -e __start; this crt0 defines
+#                     __start_mach. Without this ld warns and silently
+#                     defaults the entry to the first byte of .text,
+#                     and the server dies before crt0 runs. Confirm
+#                     with: readelf -h ... | grep -i entry
+#                     It must be __start_mach's address, not .text's.
+# -z muldefs          LITES defines its own printf, vsprintf, sprintf
+#                     and sleep; libsa_mach provides standalone ones and
+#                     its printf.o is pulled in for another symbol
 GI=$(gcc -m32 -print-file-name=include)
 LG=$(gcc -m32 -print-libgcc-file-name)
 
@@ -78,7 +88,7 @@ for pass in 1 2; do
       CXXX="-m32 -std=gnu89 -fno-builtin -fgnu89-inline -fcommon -fno-stack-protector -isystem $GI -include $HERE/lites-compat.h" \
       CHXXX="-m32 -std=gnu89" \
       ASFLAGS="-m32 -D__NO_UNDERSCORES__" \
-      LDFLAGS="-m elf_i386" \
+      LDFLAGS="-m elf_i386 -z muldefs --defsym __start=__start_mach" \
       LIBS="-llites -lthreads -lmach -lmach_sa -lmach -lthreads $LG" \
       && break
     [ $pass = 1 ] && echo "=== first pass failed (expected); retrying ===" || exit 1

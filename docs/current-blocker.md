@@ -83,7 +83,89 @@ rwintr YES   quechk YES   iowait YES   io_completed YES
 Two driver bugs were fixed to get here. The reset interrupt drain in
 `rstout()` is committed. The geometry is configuration.
 
-# RETRACTED: the argument frame is correct by design
+# MILESTONE: LITES runs on OSFMK 7.3
+
+```
+Lites VERSION(Lites.1.1.u3): Tue Sep 15 04:11:54 PM EDT 2026; STD+WS+osfmach3
+
+Copyright (c) 1982, 1986, 1989, 1991, 1993
+        The Regents of the University of California.
+Copyright (c) 1992 Carnegie Mellon University.
+Copyright (c) 1994, 1995 Johannes Helander (Helsinki University of Technology).
+All rights reserved.
+```
+
+A 4.4BSD-Lite UNIX personality, loaded off a minix floppy by the OSF
+bootstrap task, printing its banner on this kernel.
+
+## The fix: the ELF entry point
+
+LITES links with `-e __start`. This crt0 defines `__start_mach`. The
+symbol does not exist, so `ld` says so and carries on:
+
+```
+ld: warning: cannot find entry symbol __start; defaulting to 08049000
+```
+
+`0x08049000` is the first byte of `.text`, which `nm` identifies as
+`ip_setmoptions.cold` -- a cold-path fragment of a networking function.
+Every previous boot jumped there and died instantly, before `crt0`,
+before `main`, before any console. That is why there was never any
+output and why nothing else we tried made any difference.
+
+The fix is one linker flag:
+
+```
+LDFLAGS="... --defsym __start=__start_mach"
+```
+
+after which `readelf -h` reports entry `0x8049330`, which is
+`__start_mach`. Checking that number is the cheapest possible
+confirmation and should be done before any boot attempt.
+
+The precedent was in our own build all along. OSFMK's `default_pager`
+links with `-e __start_mach -u __start_mach`; that is how a server built
+against this crt0 is meant to be linked.
+
+## How it was found
+
+A `-d exec` trace, with user-mode EIPs symbolised against `nm` on the
+`startup` binary. The decisive number: **zero** instructions executed
+above `0x08066228`, the bootstrap task's `etext`, and the highest
+address reached in the whole run was `0x08065cd2`. Since LITES's text
+runs to `0x080f709a`, it had plainly never executed its own code.
+
+Four earlier hypotheses were each audited and disproved before this:
+that `do_bootstrap_ports` was a stub, that a NULL `argv` was
+dereferenced, that crt0's `else` branch skipped thread initialisation,
+and that the loader failed to pass arguments. All wrong. The measurement
+settled in one run what reading had not settled in four attempts.
+
+## The new blocker: no paging store
+
+```
+panic: UWVS+
+(default pager): ps_allocate_cluster: no space in available paging
+                 segments; swapon suggested
+```
+
+`default_pager` starts but has no backing store, so the first demand for
+anonymous memory has nowhere to go. The pager says what it needs:
+a swap device, via `default_pager_add_segment` or
+`default_pager_backing_store_create`, neither of which anything
+currently calls with a real device.
+
+Worth trying first, as a one-word change: more memory, `-m 256` rather
+than `-m 64`, which may push the first paging event past
+initialisation.
+
+`panic: UWVS+` is not yet decoded. LITES's `panic` does
+`printf("panic: %r\n", fmt, ap)`, where `%r` is a BSD kernel extension
+for recursive format expansion; the string appears nowhere in the source
+as a literal, so this may be `%r` being mishandled rather than a real
+message. Check before reading anything into it.
+
+## Superseded: RETRACTED, the argument frame is correct by design
 
 The note below claimed `i386/set_regs.c` fails to write an argument
 block and called it a bug. That is wrong, and this retraction is kept
