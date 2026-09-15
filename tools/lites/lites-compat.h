@@ -50,11 +50,23 @@ typedef mig_reply_error_t mig_reply_header_t;
  * is the case -- until a declaration is injected into every file from
  * here, at which point one of the two always conflicts.
  *
- * The macros below are written so a declaration survives expansion
- * unchanged: "void *malloc(size_t);" becomes "void *(malloc)(size_t);",
- * which is legal C. So each file keeps its own declaration and no third
- * one is needed.
+ * A third convention exists too: server/ufs/ffs/ffs_inode.c and others
+ * declare nothing at all and reach malloc only through the MALLOC and
+ * FREE macros in sys/malloc.h, so they need a declaration from
+ * somewhere.
+ *
+ * No prototype can satisfy all three. A K&R declaration with an empty
+ * parameter list can: it is compatible with any later prototype, so
+ * each file's own declaration still refines it, and files that declare
+ * nothing get one. -std=gnu89 accepts it without complaint.
+ *
+ * The declarations must precede the macros, or the function-like macro
+ * rewrites them. The macros are written so that a later prototype
+ * survives expansion unchanged: "void *malloc(size_t);" becomes
+ * "void *(malloc)(size_t);", which is legal C.
  */
+extern void *malloc();
+extern void  free();
 
 #define malloc(sz, ...)  (malloc)(sz)
 #define free(p, ...)     (free)(p)
