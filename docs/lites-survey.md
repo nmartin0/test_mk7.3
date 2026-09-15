@@ -220,6 +220,29 @@ cc1: fatal error: bsd_server.c: No such file or directory
 Untangling that is LITES build-system work and is where the next session
 should start.
 
+### Further still: 22 objects, and the first real API difference
+
+Adding `tools/lites/lites-compat.h` via `-include` carried the build
+through `device_reply_hdlr.c` and 14 more objects.
+
+That header covers the one genuine API difference found so far.
+OSFMK 7.3 uses untyped (NDR) IPC, where the MIG error reply is
+`mig_reply_error_t` -- a `Head`, an `NDR_record_t` and a `RetCode`. LITES
+uses the typed-IPC name `mig_reply_header_t` in 13 places, which had a
+`mach_msg_type_t` where the NDR record now is. It touches the differing
+member, `RetCodeType`, in only two places and both are inside its `#else`
+arm for typed IPC, which `UNTYPED_IPC` compiles out -- so the two
+structures are interchangeable for every use that remains and a plain
+typedef suffices.
+
+The build then reaches `server/net/` and stops on a LITES internal
+inconsistency: `include/sys/malloc.h:272` defines
+`bsd_malloc(size, type, flags)` as `malloc(size)`, because the LITES
+server has a one-argument malloc rather than the BSD kernel's
+three-argument one, but `net/radix.h`'s KERNEL arm was never converted
+and still calls `malloc` and `free` with BSD arity directly.
+`tools/lites/radix-bsd-malloc.patch` routes it through the wrapper.
+
 ### Shims kept in this tree
 
 Both are ours, so nothing in LITES or OSFMK is modified:
@@ -228,6 +251,8 @@ Both are ours, so nothing in LITES or OSFMK is modified:
 |---|---|
 | `tools/lites/mig-shim.sh` | LITES invokes `mig -cc <cmd>`; OSF's `mig` spells it `-cpp`, and silently treats `-cc` as a cpp flag so the command name becomes a filename. The shim translates and passes everything else through. |
 | `tools/lites/gensym-newline.patch` | a one-line change to LITES's `conf/gensym.awk`, carried as a patch rather than a fork |
+| `tools/lites/lites-compat.h` | injected with `-include`; typedefs `mig_reply_header_t` to `mig_reply_error_t` for untyped IPC |
+| `tools/lites/radix-bsd-malloc.patch` | routes `net/radix.h` through LITES's own `bsd_malloc` wrapper |
 
 ## Build issues found so far
 
@@ -241,7 +266,9 @@ All are 1990s-toolchain modernisation, none are interface problems:
 | device call arity | solved by `--with-config=...+osfmach3` |
 | `gensym.awk` output rejected by modern cpp | solved by `tools/lites/gensym-newline.patch` |
 | `mig -cc` vs OSF's `-cpp` | solved by `tools/lites/mig-shim.sh` |
-| `conf/files` names `bsd_server.c`, MIG produces `bsd_1_server.c` | **open, current blocker** |
+| `conf/files` names `bsd_server.c` vs MIG's `bsd_1_server.c` | transient; VPATH resolves it once the MIG outputs exist |
+| `mig_reply_header_t` absent under untyped IPC | solved by `tools/lites/lites-compat.h` |
+| `net/radix.h` calls `malloc` with BSD arity | solved by `tools/lites/radix-bsd-malloc.patch` |
 | `-I-` deprecated, `#endif KERNEL` extra tokens | warnings only |
 
 ## Known work before it can be tried
