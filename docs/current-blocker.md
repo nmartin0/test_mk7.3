@@ -83,7 +83,75 @@ rwintr YES   quechk YES   iowait YES   io_completed YES
 Two driver bugs were fixed to get here. The reset interrupt drain in
 `rstout()` is committed. The geometry is configuration.
 
-## CORRECTION: the task DOES read. device_read is a trap, not an RPC.
+# LOCALISED: ds_device_open calls fdopen eight times, reply never sent
+
+Every value below is a direct measurement.
+
+```
+task:   ONE device_open MIG request, then blocked in mach_msg_overwrite_trap
+kernel: ds_device_open
+          call *0x4(%eax) at 0x14a25e  ->  fdopen   x8, always dev=0x1,
+                                           always returning to 0x14a261
+            each pass: geteblk, m765sweep (inlined), setqueue,
+                       iowait on the same ior 0x4156f40,
+                       512-byte read of recnum 0, error=0, resid=0, brelse
+        reply never sent, task never wakes
+```
+
+The task's own call sequence, symbolised against
+`src/bootstrap/bootstrap`, ends:
+
+```
+main -> open_file -> malloc -> cthread_malloc -> vm_allocate
+-> syscall_vm_allocate -> open_file -> strcpy -> open_file
+-> device_open -> mig_strncpy -> device_open -> mig_get_reply_port
+-> device_open -> mach_msg_overwrite_trap
+```
+
+So `device_open` **is** a MIG RPC (unlike `device_read` and
+`vm_allocate`, which are traps), it is sent **once**, and the task blocks
+awaiting a reply that never comes. The repetition is entirely kernel
+side.
+
+The call site and what follows it:
+
+```asm
+14a25e:  call *0x4(%eax)        ; dev_ops->d_open -> fdopen
+14a261:  add  $0x10,%esp        ; <- the return address seen 8 times
+14a264:  cmp  $0xffffffff,%eax  ; result == D_IO_QUEUED ?
+14a267:  je   14a286
+14a269:  sub  $0xc,%esp
+14a26c:  mov  %eax,0x3c(%ebx)   ; ior->io_error = result
+```
+
+**Next measurement:** `%eax` at `0x14a264` on each pass. That is one
+register at one address, at a site proven to execute eight times per
+boot, and it says whether `fdopen` returns `D_IO_QUEUED`, an error, or
+success, and which branch drives the repetition.
+
+## Eight retracted theories
+
+All were measured and all were wrong. Recorded so none is retried:
+
+| theory | why it died |
+|---|---|
+| the I/O never completes | `biodone`/`iodone` are macros; `io_completed` runs |
+| `fs_switch` is malformed | read from the binary, it is correct |
+| the task's `vm_allocate` RPC is undispatched | it is Mach trap 65, and works |
+| the heap is corrupt | mapped; chain at `0x1e80` holds `0x1e00` |
+| `ds_read_done` never firing is the bug | correct for the sync path by design |
+| the read fails and is retried | `error=0`, `resid=0` on every pass |
+| drive B is empty so disk-change sticks | same behaviour with media in B |
+| `OKTYPE` never persists | measured at `iowait` entry, before the line that sets it |
+
+Two instrument traps produced most of these, and both are now in
+`DEBUGGING.md`: a name that is not a symbol always traces as "no"
+(`biodone`, `iodone`), and a name that **is** a symbol can still be off
+the path (`ds_device_read`, `_Xvm_allocate`) or inlined (`m765sweep`,
+which shows "no" while its effect, `dr_type = 0x08`, is plainly
+visible).
+
+## Superseded: device_read is a trap, not an RPC
 
 The framing below -- that no read is ever issued -- is **wrong**, and
 several rounds were built on it.
