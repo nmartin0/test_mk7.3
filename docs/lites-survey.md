@@ -110,6 +110,102 @@ addressed 4.3BSD and produced 4.4BSD-Lite as the clean branch, and
 Caldera's authority was contested afterwards in *SCO v. Novell*. LITES
 avoids the question entirely.
 
+## Tried: configure and liblites build against our tree
+
+Not a thought experiment any more. The following was done and works.
+
+### Constructing a MACH_RELEASE_DIR
+
+LITES wants `$(MACH_RELEASE_DIR)/{include,include/mach,lib}` and
+`mig`/`migcom`. Our ODE export tree provides all of it:
+
+```sh
+MR=/tmp/machrel
+mkdir -p $MR/bin $MR/libexec
+ln -sfn $MK_BUILD/export/at386/include $MR/include
+ln -sfn $MK_BUILD/export/at386/lib     $MR/lib
+HB=osfmk7.3/osfmk/tools/i386/i386_linux/hostbin
+ln -sf $PWD/$HB/mig    $MR/bin/mig
+ln -sf $PWD/$HB/migcom $MR/bin/migcom
+ln -sf $PWD/$HB/migcom $MR/libexec/migcom
+```
+
+`export/at386/include/mach/` contains the `.defs` files, including
+`bootstrap.defs`, so LITES generates its Mach stubs from **our**
+definitions with **our** `mig`. That was the central claim of this
+survey and it is now demonstrated rather than argued.
+
+### Configure and build
+
+```sh
+sh /path/to/lites/configure \
+    --with-release=$MR \
+    --with-config="STD+WS+osfmach3" \
+    --host=i386-unknown-mach3 --target=i386-unknown-mach3
+
+GI=$(gcc -m32 -print-file-name=include)
+make CXXX="-m32 -isystem $GI" CHXXX="-m32"
+```
+
+`--with-config="STD+WS+osfmach3"` is **essential and not the default**.
+Without it `LITES_CONFIG` is `STD+WS`, `OSFMACH3` and `OSF_LEDGERS` stay
+undefined, and every device call has the wrong arity:
+
+```
+block_io.c:141: error: incompatible type for argument 4 of 'device_open'
+block_io.c:132: error: too few arguments to function 'device_open'
+```
+
+That is not an incompatibility. LITES already brackets the extra
+arguments correctly:
+
+```c
+rc = device_open(device_server_port,
+#if OSF_LEDGERS
+                 MACH_PORT_NULL,     /* ledger */
+#endif
+                 mode,
+#if OSFMACH3
+                 security_id,        /* security token */
+#endif
+```
+
+which matches our `device.defs` exactly -- OSFMK 7.3 replaced
+`device_open` with a ledger-and-token form and left the old message id
+as `skip; /* nmk15: device_open */`. There are 66 such call sites across
+`device_open`, `device_read`, `device_write`, `device_get_status`,
+`device_set_status` and `device_close`, and the single config option
+fixes all of them.
+
+`CXXX` and `CHXXX` are user hooks in `conf/Makerules` that append to
+`TARGET_CFLAGS` and `HOST_CFLAGS`, so the toolchain flags go in without
+patching LITES.
+
+### Result
+
+`liblites` **compiles**. The build reaches `server/` and then fails in a
+generated file:
+
+```
+bsd_types_gen.symc:8:6: error: missing terminating " character
+```
+
+`gensym.awk` emits output a modern cpp rejects -- structurally the same
+problem OSFMK's own `genassym` had, and the next thing to fix.
+
+## Build issues found so far
+
+All are 1990s-toolchain modernisation, none are interface problems:
+
+| issue | status |
+|---|---|
+| `conf/files:347` `# Linux file systems` rejected as an invalid cpp directive | open; BSD `config(8)` files use `#` comments but run through cpp |
+| `-nostdinc` without GCC's own include path, so `stdarg.h` is missing | solved with `-isystem $(gcc -m32 -print-file-name=include)` |
+| builds 64-bit by default, so `movl %%esp, %0` fails to assemble | solved with `-m32` via `CXXX`/`CHXXX` |
+| device call arity | solved by `--with-config=...+osfmach3` |
+| `gensym.awk` output rejected by modern cpp | **open, current blocker** |
+| `-I-` deprecated, `#endif KERNEL` extra tokens | warnings only |
+
 ## Known work before it can be tried
 
 - **autoconf 2.3** (1994). Will need the same treatment ODE did: modern
