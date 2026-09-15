@@ -235,6 +235,29 @@ the first few hits: a loop of 25 `continue`s produced nothing at all,
 twice. Use them to answer "what writes this, early", validate against a
 known write first, and do not yet trust them to scan.
 
+**Use the serial console, not the VGA buffer.** The kernel's `-r` boot
+flag sets `cons_is_com1`, so output goes to COM1 and QEMU can capture
+all of it to a file:
+
+```sh
+qemu-system-i386 ... -append "-r BOOTDEV=fd BOOTPART=1 -o" \
+    -serial file:/tmp/console.log
+tail -f /tmp/console.log
+```
+
+That gives **full scrollback**. `tools/vgadump.py` reads a 25 line
+framebuffer that scrolls, so earlier output is lost and a long boot
+shows only its tail. Several wrong conclusions in this project came from
+sampling that buffer at the wrong moment; the serial log removes the
+problem entirely.
+
+**There is no KVM in the build environment.** `qemu-system-i386` runs
+under TCG on a single CPU, and the guest advances roughly **6 times
+slower than wall clock** -- measured at 1895 timer interrupts, so about
+19 seconds of guest time, in 120 seconds of wall time. Long waits are
+mostly this rather than a kernel fault. With KVM available the same boot
+should be far quicker.
+
 **The floppy runs at ~26 seconds per read. Wait 255 seconds.** Every
 read succeeds -- `syscall_device_read` returns `KERN_SUCCESS` -- but
 transfers are about 26 seconds apart. A filesystem directory walk is
