@@ -65,6 +65,14 @@ sh "$LITES/configure" \
 
 # --- build -----------------------------------------------------------
 # -std=gnu89          GCC 14 makes K&R definitions and implicit int errors
+# -Ulinux             ...but gnu89 also predefines linux=1, and LITES
+#                     guards Linux-only code with "#if linux". In 1995
+#                     an undefined identifier in #if evaluated to 0 and
+#                     the code was excluded; with the macro defined it
+#                     compiles into a BSD server and fails on Linux
+#                     kernel idioms such as inode->i_sb. -std=c89 would
+#                     also avoid it but loses the GNU extensions this
+#                     code needs elsewhere.
 # -fno-builtin        BSD's kernel log(level,fmt,...) vs GCC's log(double)
 # -fgnu89-inline      cthreads.h uses extern __inline__
 # -fcommon            tentative definitions in headers; GCC 10+ defaults off
@@ -93,7 +101,7 @@ MAKEARGS="AWK=nawk \
 for pass in 1 2; do
     make \
       AWK=nawk \
-      CXXX="-m32 -std=gnu89 -fno-builtin -fgnu89-inline -fcommon -fno-stack-protector -isystem $GI -include $HERE/lites-compat.h" \
+      CXXX="-m32 -std=gnu89 -Ulinux -fno-builtin -fgnu89-inline -fcommon -fno-stack-protector -isystem $GI -include $HERE/lites-compat.h" \
       CHXXX="-m32 -std=gnu89" \
       ASFLAGS="-m32 -D__NO_UNDERSCORES__" \
       LDFLAGS="-m elf_i386 -z muldefs --defsym __start=__start_mach" \

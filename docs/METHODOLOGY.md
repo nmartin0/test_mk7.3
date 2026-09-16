@@ -715,9 +715,20 @@ into a minute.
 | Spurious interrupts | Polled commands in an interrupt-driven driver; the interrupt controller latched one anyway |
 | Works on hardware, fails on emulator | The emulator implements the spec; the hardware was forgiving |
 
+| Code inside `#if somename` compiles that never used to | The compiler predefines `somename`. GCC defines `linux`, `unix`, `i386` and others in its GNU dialects; in K&R C an undefined identifier in `#if` is 0, so such blocks were silently excluded | `-Uname`, or a stricter `-std=` |
+
 > **The unifying idea:** most bugs in old code are not logic errors. They
 > are **the world having moved**. Ask "what changed underneath this?"
 > before "what is wrong with this?"
+
+> **A warning about your own fixes.** Each flag you add to accommodate
+> old code changes the compilation environment, and can switch on code
+> paths that have been dormant for decades. In this project `-std=gnu89`
+> was added so GCC would accept K&R function definitions; it also
+> predefines `linux=1`, which enabled a block guarded by `#if linux` and
+> produced a page of errors in Linux-only code that had been correctly
+> excluded since 1995. When a new failure appears immediately after you
+> change flags, suspect the flags first.
 
 ## 6.2 When you are genuinely stuck
 

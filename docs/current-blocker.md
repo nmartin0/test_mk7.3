@@ -180,7 +180,51 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## ext2's inline asm: a register named as both input and clobber
+## `#if linux` — when one era-gap fix causes another
+
+With the asm fixed, `ext2_linux_ialloc.c` failed on Linux kernel idioms:
+
+```
+error: 'struct inode' has no member named 'i_sb'
+error: 'struct inode' has no member named 'u'
+error: too few arguments to function 'bread'
+error: too many arguments to function 'mark_buffer_dirty'
+```
+
+Every error was inside one `static` function, `inc_inode_version`,
+which is **defined once and called from nowhere** -- a fragment of
+Linux's ext2 that came across with the file and was never wired up.
+
+And it is already guarded:
+
+```c
+#if linux
+...
+static void inc_inode_version (struct inode * inode, ...)
+...
+#endif /* linux */
+```
+
+In 1995 an undefined identifier in `#if` evaluates to 0, so the block
+was excluded and nobody ever noticed it would not compile.
+
+**GCC predefines `linux = 1` in its GNU dialects.** Measured:
+
+| flag | `linux` defined |
+|---|---|
+| `-std=gnu89` | yes |
+| `-std=c89` | no |
+
+So `-std=gnu89` -- **the flag added earlier in this port to make GCC 14
+accept K&R function definitions** -- turned the guard on and started
+compiling Linux-only code into a BSD server. One era-gap fix created
+another.
+
+The remedy is `-Ulinux`, not editing the guard: the source is correct
+and the predefine is an accident of the host. `-std=c89` would also work
+but loses GNU extensions this code needs elsewhere.
+
+## Superseded: ext2's inline asm
 
 After the string-literal fix below, the same header failed differently:
 
