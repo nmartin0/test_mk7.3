@@ -441,6 +441,15 @@ Equally: if a message appears *between* two lines that previously
 followed each other directly, **new code ran between them**. That is
 often the clearest evidence you will get that a change had an effect.
 
+**But ordering tells you about print order, not causal order.** A fault
+that is taken, handled and retried can happen long before the message
+describing it appears, and an error printed after a panic may still
+describe a condition that existed before it. In this project a pager
+error printed after a panic was filed as a consequence on exactly this
+reasoning; it later turned out to describe a resource that had been
+missing since boot. Use ordering to generate hypotheses, not to close
+them.
+
 ## 3.5a Check that your evidence is evidence
 
 A string that looks like a message may not be one. In this project a

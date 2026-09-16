@@ -125,9 +125,43 @@ def build(path, files):
     dino = alloc_ino(); dz = alloc_zone()
     entries = [dirent(dino, '.'), dirent(root, '..')]
 
-    conf = b''.join(b'%s %s\n' % (os.path.basename(f).encode(),
-                                  os.path.basename(f).encode())
-                    for f in files)
+    # bootstrap.conf lines are  [-flags] symtab_name path [args...]
+    #
+    # parse_config_file() in src/bootstrap/bootstrap.c takes the first
+    # field as the symbol table name and the second as the path, and
+    # parse_path() puts anything after that into the server's argv.
+    # Leading -flags are consumed by parse_boot_args() as the bootstrap
+    # task's own options (-k, -S, -w ...), NOT passed to the server, so
+    # a server flag written there is silently eaten.
+    #
+    # Servers receive that argv through crt0's __get_arguments(), which
+    # calls bootstrap_arguments() over IPC; the stack they start on
+    # holds a deliberate dummy zero argc, so this file is the only way
+    # to give a server arguments.
+    #
+    # An argument list may be attached to a file with "path=args", e.g.
+    #     mkminix.py img default_pager=hd1c startup
+    # which writes
+    #     default_pager default_pager hd1c
+    # and is how default_pager is given a paging device: its main()
+    # loops over argv calling bs_add_device() on each name, and without
+    # one it starts with no backing store at all and every
+    # ps_allocate_cluster() fails.
+    lines = []
+    real  = []
+    for f in files:
+        # NB: not "path" -- that name holds the image being written,
+        # and shadowing it here sends the finished image to the last
+        # file on the command line instead.
+        fpath, _, args = f.partition('=')
+        base = os.path.basename(fpath).encode()
+        line = b'%s %s' % (base, base)
+        if args:
+            line += b' ' + args.encode()
+        lines.append(line + b'\n')
+        real.append(fpath)
+    files = real
+    conf = b''.join(lines)
     if not conf:
         conf = b'default_pager default_pager\n'
     entries.append(dirent(write_file(conf, 0o100644), 'bootstrap.conf'))

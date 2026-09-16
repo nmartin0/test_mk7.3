@@ -149,3 +149,10 @@ ones.
 
 Chapter 8 is the short version, worth pinning somewhere visible.
 Chapter 7 is five real investigations with the wrong turns kept in.
+
+`docs/SHELL.md` is its companion: the Unix tools and shell usage that
+the debugging work is built on -- grep, sed, awk, pipelines, quoting,
+job control, inspecting binaries -- and, at length, the ways a pipeline
+can quietly answer a different question than the one you asked. Chapter
+7 catalogues the ones that produced wrong conclusions here; chapter 9 is
+twenty lines.

@@ -180,7 +180,97 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## The panic message is garbage, and that is now the blocker
+## How a server gets arguments, and how to give the pager a disk
+
+The chain is now mapped end to end, and every link was read in source:
+
+```
+bootstrap.conf              lines are  [-flags] symtab_name path [args...]
+  -> bootstrap task         parse_config_file() stores per-server argv
+  -> crt0 __get_arguments() calls bootstrap_arguments() over IPC
+  -> main(argc, argv)
+  -> default_pager          bs_add_device(*argv, master_device_port)
+```
+
+`default_pager`'s `main()` loops `while (--argc > 0)` calling
+`bs_add_device()` on each non-flag argument. With `argc == 0` the loop
+never runs, **so it starts with no paging segment at all** and every
+`ps_allocate_cluster()` fails. That is the message we have been seeing
+since the first LITES boot.
+
+The zero-filled stack servers start on is deliberate (a "dummy 0
+argument count"); real arguments arrive later, by RPC, from
+`bootstrap.conf`. So giving the pager a disk needs **no code change** --
+only a config line.
+
+**It also explains why `-s` never reached LITES.** `parse_boot_args()`
+consumes leading `-X` flags as the *bootstrap task's* own options
+(`-k`, `-S`, `-w` ...) and does not pass them on. A server flag written
+at the start of a config line is silently eaten.
+
+`tools/mkminix.py` now accepts `path=args`:
+
+```sh
+python3 tools/mkminix.py /tmp/minix.img \
+    $MK_BUILD/obj/at386/default_pager/default_pager=hd1c \
+    /tmp/startup
+```
+
+writing `default_pager default_pager hd1c`.
+
+**`hd1c`, not `hd0c`**: `hd0c` is the whole first disk and will hold the
+root filesystem, so paging there would destroy it. The paging device
+must be a second disk, attached as `-drive ...,if=ide,index=1`.
+
+## Superseded: four hypotheses dead
+
+The LITES panic after the banner has now survived four explanations,
+each killed by measurement. Recording them so nobody retries them:
+
+| hypothesis | how it died |
+|---|---|
+| `%r` mangles the message | `printf("panic: %s", fmt)` prints the same garbage -- `%r` is not involved |
+| `.rodata` is not mapped | segment arithmetic checks out; `text_size` covers rodata exactly, and the contiguous path is taken |
+| LITES's text is partly mapped | the unreadable addresses are simply not yet demand-paged; readable ones are those already executed |
+| paging pressure | 128 MB behaves identically to 64 MB -- same panic, same messages, log byte-identical in length |
+
+### What the garbage actually is
+
+`strings` on the binary shows `UWVS` at thousands of offsets. It is not
+a string: `55 57 56 53` is the i386 function prologue
+`push ebp; push edi; push esi; push ebx`. So `fmt` points **into code**,
+at or near a function entry. The varying suffix between builds
+(`UWVS+`, `UWVS\002k`, `UWVS1+`) is just the following instruction bytes
+shifting as the binary changes.
+
+`fmt` is therefore a **code address passed where a format string was
+expected** -- not corruption, but a wrong pointer.
+
+### Two facts established along the way
+
+**The kernel does not boot with 512 MB.** It prints
+`cnvmem: 639 KB, extmem: 523136 KB, mem_size 523772 KB` and stops --
+no `Kernel virtual space` line follows. 64 MB and 128 MB both work, so
+the limit is between 128 MB and 512 MB. Likely `vm_page_bootstrap` or
+`pmap` not scaling. Worth a separate investigation; for now, stay at or
+below 128 MB.
+
+**Paging pressure is not the constraint.** Doubling memory changed
+nothing, so `ps_allocate_cluster: no space in available paging segments`
+is not about a *small* backing store. It is about there being **none**.
+Nothing in this configuration ever calls
+`default_pager_add_segment` or `default_pager_backing_store_create` with
+a real device, so the pager starts with zero paging segments and fails
+the first time anything needs one.
+
+### Next
+
+Give `default_pager` a backing store. This is required work regardless
+of whether it is the current blocker -- a Mach system with no swap
+cannot page anonymous memory at all, and the IDE disk is now working
+well enough to serve as one.
+
+## Superseded: the panic message is garbage
 
 The whole LITES tree builds -- server, ext2, emulator. The boot still
 panics after the banner, and `ext2_mountroot` is now present in the
