@@ -41,9 +41,28 @@ pkill -f qemu-system-i386 2>/dev/null || true
 sleep 2
 rm -f "$LOG"
 
-# No -enable-kvm: the gdb stub is far more reliable under TCG, and
-# breakpoints in particular are unreliable with hardware acceleration.
-qemu-system-i386 -kernel "$K" \
+# KVM is used. An earlier version of this script avoided it, on the
+# claim that breakpoints are unreliable under hardware acceleration.
+# That claim was unsupported: nothing in this project's records says it,
+# and the breakpoint failures that ARE recorded here happened in an
+# environment with no KVM at all, so they were TCG failures.
+#
+# What is true is narrower: -d exec needs TCG, because with KVM there is
+# no translation to log. Breakpoints work under KVM through hardware
+# debug registers or an injected int3. Single-stepping can be flaky;
+# plain breakpoints generally are not.
+#
+# The cost of the mistake was large -- a boot of tens of minutes instead
+# of about one. Set NOKVM=1 to fall back to TCG if breakpoints do turn
+# out to misbehave here.
+if [ -n "$NOKVM" ]; then
+	KVMFLAG=""
+	echo "running without KVM (slow)"
+else
+	KVMFLAG="-enable-kvm"
+fi
+
+qemu-system-i386 $KVMFLAG -kernel "$K" \
 	-append "-r BOOTDEV=fd BOOTPART=1 -o" \
 	-initrd "$MK_BUILD/obj/at386/bootstrap/bootstrap" \
 	-drive file=/tmp/minix.img,format=raw,if=floppy \
@@ -60,12 +79,12 @@ trap cleanup EXIT
 # the task exists and its pages are mapped. Bound the wait: without KVM
 # this boot takes tens of minutes, but waiting forever on a failed boot
 # helps nobody.
-echo "waiting for LITES to start (this is slow without KVM) ..."
+echo "waiting for LITES to start ..."
 waited=0
 while ! grep -q 'Copyright' "$LOG" 2>/dev/null; do
 	sleep 5
 	waited=$((waited + 5))
-	if [ $waited -ge 3600 ]; then
+	if [ $waited -ge 900 ]; then
 		echo "no banner after ${waited}s; giving up"
 		tail -5 "$LOG"
 		exit 1

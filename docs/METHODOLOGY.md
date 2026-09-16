@@ -219,6 +219,17 @@ breakpoint services reliably at a time, and breakpoint **conditions**
 and **ignore counts** may silently do nothing. Set one, measure,
 delete, set the next.
 
+*Do not blame hardware acceleration without evidence.* It is easy to
+attribute flaky debugging to KVM and disable it, which can turn a
+one-minute boot into a forty-minute one. In this project that was done
+on an invented belief: the breakpoint failures on record happened in an
+environment that had no KVM, so they were software-emulation failures
+being blamed on hardware acceleration. What is actually true is
+narrower -- an execution trace needs software emulation, because with
+KVM there is nothing to log. Breakpoints themselves work under
+acceleration. Check which of your problems is which before paying for
+the slow path.
+
 *A breakpoint that does not fire proves nothing.* See §3.4 — this is
 important enough to have its own section.
 
