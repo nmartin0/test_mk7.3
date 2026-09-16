@@ -180,7 +180,105 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## Current position: the IDE disk opens, the read does not complete
+## The ext2 fallback was never reached: EIO vs EINVAL
+
+LITES's root mount tries FFS first and falls back to ext2:
+
+```c
+kr = (*mountroot)();            /* ffs_mountroot */
+#if EXT2FS
+/* XXX if FFS fails, fall back to EXT2FS */
+if (kr == EINVAL)
+        kr = ext2_mountroot();
+#endif
+if (kr != KERN_SUCCESS)
+        panic("cannot mount root x%x %s", kr, mach_error_string(kr));
+```
+
+But `ffs_mountfs` returns **`EIO`**, not `EINVAL`, when the superblock
+magic is wrong:
+
+```c
+if (fs->fs_magic != FS_MAGIC || ...) {
+        brelse(bp);
+        return (EIO);           /* XXX needs translation */
+}
+```
+
+`EIO != EINVAL`, so on a disk holding an ext2 filesystem the fallback
+never fires and `ext2_mountroot` never runs. **The ext2 filesystem was
+never looked at.**
+
+That explains an observation that had resisted explanation: LITES's
+console works, and `ext2_vfsops.c` has a `"Wrong magic number"`
+diagnostic, yet no such message ever appeared. It could not -- the code
+was never reached.
+
+The same file is inconsistent about which errno means "not my
+filesystem": `ffs_vfsops.c:214` sets `EINVAL` with the same
+"needs translation" comment, and `:261` returns `EINVAL` outright. The
+`XXX` on the `EIO` return is the author flagging exactly this.
+
+The patch series now widens the caller's test to accept both, which
+keeps the policy in the caller and leaves FFS's behaviour untouched for
+anything else depending on it.
+
+### What this does and does not tell us
+
+It does **not** mean the ext2 image is good. It means we have not yet
+found out. The first real test of the filesystem comes after this
+change, and `ext2_vfsops.c` will say what it thinks:
+
+- `"Wrong magic number: %x (expected %x for ext2 fs"` -- the read
+  worked and the filesystem is wrong, or the read returned garbage
+- no magic complaint but a later failure -- the superblock is fine and
+  something deeper is wrong
+- a successful mount -- done
+
+Note that a magic complaint would also settle a separate open question:
+whether the IDE read returns **valid** data. FFS rejecting a superblock
+is consistent both with a good read of a non-FFS disk and with a garbled
+read. The reported magic value distinguishes them -- `0xef53` means the
+read is correct.
+
+## Superseded: the IDE path is clean, the filesystem is not accepted
+
+The nIEN fix works. `HD: false interrupt` went from two occurrences to
+one, and the one that remains is at line 23, **before** the `entry:`
+line -- probe time. The second, which previously appeared between
+LITES's copyright banner and the panic, is gone.
+
+That was the harmful one: the `CMD_SETPARAMETERS` interrupt latched by
+the PIC and delivered after `controller_busy` was set, which `hdintr`
+consumed as the read's completion. With `nIEN` set around the polled
+command it is never raised, and the read is no longer corrupted by it.
+
+The remaining probe-time message is `CMD_IDENTIFY`'s, and harmless --
+the controller is idle, `hdintr` discards it. `nIEN` is set around that
+command too, so its survival suggests the drive asserts INTRQ once
+before the control register write takes effect, or that QEMU latches it
+regardless. Not worth chasing: it is discarded and nothing depends on
+it.
+
+**The panic is unchanged**, which is now informative rather than
+discouraging. The interrupt path is clean, the geometry is right, the
+partition opens, and the read is no longer being corrupted -- so the
+failure has moved to the filesystem itself. LITES's 1995 ext2 reader
+does not accept what modern `mke2fs` produces.
+
+That is the same family as the minix `0x137F` magic: a reader written
+against a 1995 on-disk format meeting a modern formatter's defaults. The
+image was made with
+
+```sh
+/sbin/mke2fs -q -F -b 1024 \
+    -O ^resize_inode,^dir_index,^ext_attr,^sparse_super -I 128 root.img
+```
+
+which is already conservative, but has not been checked against what
+`server/ufs/ext2fs` actually reads.
+
+## Superseded: the IDE disk opens, the read does not complete
 
 The geometry work is done and validated. `hd0` now reports
 

@@ -137,3 +137,15 @@ its console, and prints its own diagnostics.
 
 See `docs/current-blocker.md` for the live state and
 `docs/lites-survey.md` for the userland assessment.
+
+## Learning to debug an operating system
+
+`docs/METHODOLOGY.md` is a general guide to debugging and developing
+kernels -- the instruments and what class of question each answers, the
+method, how to read unfamiliar code, how to research, and how to form a
+hunch when stuck. The principles apply to any kernel; the worked
+examples are drawn from this project because real ones beat invented
+ones.
+
+Chapter 8 is the short version, worth pinning somewhere visible.
+Chapter 7 is five real investigations with the wrong turns kept in.
