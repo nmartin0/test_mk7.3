@@ -686,6 +686,7 @@ into a minute.
 | "multiple definition" for variables in headers | Compilers default to `-fno-common` now | `-fcommon` |
 | Pointer constant used as a `case` label | Was legal, now requires an integer constant | Cast it |
 | A cast used as an assignment target | Was legal in some compilers, never standard | Rewrite the expression |
+| `pasting "x" and "y" does not give a valid preprocessing token` | `##` applied to two string literals. Never valid, but tolerated by old preprocessors | Delete the `##`; adjacent string literals concatenate on their own |
 
 **Assembler and linker:**
 

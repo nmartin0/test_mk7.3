@@ -180,7 +180,33 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## `#if linux` — when one era-gap fix causes another
+## The server builds; emulator: pasting two string literals
+
+Every error is now in `emulator/`, which has never been built in this
+project. **`server/` is complete, including ext2.**
+
+`include/sys/exec_file.h` builds a table of binary-type names:
+
+```c
+#define ATSYS_NAMES(m) \
+    m ## "bad", m ## "lites", ...
+```
+
+called as `ATSYS_NAMES("i386_")`. The `##` operator pastes
+*preprocessing tokens*, and two string literals cannot be pasted into
+one:
+
+```
+error: pasting ""i386_"" and ""bad"" does not give a valid
+       preprocessing token
+```
+
+Older preprocessors tolerated it. None is needed: **adjacent string
+literals are concatenated by the compiler**, so removing `##` gives
+`"i386_" "bad"`, which is `"i386_bad"` -- exactly the intent. Verified
+by inspecting the preprocessor output.
+
+## Superseded: `#if linux`
 
 With the asm fixed, `ext2_linux_ialloc.c` failed on Linux kernel idioms:
 
