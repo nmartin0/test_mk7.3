@@ -180,7 +180,52 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## How a server gets arguments, and how to give the pager a disk
+## The pager has a backing store; the panic is unchanged
+
+```
+(default_pager): added device hd1c
+```
+
+The argument chain works end to end for the first time:
+`bootstrap.conf` -> the bootstrap task -> crt0's `bootstrap_arguments()`
+RPC -> `main(argc, argv)` -> `bs_add_device()`. The pager now has 32 MB
+of backing store on a second IDE disk.
+
+**`ps_allocate_cluster` is gone.** Every previous boot ended with four of
+those messages; this one has none.
+
+**The LITES panic is unchanged** -- still `UWVS1+`, in the same place.
+That is now a clean result rather than a disappointing one: paging was
+never implicated, and the last confounding symptom has been removed.
+
+### What remains
+
+`fmt` is a **code address passed where a format string was expected**.
+`UWVS` is `55 57 56 53`, the i386 prologue
+`push ebp; push edi; push esi; push ebx`, which `strings` renders as
+text; it appears at thousands of offsets in the binary because every
+function starts with it. The trailing bytes differ between builds
+because the following instructions shift.
+
+So some caller reaches `panic` with a pointer to code in the format
+argument. Candidates, none yet tested:
+
+- a call through a function pointer where the callee's signature
+  differs from the caller's expectation
+- an argument list misaligned by one slot, so a code pointer lands where
+  `fmt` should be
+- a `panic` reached from library code -- `libsa_mach` and `libmach` both
+  provide one, and `-z muldefs` resolves the clash by link order, so a
+  library caller may be reaching LITES's `panic` with different
+  conventions
+
+The measurement that settles it is the return address on the stack at
+`panic` (`0x080aa350`), which `nm` turns into the calling function.
+Getting it needs gdb attached **after** LITES starts and **before** it
+panics; attaching earlier finds kernel space, and attaching later finds
+the task gone.
+
+## Superseded: how a server gets arguments
 
 The chain is now mapped end to end, and every link was read in source:
 
