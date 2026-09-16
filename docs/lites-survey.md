@@ -88,6 +88,59 @@ This is the inverse of the Hurd situation:
 We have the toolchain: `osfmk7.3/osfmk/tools/i386/i386_linux/hostbin/`
 holds `mig` and `migcom`.
 
+## Surveyed and rejected: xMach's LITES
+
+`github.com/neozeed/xMach` mirrors the SourceForge xMach project and
+carries a LITES tree with changes dated around 2000. It was checked in
+case those changes overlapped ours. **They do not, and the reason is
+structural rather than incidental.**
+
+xMach is **Mach 4 + LITES**, the Utah/CMU lineage. Ours is OSFMK 7.3,
+the OSF lineage. Both start from `Lites.1.1.u3`, and 308 files differ,
+but the divergence is adaptation to a different kernel.
+
+The decisive evidence is the pager, the same dividing line identified
+earlier in this survey:
+
+| tree | how a memory object is made ready |
+|---|---|
+| xMach (Mach 4) | `memory_object_establish` **and** `memory_object_ready` |
+| MkLinux / ours (OSFMK 7.3) | `memory_object_change_attributes` |
+
+`xmm_interface.c:117` and `:166` still call both routines, and OSFMK 7.3
+removed both -- `mach.defs:247` and `:864` keep their message ids as
+`skip`. So xMach's pager could not work here, and confirms from a third
+tree what MkLinux and OSFMK 6.1 already showed.
+
+None of the modernisation work overlaps either. xMach leaves untouched
+every 1990s construct we had to fix:
+
+| construct | xMach |
+|---|---|
+| `gensym.awk` literal newline in a string | unfixed |
+| `case SIG_IGN:` pointer constant as a case label | unfixed |
+| `*((char *)to)++`, a cast used as an lvalue | unfixed |
+| `default_root[] = "hd0a"` | unchanged |
+
+That is expected: their README says to cross-compile with gcc 2.7.2.3
+and binutils 2.12. They never met a modern toolchain, so they never had
+these problems.
+
+### Worth remembering from it
+
+Two genuine additions, neither useful now but both interesting later:
+
+- **`server/miscfs/devfs/`**, about 1100 lines -- a device filesystem,
+  which LITES 1.1u3 does not have. Relevant if `/dev` ever becomes
+  awkward to populate by hand.
+- **`emulator/e_linux.c`**, about 1700 lines, plus
+  `e_linux_getcwd.c` -- a Linux personality emulator. Interesting far
+  down the roadmap, though written against Mach 4.
+
+The conclusion for anyone tempted to revisit this: xMach is a sibling
+port, not a newer one. Take design ideas from it if useful, but its
+kernel interface assumptions are the wrong ones for this tree.
+
 ## Licensing
 
 Compatible, and cleaner than UX.
@@ -567,6 +620,59 @@ are wanted by a generated MIG server inside our own libraries. Which
 `.defs` are compiled into which library, and whether the export tree is
 missing one, is the next question -- and the first in this whole effort
 that is ours rather than LITES's.
+
+## Surveyed and rejected: xMach's LITES
+
+`github.com/neozeed/xMach` mirrors the SourceForge xMach project and
+carries a LITES tree with changes dated around 2000. It was checked in
+case those changes overlapped ours. **They do not, and the reason is
+structural rather than incidental.**
+
+xMach is **Mach 4 + LITES**, the Utah/CMU lineage. Ours is OSFMK 7.3,
+the OSF lineage. Both start from `Lites.1.1.u3`, and 308 files differ,
+but the divergence is adaptation to a different kernel.
+
+The decisive evidence is the pager, the same dividing line identified
+earlier in this survey:
+
+| tree | how a memory object is made ready |
+|---|---|
+| xMach (Mach 4) | `memory_object_establish` **and** `memory_object_ready` |
+| MkLinux / ours (OSFMK 7.3) | `memory_object_change_attributes` |
+
+`xmm_interface.c:117` and `:166` still call both routines, and OSFMK 7.3
+removed both -- `mach.defs:247` and `:864` keep their message ids as
+`skip`. So xMach's pager could not work here, and confirms from a third
+tree what MkLinux and OSFMK 6.1 already showed.
+
+None of the modernisation work overlaps either. xMach leaves untouched
+every 1990s construct we had to fix:
+
+| construct | xMach |
+|---|---|
+| `gensym.awk` literal newline in a string | unfixed |
+| `case SIG_IGN:` pointer constant as a case label | unfixed |
+| `*((char *)to)++`, a cast used as an lvalue | unfixed |
+| `default_root[] = "hd0a"` | unchanged |
+
+That is expected: their README says to cross-compile with gcc 2.7.2.3
+and binutils 2.12. They never met a modern toolchain, so they never had
+these problems.
+
+### Worth remembering from it
+
+Two genuine additions, neither useful now but both interesting later:
+
+- **`server/miscfs/devfs/`**, about 1100 lines -- a device filesystem,
+  which LITES 1.1u3 does not have. Relevant if `/dev` ever becomes
+  awkward to populate by hand.
+- **`emulator/e_linux.c`**, about 1700 lines, plus
+  `e_linux_getcwd.c` -- a Linux personality emulator. Interesting far
+  down the roadmap, though written against Mach 4.
+
+The conclusion for anyone tempted to revisit this: xMach is a sibling
+port, not a newer one. Take design ideas from it if useful, but its
+kernel interface assumptions are the wrong ones for this tree.
 
 ## Licensing
 

@@ -180,6 +180,80 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
+## Current position: the IDE disk opens, the read does not complete
+
+The geometry work is done and validated. `hd0` now reports
+
+```
+hd0: 20 Meg, C:40 H:16 S:63 - QEMU HARDDISK
+```
+
+where it previously said `0 Meg, C:0 H:0 S:0`. Two commits did it:
+sizing the whole-disk partition from the label rather than the empty
+BIOS table, and falling back to IDENTIFY's default geometry words when
+the "current" words read zero.
+
+LITES now reaches the disk. The console ordering is the evidence:
+
+```
+Copyright (c) 1994, 1995 Johannes Helander ...
+
+HD: false interrupt          <- new; was not here before
+panic: UWVS+
+```
+
+Previously the panic followed the banner immediately. The interrupt
+between them means `hdopen` got far enough to begin a transaction, so
+the failure has moved from "device unopenable" to "device opened, read
+does not complete".
+
+### The signal: exactly two false interrupts
+
+```
+line 23:  HD: false interrupt     (after "battery clock configured" -- probe)
+line 53:  HD: false interrupt     (after LITES's copyright -- first real I/O)
+```
+
+and **nothing else**: no `no bp buffer`, no
+`hdintr: interrupt w/controller not done`. So the handshake is not
+broadly broken; two specific interrupts arrive unexpectedly.
+
+`hdintr` prints this when `controller_busy` is false (`hd.c:955`), then
+dumps registers and discards the interrupt without processing it.
+
+An interrupt arriving **after** IDENTIFY completes is the signature of a
+polled command: the driver polls `PORT_STATUS` until not-busy, reads the
+data and returns without ever setting `controller_busy`, and the
+controller then raises IRQ 14 at a driver that has stopped listening.
+That leaves an interrupt pending on the controller, and per ATA the next
+command's interrupt can be lost or misattributed -- which would explain
+why LITES's first real read never completes.
+
+This is the **same defect class as the floppy's reset interrupt**, fixed
+earlier in `rstout`: OSFMK's drivers assume controllers are forgiving
+about when interrupts arrive relative to status polling, and QEMU
+asserts them strictly per spec.
+
+### Where to start next
+
+1. Does the IDENTIFY path in `hd_ssend` set `controller_busy`? If not,
+   the first false interrupt is explained outright.
+2. Does anything clear the pending interrupt after a polled command?
+   The ATA way is to read the status register, which
+   `hd_dump_registers` may already do incidentally on the
+   false-interrupt path -- or may not.
+
+The precedent for the fix is `rstout`, which drains the 82077's reset
+interrupt with four `sis()` calls because the controller will not accept
+further commands while one is pending. The IDE equivalent is clearing
+the pending interrupt after a polled command rather than leaving it for
+the next one to trip over.
+
+Not yet established: whether the filesystem itself is acceptable to
+LITES's 1995 ext2 reader. That question cannot be reached until a read
+completes, and it is a separate problem of the same family as the minix
+`0x137F` magic.
+
 ### The root device: hd0c, and why
 
 `server_init.c:301` had `char default_root[] = "hd0a"`, used because

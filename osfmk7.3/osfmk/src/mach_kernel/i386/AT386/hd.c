@@ -1151,12 +1151,41 @@ set_controller(
 	hdisk_t	*parm;
 	
 	waitcontroller(ctrl);
+	/*
+	 * AI-ONLY NOTE: run this polled command with device interrupts
+	 * disabled.
+	 *
+	 * CMD_SETPARAMETERS is a non-data command that asserts INTRQ on
+	 * completion. This routine polls for completion instead of
+	 * waiting for the interrupt, and it is called from hdstart()
+	 * *before* controller_busy is set. Reading the status register
+	 * in waitcontroller() clears INTRQ at the drive, but by then the
+	 * PIC has already latched IRQ 14, so the interrupt is still
+	 * delivered -- a moment later, once controller_busy has been set
+	 * and the real read has been issued.
+	 *
+	 * hdintr() then treats it as the read's completion: it runs the
+	 * data path with no data ready, calls iodone() on the buffer,
+	 * clears controller_busy and calls hdstart(). The read's own
+	 * interrupt arrives afterwards to an idle controller and is
+	 * reported as "HD: false interrupt". That is exactly the pair of
+	 * messages seen on this boot, one at probe and one at the first
+	 * read, with the read never delivering data.
+	 *
+	 * Bit 1 of the device control register is nIEN; setting it stops
+	 * the drive asserting INTRQ at all, which is the ATA way to
+	 * issue a polled command from an interrupt-driven driver. The
+	 * driver already writes this register elsewhere, using 4 for
+	 * SRST and 0 for normal operation.
+	 */
+	outb(FIXED_DISK_REG(ctrl), 2);			/* nIEN */
 	outb(PORT_DRIVE_HEADREGISTER(addr),
 	     (hd_drive[unit]->label.d_ntracks - 1) |
 	     ((unit&1) << 4) | FIXEDBITS);
 	outb(PORT_NSECTOR(addr), hd_drive[unit]->label.d_nsectors);
 	outb(PORT_COMMAND(addr), CMD_SETPARAMETERS);
 	waitcontroller(ctrl);
+	outb(FIXED_DISK_REG(ctrl), 0);			/* interrupts back on */
 }
 
 void
@@ -1409,6 +1438,14 @@ void hd_read_id (
 	hdisk_t		parm;
 
 	waitcontroller(ctrl);
+	/*
+	 * AI-ONLY NOTE: IDENTIFY is polled here too, so disable device
+	 * interrupts for it for the same reason as in set_controller().
+	 * Without this the completion interrupt is latched by the PIC
+	 * and delivered to an idle controller, which hdintr() reports as
+	 * "HD: false interrupt" -- the first of the two seen at boot.
+	 */
+	outb(FIXED_DISK_REG(ctrl), 2);			/* nIEN */
 	/* XXX This hangs with qemu, disable it for now */
 	/* ctrl_p->state.restore_request = 1; */
 	ctrl_p->state.restore_request = 0;
@@ -1430,6 +1467,7 @@ void hd_read_id (
 	parm.nsec   = *(unsigned char  *)(tbl+14);
 
 	parm.precomp= *(unsigned short *)(tbl+5);
+	outb(FIXED_DISK_REG(ctrl), 0);			/* interrupts back on */
 	hd_drive[unit]->cmos_parm = parm;
 	if ((id.val_cur_values & 1) && id.cur_secs && id.cur_heads &&
 	    id.cur_cyls) {
