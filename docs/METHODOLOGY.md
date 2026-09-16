@@ -700,6 +700,7 @@ into a minute.
 | Symptom | Cause |
 |---|---|
 | Generated file has a real newline where `\n` was intended | `/bin/sh` is `dash`, whose `echo` interprets escapes; use `printf` |
+| `missing terminating " character`, often with `invalid suffix "f" on integer constant` | A multi-line string literal written with raw newlines -- common in old inline assembly. End each line `\n\`. The odd second error is an assembler label like `1f` being parsed as C once the string breaks |
 | Generated file's C is malformed | Generator written for a pre-ANSI compiler's tolerances |
 | An `awk` script aborts | Modern `awk` variants reject things the original tolerated |
 | Configure or build tool fails oddly | 1990s autoconf against a modern shell |

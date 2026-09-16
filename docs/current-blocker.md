@@ -180,7 +180,42 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## EXT2FS was never compiled in
+## ext2 now compiles: multi-line asm string literals
+
+With `ext2fs` enabled the ext2 sources build for the first time in this
+project, and `server/ufs/ext2fs/i386-bitops.h` failed immediately:
+
+```
+i386-bitops.h:81:17: error: missing terminating " character
+i386-bitops.h:86:20: error: invalid suffix "f" on integer constant
+```
+
+Three inline assembly blocks are written with **raw newlines inside the
+string literal**:
+
+```c
+	__asm__("
+		cld
+		movl $-1,%%eax
+		...
+		addl %%edi,%%edx"
+		:"=d" (res) ...);
+```
+
+K&R compilers accepted that. Modern C requires each line to end `\n\`,
+which keeps the literal legal while still giving the assembler the
+newlines it needs.
+
+**This is the third instance of the same construct in this project**,
+after `conf/gensym.awk` and `conf/newvers.sh`. It is worth recognising
+on sight: `missing terminating " character` together with
+`invalid suffix "f" on integer constant` -- the latter because a local
+assembler label like `1f` ends up parsed as C once the string breaks.
+
+The patch series converts all three blocks. Verified: the header passes
+`gcc -m32 -std=gnu89 -fsyntax-only` standalone with zero errors.
+
+## Superseded: EXT2FS was never compiled in
 
 Before the EIO/EINVAL question below matters at all, the ext2 reader has
 to exist in the binary, and it did not.
