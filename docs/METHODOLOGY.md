@@ -680,6 +680,7 @@ into a minute.
 | Loop runs once when it should iterate | Compiler took a declared array bound literally and proved the loop dead | Access through a pointer, or fix the declaration |
 | Code behaves differently at `-O2` than `-O0` | Modern optimiser exploits undefined behaviour the original never triggered | Find the UB; disabling optimisation is a diagnosis, not a fix |
 | Interrupt or trap handler corrupts its own frame | Tail-call/sibling-call optimisation reusing the stack frame | Disable that optimisation for the function |
+| `asm operand has impossible constraints` at `-O2` but not `-O0` | A constraint bug, not register pressure: usually a register named as both an input and a clobber | Make it a read-write operand -- an early-clobber output tied to a matching input |
 | K&R definitions rejected as errors | Recent compilers made implicit-int an error | `-std=gnu89` |
 | `extern __inline__` gives duplicate symbols | C99 inline semantics differ from GNU89 | `-fgnu89-inline` |
 | "multiple definition" for variables in headers | Compilers default to `-fno-common` now | `-fcommon` |

@@ -180,7 +180,62 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## ext2 now compiles: multi-line asm string literals
+## ext2's inline asm: a register named as both input and clobber
+
+After the string-literal fix below, the same header failed differently:
+
+```
+i386-bitops.h:81:9: error: 'asm' operand has impossible constraints
+                    or there are not enough registers
+```
+
+three times -- once per call site where the `extern inline` was
+instantiated.
+
+**The measurement that identified it.** Two candidate causes, tested one
+flag at a time:
+
+| build | impossible-constraint errors |
+|---|---|
+| `-O2 -fomit-frame-pointer` | 3 |
+| `-O0` | 0 |
+
+Freeing EBP made no difference, so it is not frame-pointer pressure.
+Failing only with the optimiser on is the signature of a **constraint
+bug**, not of genuinely insufficient registers.
+
+**The bug.** `find_first_zero_bit` declared ECX and EDI as inputs *and*
+as clobbers:
+
+```c
+:"=d" (res)
+:"c" (...), "D" (addr), "b" (addr)      /* ECX, EDI, EBX in      */
+:"ax", "cx", "di");                     /* EAX, ECX, EDI clobbered */
+```
+
+A register cannot be both: the compiler has to set an input up and have
+the value survive until the asm reads it, which a clobber declaration
+contradicts. The block really does modify both -- `repe` decrements ECX
+and `scasl` advances EDI -- so they are **read-write** operands, which
+is spelled as early-clobber outputs tied to matching inputs. EAX is
+written by the `movl`, so it is an output too rather than a clobber.
+
+Older GCC tolerated the original. Modern GCC rejects it at `-O2` and
+accepts it at `-O0`, which is exactly the pattern observed.
+
+Verified in isolation, with three callers of increasing register
+pressure:
+
+| constraints | `-O0` | `-O2` | `-O3` |
+|---|---|---|---|
+| original | pass | **fail** | -- |
+| rewritten | pass | pass | pass |
+
+Only the first of the file's three asm blocks was wrong; the second uses
+plain `"=r"`/`"r"` and the third already uses matching `"0"`/`"1"`
+operands.
+
+## Superseded: ext2 now compiles, multi-line asm string literals
 
 With `ext2fs` enabled the ext2 sources build for the first time in this
 project, and `server/ufs/ext2fs/i386-bitops.h` failed immediately:
