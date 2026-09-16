@@ -49,10 +49,18 @@ ln -sf "$HB/migcom" "$MR/libexec/migcom"
 # --- configure -------------------------------------------------------
 # osfmach3 is essential: without it OSFMACH3 and OSF_LEDGERS stay unset
 # and every device call has the wrong arity.
+#
+# ext2fs is needed for an ext2 root filesystem. It is an option in
+# conf/MASTER ("options ext2fs EXT2FS 1 ext2fs.h") and is NOT in the
+# STD+WS set, so without naming it here the generated server/ext2fs.h
+# contains "#define EXT2FS 0", no ext2 objects are built, and the
+# fallback to ext2_mountroot() in init_main.c is compiled out entirely.
+# Confirm after configuring with:
+#     cat <builddir>/obj/server/ext2fs.h        # want: #define EXT2FS 1
 cd "$BUILD/obj"
 sh "$LITES/configure" \
     --with-release="$MR" \
-    --with-config="STD+WS+osfmach3" \
+    --with-config="STD+WS+osfmach3+ext2fs" \
     --host=i386-unknown-mach3 --target=i386-unknown-mach3
 
 # --- build -----------------------------------------------------------

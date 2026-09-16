@@ -180,7 +180,57 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## The ext2 fallback was never reached: EIO vs EINVAL
+## EXT2FS was never compiled in
+
+Before the EIO/EINVAL question below matters at all, the ext2 reader has
+to exist in the binary, and it did not.
+
+`ext2fs` is an option in LITES's `conf/MASTER`:
+
+```
+options		ext2fs	EXT2FS	1	ext2fs.h
+```
+
+and it is **not** part of the `STD+WS` set. Our configure line was
+`--with-config="STD+WS+osfmach3"`, which produced
+
+```
+config lites+mtime+muarea+file_ports+vnpager+old_synch+ether+inet+ffs
+      +pty+second_server+syscalltrace+compat_43+compat_oldsock+kernfs
+      +nfs+atsys+i386+iopl+com+osfmach3
+```
+
+`ffs` is present; `ext2fs` is absent. The generated
+`<builddir>/obj/server/ext2fs.h` therefore contains
+
+```c
+#define EXT2FS 0
+```
+
+so no `ext2_*.o` objects are built and the entire
+`#if EXT2FS ... ext2_mountroot() ... #endif` block in `init_main.c` is
+compiled out. **The ext2 reader was never in the binary.**
+
+That is the real reason no `"Wrong magic number"` diagnostic ever
+appeared, and it means the `EIO` versus `EINVAL` fix below, while
+correct, was inert.
+
+`tools/lites/build-lites.sh` now configures with
+`--with-config="STD+WS+osfmach3+ext2fs"`. Check it took:
+
+```sh
+cat <builddir>/obj/server/ext2fs.h     # want: #define EXT2FS 1
+```
+
+### Method note
+
+This should have been the first check, not the third. The question
+"does the code I am debugging exist in the binary at all" is cheaper
+than any reasoning about its behaviour, and two rounds were spent
+analysing a code path that was not compiled. `docs/METHODOLOGY.md`
+§6.2 says to check this; it was not applied here.
+
+## Then: the ext2 fallback needs EIO as well as EINVAL
 
 LITES's root mount tries FFS first and falls back to ext2:
 
