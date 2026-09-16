@@ -152,6 +152,40 @@ index f131504..057d880 100644
  			/*
  			 * Masking above should prevent us ever trying
  			 * to take action on an ignored signal other
+diff --git a/server/kern/subr_prf.c b/server/kern/subr_prf.c
+index 403d6e9..a3c5516 100644
+--- a/server/kern/subr_prf.c
++++ b/server/kern/subr_prf.c
+@@ -163,8 +163,28 @@ void panic(const char *fmt, ...)
+ 	else
+ 		panicstr = fmt;
+ 
++	/*
++	 * Print the format string itself before attempting to expand it.
++	 *
++	 * "%r" re-expands a format string against a va_list, and on this
++	 * build it produces garbage: the panic text varied between
++	 * otherwise identical boots ("UWVS+" in one build, "UWVS\002k" in
++	 * the next), which means it is printing whatever memory it lands
++	 * on rather than a message. Two printf implementations are linked
++	 * here -- this file's and libsa_mach's -- and -z muldefs makes
++	 * the choice depend on link order, so which one handles %r is not
++	 * obvious.
++	 *
++	 * An unreadable panic message is worse than an unformatted one:
++	 * several panics are reachable at the same point in boot and
++	 * without the text there is no way to tell which fired. Printing
++	 * fmt with %s always identifies the panic, and the %r attempt is
++	 * kept after it so the arguments still appear when it works.
++	 */
++	printf("panic: %s\n", fmt);
++
+ 	va_start(ap, fmt);
+-	printf("panic: %r\n", fmt, ap);
++	printf("panic args: %r\n", fmt, ap);
+ 	va_end(ap);
+ 
+ #if	SECOND_SERVER
 diff --git a/server/kern/vnode_if.sh b/server/kern/vnode_if.sh
 index 7a680a9..ad11d2c 100644
 --- a/server/kern/vnode_if.sh

@@ -441,6 +441,21 @@ Equally: if a message appears *between* two lines that previously
 followed each other directly, **new code ran between them**. That is
 often the clearest evidence you will get that a change had an effect.
 
+## 3.5a Check that your evidence is evidence
+
+A string that looks like a message may not be one. In this project a
+panic printed `UWVS+`, and its stability across repeated boots was taken
+as proof it was real text. It was stable because the binary had not
+changed; a rebuild turned it into `UWVS\002k`. The formatting directive
+producing it was reading uninitialised memory, and several rounds of
+diagnosis had been resting on text that meant nothing.
+
+**Vary something irrelevant and see whether your evidence moves.** If a
+value changes when it should not, it is not measuring what you think.
+And when an instrument's output is unreadable, fixing the instrument
+usually beats working around it -- an unformatted message that names the
+failure is worth more than a formatted one that cannot be read.
+
 ## 3.6 Count things
 
 Numbers that move under a change are worth more than any amount of

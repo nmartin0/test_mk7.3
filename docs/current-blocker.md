@@ -180,7 +180,58 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## The server builds; emulator: pasting two string literals
+## The panic message is garbage, and that is now the blocker
+
+The whole LITES tree builds -- server, ext2, emulator. The boot still
+panics after the banner, and `ext2_mountroot` is now present in the
+binary (`nm` confirms it), yet no ext2 diagnostic appears.
+
+**The panic text changed between builds:**
+
+```
+UWVS+        (earlier build)
+UWVS\002k     (this build)
+```
+
+Identical boots, different text. So it is not a message at all --
+`%r` is printing whatever memory it lands on. Every earlier inference
+from `UWVS+` being "stable across runs" was wrong: it was stable because
+the binary was unchanged, not because the text was real.
+
+That matters because **several panics are reachable at this point in
+boot** -- `"cannot mount root"` in `init_main.c`,
+`"ffs_mountroot: can't setup bdevvp's"` in `ffs_vfsops.c`, and others --
+and without readable text there is no way to tell which fired. The
+unreadable message has been obscuring the diagnosis for several rounds.
+
+### Why `%r` misbehaves
+
+`panic` does `printf("panic: %r\n", fmt, ap)`, where `%r` re-expands a
+format string against a `va_list`. Two `printf` implementations are
+linked into this server -- LITES's own in `server/kern/subr_prf.c` and
+`libsa_mach`'s -- and `-z muldefs` resolves the clash by link order, so
+which one handles `%r` is not obvious and may not be the one that
+implements it.
+
+### The fix
+
+Rather than untangle that, `panic` now prints the format string with
+`%s` first and then attempts `%r` separately:
+
+```c
+printf("panic: %s\n", fmt);
+va_start(ap, fmt);
+printf("panic args: %r\n", fmt, ap);
+va_end(ap);
+```
+
+The first line always identifies which panic fired. The second still
+shows the arguments when `%r` works, and is harmless when it does not.
+
+An unformatted message that names the panic is worth more than a
+formatted one that cannot be read.
+
+## Superseded: the server builds, emulator string literals
 
 Every error is now in `emulator/`, which has never been built in this
 project. **`server/` is complete, including ext2.**
