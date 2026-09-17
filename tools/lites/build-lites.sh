@@ -112,8 +112,22 @@ LIB_LIST="-llites -lthreads -lmach_sa -lsa_mach -lmach_sa $LG"
 #            argv over IPC with bootstrap_arguments(), which is how this
 #            system delivers arguments, since servers start on a
 #            deliberately zero-filled stack. Its entry symbol is
-#            __start_mach, while conf/i386/MASTER sets -e __start, so
-#            --defsym bridges the two names.
+#            __start_mach, which is the right entry for a personality
+#            server on this kernel -- MkLinux's own i386 personality
+#            says so at linux/arch/osfmach3_i386/Makefile:69,
+#            "LDFLAGS = -e __start_mach -static -nostdlib".
+#
+#            That direct form cannot be used here. server/Makerules:66
+#            links with $(LDFLAGS) $(TARGET_LDFLAGS), in that order, and
+#            conf/i386/MASTER puts -e __start into TARGET_LDFLAGS; ld
+#            honours the last -e it is given, so ours would be
+#            overridden. Tested: the entry comes out as 0x8049000, the
+#            first byte of .text, which is not a function. Overriding
+#            TARGET_LDFLAGS instead would drop the -L paths it carries.
+#
+#            So --defsym makes LITES's own -e __start resolve to the
+#            same address the reference uses. Verified: entry 0x8049320,
+#            which nm gives as __start_mach.
 #
 #            (libmach/i386/crt0.c does define __start, but it reads argv
 #            from the stack only and nothing in the tree builds it. Using

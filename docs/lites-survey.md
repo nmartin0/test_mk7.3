@@ -88,6 +88,74 @@ This is the inverse of the Hurd situation:
 We have the toolchain: `osfmk7.3/osfmk/tools/i386/i386_linux/hostbin/`
 holds `mig` and `migcom`.
 
+## Surveyed: nmartin0/mach_stuff
+
+A 454 MB collection of extracted tarballs. What is in it, and what it is
+worth.
+
+### Directly useful
+
+**`linux/arch/osfmach3_i386/`** -- a complete Linux personality running
+on OSFMK, **on i386**. Three copies are present (`linux/`,
+`mklinux-2.0.38-pre9/src/`, `Change/DR3/mklinux/src/`). This solves the
+same problem LITES does, against the same kernel, on our architecture,
+and it shipped and worked. It is the closest published analogue to this
+project and the first place to look for any question about how a
+personality talks to this kernel.
+
+It already settled one: `arch/osfmach3_i386/Makefile:69` reads
+
+```make
+LDFLAGS = -e __start_mach -static -nostdlib
+```
+
+confirming that `__start_mach`, from `libsa_mach`'s crt0, is the correct
+entry for a personality server here -- which had been reasoned out
+independently and is now corroborated.
+
+**`new_release_kernel/mach_servers/bootstrap.conf`** -- a real
+bootstrap.conf from a working system:
+
+```
+# bootstrap.conf
+-w default_pager default_pager 
+-k startup vmlinux 
+```
+
+confirming the `[-flags] symtab_name path` format, and that the
+bootstrap task's own flags come first.
+
+**`pmk1.1/`** -- a third Mach 3.0 PMK tree, same version as ours,
+differing from MkLinux in files we have patched (`hd.c`, `fd.c`,
+`ipc_kobject.c`, `model_dep.c`). Useful as a cross-check, though it
+carries the same bugs: its `getvtoc` still sizes the whole-disk
+partition from `cmos_parm`, and its floppy code matches MkLinux's.
+
+### Dates our tree
+
+`DR2.1u6-wip971126.src.patch` (170k lines) and `u5-u6.patch` are MkLinux
+DR2.1 update patches. Their one generic kernel change is to
+`device/dev_name.c`, adding `lenunit = cp - name;` -- **which our tree
+already has**. So our OSFMK is at or past DR2.1u6d. The rest of their
+kernel changes are PPC and HP700 specific.
+
+### What is not there
+
+**No i386 `mach_init` program**, source or binary. The only one is
+`new_release_kernel/mach_servers/mach_init`, which is PA-RISC, and the
+`usr/` tree is a PA-RISC Linux userland. So the current step 4 blocker
+is not solved here.
+
+**No `libmach_sa`.** Neither `osfmk/` nor `pmk1.1/` has it; both ship
+only the profiled, broken `libmach_sa_p`. This confirms that adding it
+was necessary rather than a local workaround, and that the gap is
+upstream.
+
+### Also present, not yet examined
+
+`ode/` (the build system), `X11R6.3`, `fdsrc`, `osfmk_2` (exports only),
+`Change/` (which contains a DR3 tree).
+
 ## Surveyed and rejected: xMach's LITES
 
 `github.com/neozeed/xMach` mirrors the SourceForge xMach project and
