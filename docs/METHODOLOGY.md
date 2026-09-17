@@ -747,6 +747,7 @@ into a minute.
 | Interrupt or trap handler corrupts its own frame | Tail-call/sibling-call optimisation reusing the stack frame | Disable that optimisation for the function |
 | `asm operand has impossible constraints` at `-O2` but not `-O0` | A constraint bug, not register pressure: usually a register named as both an input and a clobber | Make it a read-write operand -- an early-clobber output tied to a matching input |
 | K&R definitions rejected as errors | Recent compilers made implicit-int an error | `-std=gnu89` |
+| Named parameters read correctly but every variadic argument is garbage | A pre-ANSI `va_start` that computes the argument pointer from `&last_named_param`, which assumes a stack layout modern optimisers do not guarantee | Use `__builtin_va_list` and `__builtin_va_start`/`va_arg`/`va_end` |
 | `extern __inline__` gives duplicate symbols | C99 inline semantics differ from GNU89 | `-fgnu89-inline` |
 | "multiple definition" for variables in headers | Compilers default to `-fno-common` now | `-fcommon` |
 | Pointer constant used as a `case` label | Was legal, now requires an integer constant | Cast it |

@@ -180,6 +180,145 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
+## FIXED: LITES's varargs were pre-ANSI; every printf argument was garbage
+
+```
+panic args: cannot mount root x9c6 unknown error code
+```
+
+A readable panic message with its arguments expanded, for the first
+time. The cause was `include/i386/stdarg.h`:
+
+```c
+typedef char *va_list;
+#define va_start(ap, last) (ap = ((char *)&(last) + __va_promote(last)))
+```
+
+Computing the argument pointer by taking the address of the last named
+parameter and stepping past it assumes a stack layout the compiler is
+not obliged to provide. Modern GCC at `-O2` does not provide it, so
+**named parameters read correctly while every variadic argument was
+garbage**. It now uses `__builtin_va_list`, `__builtin_va_start`,
+`__builtin_va_arg` and `__builtin_va_end`.
+
+### Why this took so long to find
+
+The symptom pointed away from the cause at every step. `fmt` was
+verifiably correct -- a hardware breakpoint at `panic` showed
+`0x080ed7e6`, which `readelf` confirms is the right string in
+`.rodata` -- and yet `printf("%s", fmt)` printed the bytes of an
+unrelated function. That combination looks impossible, and six
+hypotheses were built trying to explain it: `%r` mangling, unmapped
+rodata, partially mapped text, paging pressure, absent backing store,
+and a wild `fmt` pointer.
+
+The measurement that broke it open was printing a literal with **no**
+arguments from inside `panic`. It printed perfectly, which proved
+`printf` worked and narrowed the fault to argument passing rather than
+output or pointers.
+
+**A correct value and a corrupt one can coexist** when the corruption is
+in the mechanism that transports the value rather than in the value
+itself. When evidence looks contradictory, suspect the transport.
+
+### What it unblocks
+
+The panic text is now readable, so every future failure names itself.
+The remaining blocker is the one the message states: `x9c6` is
+`D_NO_SUCH_DEVICE` on the root mount. "unknown error code" is
+`mach_error_string` not knowing the device subsystem, which is cosmetic.
+
+## Measured: the development sandbox boots this in 2 seconds
+
+Not a claim, a measurement. Kernel, bootstrap task and `default_pager`
+built in the sandbox and booted there under **pure TCG on one CPU**,
+with no hardware acceleration:
+
+```
+(bootstrap): loading /dev/boot_device/mach_servers/default_pager
+(bootstrap): started
+(default_pager): started
+```
+
+reached in **2 seconds**.
+
+That is faster than the KVM floppy boot by two orders of magnitude, and
+it settles the question the other way round from how it was framed all
+session. Emulation speed was never the constraint. The floppy was. A
+boot that cost 500 seconds with hardware acceleration costs 2 without
+it, once the same data comes off an IDE disk.
+
+Two beliefs shaped this session and both were wrong:
+
+- that 32-bit objects could not be linked in the sandbox
+  (`gcc-multilib` installed in one command)
+- that emulation without KVM was too slow to iterate on
+  (it is 2 seconds)
+
+Neither was ever tested. Both were inferred from a single early failure
+and then treated as fixed properties of the world.
+
+### Build notes for the sandbox
+
+The full sequence, after `gcc-multilib`:
+
+```sh
+export MK_BUILD=/tmp/hj ODE4LINUX=~/ode4linux
+sh build/ode.sh MAKEFILE_PASS=FIRST
+sh build/ode.sh -here mach_kernel MACH_KERNEL_CONFIG=PRODUCTION
+sh build/ode.sh -here mach_services/lib/libsa_mach
+sh build/ode.sh -here mach_services/lib/libcthreads
+sh build/ode.sh -here mach_services/lib/libmach
+sh build/ode.sh -here mach_services/lib/libmach_maxonstack
+sh build/ode.sh -here file_systems          # libsa_fs, needed by bootstrap
+sh build/ode.sh -here bootstrap
+sh build/ode.sh -here default_pager
+```
+
+One trap: the exported `mach/default_pager_object.h` can be installed
+without the `import <mach/default_pager_types.h>` line that MIG emits,
+and then `default_pager` fails with
+`DEFAULT_PAGER_BACKING_STORE_MAXPRI undeclared`. The generated copy
+under `obj/at386/default_pager/mach/` has it; copying that over the
+exported one fixes the build. `-I.` does not help, because it precedes
+`-I-` and so serves only `""` includes, not `<>` ones.
+
+## The development sandbox can build and run this after all
+
+`gcc-multilib` was installable the whole time. The belief that 32-bit
+objects could not be linked in the sandbox was formed early from a
+single failure, never rechecked, and shaped the entire session: every
+LITES build and every boot was handed back and forth instead of being
+run where the analysis was happening.
+
+```sh
+apt-get install -y --no-install-recommends gcc-multilib
+gcc -m32 -print-libgcc-file-name    # .../13/32/libgcc.a
+```
+
+Verified by compiling, linking and running a 32-bit binary that uses the
+64-bit division helpers LITES needs.
+
+Combined with the 20-second IDE boot, the whole cycle -- build LITES,
+build the server volume, boot, read the console -- can now run in one
+place.
+
+## The boot cycle is now 20 seconds, down from ~500
+
+Booting `/mach_servers` from IDE works end to end: pager loaded, LITES
+loaded, banner printed, `added device hd1c`, all in **20 seconds**
+against roughly 500 from floppy. Every future measurement is 25x
+cheaper, which changes what is worth attempting -- an experiment that
+costs twenty seconds can be run on a hunch, where one costing ten
+minutes cannot.
+
+Run it with:
+
+```sh
+export MK_BUILD=~/.cache/mk7.3
+sh tools/boot-ide.sh
+```
+
 ## Booting the servers from IDE
 
 `tools/boot-ide.sh` boots `/mach_servers` from a minix volume on a third
