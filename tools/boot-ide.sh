@@ -64,7 +64,10 @@ done
 echo "building $SERVERS"
 rm -f "$SERVERS"
 dd if=/dev/zero of="$SERVERS" bs=1M count=16 2>/dev/null
-python3 "$HERE/mkminix.py" "$SERVERS" "$PAGER=hd1c" "$LITES"
+# LITES's binary name is 43 bytes and a minix v1 directory entry holds
+# 14, so it goes in as "startup" -- the ":name" form renames it in the
+# image and in the generated bootstrap.conf together.
+python3 "$HERE/mkminix.py" "$SERVERS" "$PAGER=hd1c" "$LITES:startup"
 
 # The root and paging disks, if they are not already there. Neither is
 # recreated by default: the root disk in particular may have contents

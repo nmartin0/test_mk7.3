@@ -139,38 +139,54 @@ def build(path, files):
     # holds a deliberate dummy zero argc, so this file is the only way
     # to give a server arguments.
     #
-    # An argument list may be attached to a file with "path=args", e.g.
-    #     mkminix.py img default_pager=hd1c startup
+    # A file may be given a different name in the image with
+    # "path:name", which matters because minix v1 directory entries hold
+    # only 14 bytes of name and LITES's binary is called
+    # startup.Lites.1.1.u3.STD+WS+osfmach3+ext2fs, which is 43.
+    #
+    # An argument list may be attached with "=args", after the name if
+    # both are given, e.g.
+    #     mkminix.py img default_pager=hd1c .../startup.Lites...:startup
     # which writes
     #     default_pager default_pager hd1c
+    #     startup startup
     # and is how default_pager is given a paging device: its main()
     # loops over argv calling bs_add_device() on each name, and without
     # one it starts with no backing store at all and every
     # ps_allocate_cluster() fails.
     lines = []
     real  = []
+    names = []
     for f in files:
         # NB: not "path" -- that name holds the image being written,
         # and shadowing it here sends the finished image to the last
         # file on the command line instead.
         fpath, _, args = f.partition('=')
-        base = os.path.basename(fpath).encode()
+        fpath, _, asname = fpath.partition(':')
+        base = (asname or os.path.basename(fpath)).encode()
+        if len(base) > 14:
+            raise SystemExit(
+                'name too long for minix v1 (14 bytes): %s\n'
+                'give a shorter name with "%s:shortname"'
+                % (base.decode(), fpath))
         line = b'%s %s' % (base, base)
         if args:
             line += b' ' + args.encode()
         lines.append(line + b'\n')
         real.append(fpath)
+        names.append(base.decode())
     files = real
     conf = b''.join(lines)
     if not conf:
         conf = b'default_pager default_pager\n'
     entries.append(dirent(write_file(conf, 0o100644), 'bootstrap.conf'))
 
-    for f in files:
+    for f, nm in zip(files, names):
         data = open(f, 'rb').read()
         n = write_file(data, 0o100755)
-        entries.append(dirent(n, os.path.basename(f)))
-        print(f'  {os.path.basename(f):<20} inode {n:3d}  {len(data)} bytes')
+        entries.append(dirent(n, nm))
+        print(f'  {nm:<20} inode {n:3d}  {len(data)} bytes'
+              + ('' if nm == os.path.basename(f) else f'   <- {os.path.basename(f)}'))
 
     buf = b''.join(entries)
     d[zone_off(dz):zone_off(dz) + len(buf)] = buf
