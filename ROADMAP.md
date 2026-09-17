@@ -79,6 +79,118 @@ Two details there correct assumptions this project has been running on:
 the pager is given a **paging file** rather than the raw `hd1c` device
 we currently use -- which matches `mach4-UK22`'s `def_pager_setup.c`.
 
+### What the loaders expect from a NetBSD binary
+
+Settled before going looking for install media.
+
+`doc/README.netbsd` warns that "the only thing you need to do is to make
+your bootstrap grok binaries with NetBSD's a.out header", so there is
+known work on the bootstrap side. On the **LITES** side there is none,
+and the reason is worth writing down because it also explains the
+`BT=20` puzzle.
+
+`liblites/exec_file.c` classifies a.out by the machine id in
+`(magic >> 16) & 0xff`:
+
+| MID | classified as |
+|---|---|
+| 100 | `BT_LINUX` / `BT_LINUX_SHLIB` |
+| 0 | `BT_CMU_43UX` (entry non-zero) or `BT_386BSD` |
+| 0x45 | pc532 |
+| anything else, QMAGIC | **`BT_FREEBSD`** |
+
+NetBSD/i386's MID is not in that switch, so its QMAGIC binaries fall to
+the default and are classified `BT_FREEBSD`. **That does not matter**,
+because `emulator/i386/e_trampoline.c` gives them all the same syscall
+table:
+
+```c
+      case BT_386BSD:
+      case BT_NETBSD:
+      case BT_FREEBSD:
+      default:
+	current_nsysent = e_bsd_nsysent;
+	current_sysent = e_bsd_sysent;
+```
+
+So a stock NetBSD userland is emulated correctly whichever of those it
+is called.
+
+**And the entry-address tests are not bugs.** `BT_LITES_Q` requires
+`a_entry >= 0x90000000` and `BT_LITES_ELF` requires
+`e_entry > 0x10000000`, with a comment in the source explaining that the
+QMAGIC threshold was *raised* from `0x10000000` because "linux ld.so in
+QMAGIC form has an entry of 0x62f00020 but we really don't want it to be
+recognized as a BT_LITES_Q".
+
+Those tests are how LITES tells **its own** binaries -- linked high, as
+our emulator is at `0xa0001020` -- from foreign ones. Our server is
+reported as `BT=20` because it is an ELF at `0x8049320`, below the
+threshold, so it is not recognised as LITES-native. Whether that matters
+depends on what a LITES-native ELF is supposed to look like, which is
+the question to settle when item 4 comes round -- it is a narrower
+question than "the classifier is broken".
+
+### The root filesystem: ext2, and what goes in it
+
+**Use ext2, not FFS.** `README.netbsd`'s bootstrap patch exists because
+4.4BSD split `d_reclen` into `d_type` and `d_namlen` in the **FFS**
+directory entry -- the same change ext2's `filetype` feature makes, and
+which this project already handled with `-O ^filetype`. That patch is
+only needed if the userland lives on FFS. Both our readers already
+handle ext2, and it is proven working for the root and the server
+volume.
+
+**ext2 can hold a complete Unix root.** `debugfs` does all four things
+needed, without mounting and without privileges:
+
+```sh
+debugfs -w -R "write localfile /path"      root.img   # files
+debugfs -w -R "mkdir /sbin"                root.img   # directories
+debugfs -w -R "symlink /bin/sh /sbin/sh"   root.img   # symlinks
+debugfs -w -R "mknod /console c 0 0"       root.img   # device nodes
+```
+
+The `mknod` was tested: it produces mode `20000`, a character device.
+
+**The device numbers come from LITES's own `cdevsw`**, in
+`server/i386/conf.c`. Character majors:
+
+| major | name | note |
+|---|---|---|
+| 0 | `console` | what `mach_init` opens |
+| 1 | tty | controlling terminal |
+| 2 | kmem, null | |
+| 3 | `hd` | ISA disk, block major 8 |
+| 5, 6 | pts, ptc | pseudo-terminals |
+| 7 | log | |
+| 8 | `com` | serial |
+| 9 | `fd` | floppy, block major 8 |
+| 13 | `sd` | SCSI disk |
+| 15 | `cd` | CD-ROM |
+
+So `/dev/console` is `mknod c 0 0`, which is what `mach_init` needs to
+open before it can report anything.
+
+### Where NetBSD 1.0/i386 lives
+
+```
+https://archive.netbsd.org/pub/NetBSD-archive/NetBSD-1.0/i386/binary/
+    base10/   28 pieces base10.aa .. base10.bb, 240640 bytes each
+              (~6.7 MB; cat them together for a gzipped tar)
+    etc10/    /etc, including the rc scripts and ttys init reads
+    comp10/   compiler, headers and libc for building mach_init
+```
+
+Dated 19 October 1994, which is the release LITES's own
+`doc/README.netbsd` was written against.
+
+`tools/mkroot-netbsd.sh` fetches the base and etc sets, extracts them,
+and builds an ext2 root with `/dev/console` and the other device nodes
+from LITES's `cdevsw`. It installs an explicit list of binaries rather
+than the whole set, to keep the image small and make the dependency set
+visible rather than implied.
+
 **3. Link `mach_init` against that libc.** The port itself is done and
 committed at `mach_services/cmds/mach_init/`; it compiles and waits only
 for a libc.
