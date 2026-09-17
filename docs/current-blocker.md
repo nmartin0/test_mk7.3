@@ -180,6 +180,88 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
+## ddb, the in-kernel debugger, works and is one flag away
+
+OSFMK ships its own kernel debugger in `src/mach_kernel/ddb/`, and it is
+compiled **out** of the PRODUCTION config:
+
+```c
+/* obj/at386/mach_kernel/PRODUCTION/mach_kdb.h */
+#define MACH_KDB 0
+```
+
+`conf/AT386/config.debug` turns it on, and there is a ready-made config
+that includes it:
+
+```
+options  MACH_KDB           /* the debugger */
+options  MACH_TR            /* kernel tracing */
+options  BOOTSTRAP_SYMBOLS  /* symbols for bootstrap-loaded servers */
+```
+
+```sh
+sh build/ode.sh -here mach_kernel MACH_KERNEL_CONFIG=DEBUG
+```
+
+Builds clean, 1,586,388 bytes against PRODUCTION's 1,025,836, and gives
+a prompt on the serial console:
+
+```
+inline call to debugger(machine_startup)
+Stopped	at  0x1bc8bd:	int	$3
+db8$>
+```
+
+### Why it is worth using
+
+It is a better instrument than the gdb stub for this project, for three
+reasons.
+
+**It understands Mach's own types.** `db_task_thread.c` and
+`db_print.c` give it tasks, threads, ports and VM maps as first-class
+objects. The gdb stub sees only memory, which is why reading kernel
+structures through it has meant hand-computing addresses all session.
+
+**There is no attach window to miss.** It runs inside the guest, so the
+timing problem that cost several attempts -- attach too early and the
+task's pages are not mapped, too late and the task is gone -- does not
+arise.
+
+**`BOOTSTRAP_SYMBOLS` covers loaded servers**, so it can symbolise
+LITES, not just the kernel.
+
+### Which kernel to use, in plain terms
+
+**PRODUCTION** is the kernel used so far. No debugger. It boots straight
+through and everything goes to the log file, which is what you want when
+you just need to see what happens. `tools/boot-ide.sh` runs this.
+
+**DEBUG** is the same kernel with the debugger compiled in. It stops
+early and shows a `db8$>` prompt on the console, where you type commands
+to inspect the running machine. `tools/boot-debug.sh` runs this.
+
+You cannot script the second, because it waits for you to type. You
+cannot inspect the first, because there is nothing to type at. So keep
+both and pick per question.
+
+At the prompt: `c` continues booting, `trace` gives a backtrace,
+`show all threads` lists every thread, `show all ports` lists Mach ports
+-- which the gdb stub cannot do at all -- `examine <addr>` dumps memory,
+`break <addr>` sets a breakpoint, `help` lists the rest. Ctrl-A then B
+drops back into the debugger later; Ctrl-A then X quits QEMU.
+
+### The catch, and the setup needed
+
+It needs an **interactive** console. The current scripts use
+`-serial file:` to capture output, which gives the debugger nowhere to
+read from, so the DEBUG kernel stops at `machine_startup` and waits
+forever. Using it means `-serial stdio`, `-serial mon:stdio`, or a pty,
+and driving it by hand rather than from a script.
+
+That is a different working style from the automated boots, so the
+sensible arrangement is to keep PRODUCTION for scripted runs and switch
+to DEBUG when a question needs poking at live kernel state.
+
 # MILESTONE: the root filesystem mounts AND reads
 
 ```
