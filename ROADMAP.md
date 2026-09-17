@@ -31,6 +31,64 @@ reaches its first-program exec.
 
 ---
 
+## Order of work
+
+The reference survey changed the shape of step 4. The first program went
+from unsolved to a port with a known-good source, and the step *after*
+it turned out to be the real long pole.
+
+**1. Move the server volume to ext2.** *(done -- see boot-ide.sh)*
+Retired `tools/mkminix.py` and removed GPL code from the bootstrap task
+binary: `file_systems/minixfs` contains three GPL files and
+`minixfs/machdep.mk` builds one of them into `libsa_fs.a`. `ext2fs` is
+GPL-free and the bootstrap task already tried it first.
+
+**2. Source a NetBSD 1.0 userland.** This must come **before** porting
+`mach_init`, which is the correction that reordering this list is for.
+
+`mach_init` is a BSD process -- its `fork`, `execve`, `open`, `kill`,
+`waitpid` and `sigblock` go through the emulator into LITES. It cannot
+be built as a standalone Mach program: `libsa_mach` supplies headers but
+only `printf`, `exit` and `sleep`, none of the POSIX calls. It needs a
+libc.
+
+**LITES's own documentation settles how that libc arrives.**
+`doc/install.freebsd`, by Helander, December 1994:
+
+```
+Installing Lites on a FreeBSD machine -- jvh 941204
+- Install FreeBSD 2.0 on the machine
+- Install the Mach bootable kernel in the root directory (e.g. /mach.boot)
+- Create a /mach_servers directory
+- Populate with startup, emulator, mach_init
+- Create a paging file. ...
+  ln -s /dev/sd0g/PAGING_FILE /mach_servers/paging_file
+```
+
+and `doc/README.netbsd` documents the same against **NetBSD 1.0**, which
+is the one chosen here.
+
+**LITES takes over an existing BSD installation.** The BSD system
+provides `/sbin/init`, `/bin/sh`, libc and the whole userland; Mach adds
+three files to `/mach_servers`. There is no hand-rolled libc in the
+design, so building one would be inventing something the project never
+had.
+
+Two details there correct assumptions this project has been running on:
+`/mach_servers` holds exactly `startup`, `emulator` and `mach_init`, and
+the pager is given a **paging file** rather than the raw `hd1c` device
+we currently use -- which matches `mach4-UK22`'s `def_pager_setup.c`.
+
+**3. Link `mach_init` against that libc.** The port itself is done and
+committed at `mach_services/cmds/mach_init/`; it compiles and waits only
+for a libc.
+
+**4. Fix ELF binary classification.** `liblites/exec_file.c` recognises
+an ELF as its own only when the entry is above `0x10000000`; ours are at
+`0x8049320`, which is why the emulator reports `BT=20` (`hpelf`). This
+bites the moment an i386 ELF first program is exec'd. xMach shows the
+shape of the fix.
+
 ## Next: finish step 4, a shell prompt
 
 ### 4a. The first program: build Mach 4's `mach_init`
