@@ -262,6 +262,203 @@ That is a different working style from the automated boots, so the
 sensible arrangement is to keep PRODUCTION for scripted runs and switch
 to DEBUG when a question needs poking at live kernel state.
 
+# Step 4: the emulator is the missing piece
+
+## Correction: ext2 lookup works
+
+The previous note concluded the fault was in `ext2_lookup`. **That was
+wrong.** Instrumenting the lookup shows it resolving every component:
+
+```
+EXT2LK <dev>
+EXT2LK <boot_device>
+EXT2LK <mach_servers>
+EXT2LK <mach_init>
+EXT2LK <dev> ... <emulator>
+EXT2LK <dev> ... <emulator.old>
+```
+
+and the `ENOENT` return inside `ext2_lookup` **never fires** -- a probe
+on that path prints nothing. So the directories created with `debugfs`
+are found, `mach_init` is found, and ext2 is working correctly.
+
+## Where the ENOENT actually comes from
+
+`s_execve` calls
+
+```c
+kr = server_exec(p, fname, emul_name, cfname, cfarg, &li_data, &image_port);
+```
+
+and `emul_name` is the **emulator**. The lookup sequence shows it:
+LITES resolves the program, then `emulator`, then `emulator.old`. The
+emulator file does not exist, so the exec fails.
+
+The emulator is not optional. It is the syscall trampoline mapped into
+every process, and LITES loads it alongside the program being exec'd.
+
+## Why the emulator does not build
+
+It compiles but does not link:
+
+```
+ecrt0.c:67:    undefined reference to `mach_init'
+emul_init.c:298: undefined reference to `mach_init'
+```
+
+**This is a different `mach_init` from the init program** -- it is
+libmach's runtime initialisation function, and the two share a name.
+
+In this libmach it is **static**:
+
+```c
+/* mach_services/lib/libmach/mach_init.c */
+static int mach_init(void);              /* :74  */
+static int mach_init(void) { ... }       /* :93  */
+int (*_mach_init_routine)(void) = mach_init;   /* :181 */
+```
+
+`nm` confirms it: `00000000 t mach_init`, a local symbol. It is reached
+only through the `_mach_init_routine` function pointer, which is how
+crt0 calls it. LITES's emulator calls it **by name**, so it expects a
+libmach where the symbol is global.
+
+That is a genuine interface mismatch between this OSFMK libmach and the
+one LITES was written against, and it is the next thing to resolve. The
+obvious options are to make the symbol global, or to give the emulator a
+small shim that calls through `_mach_init_routine` instead.
+
+## Superseded: ext2 mounts, but lookups return ENOENT
+
+Measured, with instrumentation at the mount site:
+
+```
+MOUNT ffs  kr=c016      EINVAL -- not an FFS filesystem, as expected
+MOUNT ext2 kr=0         success
+EXEC FAILED path=/mach_servers/mach_init kr=c002
+panic args: ... exec failed: xc002 (os/unix) file or directory does not exist
+```
+
+**ext2 is genuinely what mounted**, the root vnode is established
+(`VFS_ROOT` returns without the panic that follows it firing), and yet
+`namei` returns ENOENT for a file that demonstrably exists. Verified
+with `debugfs`:
+
+```
+$ debugfs -R "ls -l /mach_servers" root.img
+   19  100755 (0)  0  0  211100  mach_init
+```
+
+Tried at three different paths, all present in the image, all ENOENT:
+`/dev/boot_device/mach_servers/mach_init`, `/mach_init`, and
+`/mach_servers/mach_init`.
+
+So the fault is in **ext2 directory lookup** -- `ext2_lookup` in
+`server/ufs/ext2fs/ext2_lookup.c` -- which is a different code path from
+the directory *read* that the earlier `^filetype` fix repaired. That fix
+made the root directory parseable; this is about finding a named entry
+within it.
+
+## Useful things learned getting here
+
+**`server_dir` must start with `/dev/`.** LITES says so itself:
+
+```
+(lites): server_dir(/) ignored.  It does not start with /dev/
+(lites): init_program(/mach_servers/mach_init)
+```
+
+so passing `/` as the second argument falls back to `/mach_servers`,
+which is at least a short path to test against.
+
+**The panic arguments now expand**, confirming the varargs fix end to
+end:
+
+```
+panic args: first program (/mach_servers/mach_init) exec failed:
+            xc002 (os/unix) file or directory does not exist
+```
+
+**Mach error encoding is `0xc000 + errno`**: `0xc002` ENOENT, `0xc016`
+EINVAL.
+
+**A correction.** An earlier note here said that placing a known-good
+binary as `mach_init` showed the loader working, because a second
+`default_pager` complained another existed. That was wrong: exec
+returned ENOENT, so nothing was loaded, and those messages came from the
+real pager. There is still no evidence either way about whether
+`s_execve` can load a binary -- the lookup fails first.
+
+## Superseded: the init program, and where it must live
+
+LITES mounts the root and then fails to exec its first program:
+
+```
+EXEC FAILED path=/dev/boot_device/mach_servers/mach_init kr=c002
+panic: first program (%s) exec failed: x%x %s
+panic: init died
+```
+
+`0xc002` is `0xc000 + 2`, **ENOENT**. (The same encoding gives `0xc016`
+for EINVAL, 22, seen earlier.)
+
+## The path is wrong, not the loader
+
+Putting a known-good Mach binary on the server volume as `mach_init`
+showed the loader itself works: a second `default_pager` instance
+started and complained that another already existed. So `s_execve`
+loads fine. It simply cannot find the file.
+
+`/dev/boot_device/mach_servers/mach_init` is a name the **bootstrap
+task** understands -- an indirection the kernel sets up from
+`BOOTDEV`/`BOOTUNIT`/`BOOTPART`. LITES resolves paths through **its own
+VFS**, which has the ext2 root mounted and knows nothing called
+`/dev/boot_device`.
+
+So the init program must live on the **ext2 root filesystem**, at a path
+LITES can resolve, and `init_program_path` must point there.
+
+`server_init.c` builds that path from `server_dir` and
+`init_program_name` (`"/mach_init"`), and `parse_arguments` will take an
+alternative from `argv[1]`, so this is configurable without code changes
+once there is something to point at.
+
+## Populating an ext2 image without root: debugfs
+
+`mkminix.py` exists because the minix volume had to be built by hand.
+Nothing equivalent is needed for ext2: **`debugfs` writes into an image
+without mounting it and without privileges.**
+
+```sh
+debugfs -w -R "write localfile pathname" root.img
+debugfs -w -R "mkdir /sbin"             root.img
+debugfs -w -R "symlink /bin/sh /sbin/sh" root.img
+debugfs    -R "ls -l /"                 root.img
+```
+
+Verified: writing a file and listing the directory both work as an
+ordinary user. It lives in `/sbin`, which is not on a normal user's
+PATH.
+
+## What is still needed
+
+`mach_init` itself. It is **not** in this tree -- neither OSFMK's `src/`
+nor LITES has it; only `server/serv/mach_init_ports.c`, which is
+unrelated. It came from the Mach 3.0 userland distribution.
+
+Options, in increasing order of work:
+
+1. **Point `init_program_name` at something else** that LITES can exec.
+   Cheapest, and the mechanism already exists via `argv[1]`.
+2. **Write a minimal first program.** It has to satisfy whatever
+   `s_execve` and `server_exec.c:437` ("Duplicate work of the emulator.
+   For first program loading") expect, which is the next thing to read.
+3. **Find a Mach 3.0 userland distribution** with `mach_init` in it.
+
+The emulator matters here too: `emulator_path` points at
+`/dev/boot_device/mach_servers/emulator`, which has the same
+resolution problem, and LITES's `emulator/` directory does build.
+
 # MILESTONE: the root filesystem mounts AND reads
 
 ```
