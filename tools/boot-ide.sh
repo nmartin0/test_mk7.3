@@ -67,7 +67,30 @@ dd if=/dev/zero of="$SERVERS" bs=1M count=16 2>/dev/null
 # LITES's binary name is 43 bytes and a minix v1 directory entry holds
 # 14, so it goes in as "startup" -- the ":name" form renames it in the
 # image and in the generated bootstrap.conf together.
-python3 "$HERE/mkminix.py" "$SERVERS" "$PAGER=hd1c" "$LITES:startup"
+# LITES is given its root device as an argument, and that is the only
+# way it gets one.
+#
+# get_config_info() has two paths. With argc == 0 it uses the
+# compiled-in argv_space table, whose third entry is the root device.
+# With any argument at all it takes the other path and calls
+# parse_arguments(argc, argv) instead, and argv_space is never read.
+#
+# A server always has at least one argument here, its own name, because
+# bootstrap.conf names it. So argc is 1, the argv_space path is dead,
+# and parse_arguments does:
+#
+#	pname = argv[0]; argv++, argc--;	/* argc becomes 0 */
+#	if (argc == 0) return;			/* returns at once */
+#
+# leaving rootdev at its uninitialised zero, which is major 0 minor 0 --
+# device "hd", unit 0, partition "a". LITES then asks the kernel for
+# hd0a, which does not exist on an unpartitioned disk, and the mount
+# fails with D_NO_SUCH_DEVICE (0x9c6).
+#
+# Naming the device here makes argc 2, so parse_arguments reaches the
+# end and sets rootdev from it. Editing argv_space has no effect,
+# because that path never runs.
+python3 "$HERE/mkminix.py" "$SERVERS" "$PAGER=hd1c" "$LITES:startup=hd0c"
 
 # The root and paging disks, if they are not already there. Neither is
 # recreated by default: the root disk in particular may have contents

@@ -143,6 +143,67 @@ kernel interface assumptions are the wrong ones for this tree.
 
 ## Licensing
 
+**Every line of code in this project is written here.** No source is
+copied from any other tree, and none of the reference trees is used as
+anything but reading material.
+
+### The rule
+
+- **Reading a reference implementation to understand a design** -- fine.
+  Copyright protects expression, not method. Learning *that* a floppy
+  controller must have its reset interrupt acknowledged before it
+  accepts another command is a fact about hardware.
+- **Copying its expression** -- not done. Not a function, not a
+  structure layout transcribed from someone's header, not a block of
+  logic reworded.
+- **Invoking a compiler, kernel or library interface** -- not copying at
+  all, and worth stating because it can look like it at a glance.
+
+### Compiler intrinsics are not imported code
+
+`include/i386/stdarg.h` now reads:
+
+```c
+typedef __builtin_va_list va_list;
+#define va_start(ap, last) __builtin_va_start((ap), (last))
+#define va_arg(ap, type)   __builtin_va_arg((ap), type)
+#define va_end(ap)         __builtin_va_end(ap)
+```
+
+`__builtin_va_list` and the `__builtin_va_*` operators are **language
+constructs the compiler recognises**, in the same category as `sizeof`,
+`__asm__` and `__attribute__`. They expand to nothing textual; the
+compiler handles them internally, and on i386 they generate direct stack
+arithmetic with no library call at all. Nothing from GCC's own
+`stdarg.h` was read or copied -- these four lines were written here from
+the documented interface.
+
+This is the standard way any codebase supplying its own headers under
+`-nostdinc` declares varargs, and it is what the permissively licensed
+BSDs do in the same file.
+
+For completeness on the licence question that does not arise here: GCC
+carries the GCC Runtime Library Exception specifically so that compiling
+with GCC imposes nothing on the output. That exception is about linking
+GCC's runtime, and these builtins link nothing.
+
+### The reference trees, and what each may be used for
+
+| tree | licence | use |
+|---|---|---|
+| MkLinux `osfmk/` | OSF, same as ours | **not** arm's length -- it is the same code; diffing establishes provenance |
+| MkLinux `mklinux/` | OSF | worked example against this exact kernel; read for design |
+| OSFMK 6.1 | OSF | ancestor; read to see what changed and why |
+| XNU / Darwin | APSL | **read only.** Incompatible. Consult for design, never copy |
+| GNU Mach | GPL | **read only.** Incompatible. Consult for design, never copy |
+| xMach | Mach 4 lineage | read only; and see the survey above -- its interfaces are the wrong ones |
+
+**Practice:** check a file's header before taking anything from it,
+record in the commit message when a reference tree was consulted, and
+when implementing something after reading a reference, write it from the
+interface documentation rather than with their source open.
+
+
 Compatible, and cleaner than UX.
 
 - **Core (UC Berkeley lineage):** 4-clause BSD text, but 4.4BSD-Lite

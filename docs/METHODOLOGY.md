@@ -338,6 +338,23 @@ worth doing properly rather than improvising.
    console device, which depends on device configuration, which is often
    exactly what you are debugging.
 
+**When code runs before the console exists**, do not try to print from
+it. Record what you need into a global variable and print that later,
+once output works:
+
+```c
+static int dbg_value; static char dbg_name[40];
+...
+dbg_value = whatever; strncpy(dbg_name, thing, 39);   /* early */
+...
+printf("dbg: %d <%s>\n", dbg_value, dbg_name);        /* after console init */
+```
+
+In this project a configuration function appeared never to run, because
+every `printf` in it went nowhere. It ran fine. Capturing its state into
+globals and reporting after the banner showed the real values in one
+boot and identified the fault immediately.
+
 **When output is unavailable**, the instruments from Chapter 1 substitute
 for it: an execution trace tells you where you got to, and attaching a
 debugger to the hung machine tells you what state you got there with.

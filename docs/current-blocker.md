@@ -180,6 +180,72 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
+# MILESTONE: the root filesystem mounts
+
+```
+panic: bad dir
+panic: first program (%s) exec failed: x%x %s
+panic: init died
+```
+
+`cannot mount root` is gone. LITES mounted the ext2 filesystem on
+`hd0c` and went looking for `/sbin/init`, which an empty filesystem does
+not have. **Roadmap step 3 is complete**, and the failures above are
+step 4.
+
+## The fix was a config line, not code
+
+LITES gets its root device as an **argument**, and that is the only way
+it gets one.
+
+`get_config_info()` has two paths:
+
+```c
+if (argc) { parse_arguments(argc, argv); return; }   /* path A */
+...
+parse_arguments(4, foo_argv);                        /* path C, uses argv_space */
+```
+
+A server here always has at least one argument -- its own name, because
+`bootstrap.conf` names it -- so `argc` is 1, **path A is always taken,
+and `argv_space` is dead code.** Then `parse_arguments` does:
+
+```c
+pname = argv[0]; argv++, argc--;    /* argc becomes 0 */
+if (argc == 0) return;              /* returns at once */
+```
+
+leaving `rootdev` at its uninitialised zero: `major 0 minor 0`, which is
+device `hd`, unit 0, partition `a`. LITES asks the kernel for `hd0a`,
+which does not exist on an unpartitioned disk, and the open fails with
+`D_NO_SUCH_DEVICE`.
+
+Naming the device in `bootstrap.conf` makes `argc` 2, so
+`parse_arguments` reaches the end and sets `rootdev`:
+
+```
+startup startup hd0c
+```
+
+Measured before and after:
+
+```
+DBG rootdev=0 reached=0 name=<>      gci argc=1 path=A
+DBG rootdev=2 reached=1 name=<hd0c>  gci argc=2 path=A
+```
+
+**The earlier `argv_space` patch changed nothing**, because that table
+is only read on a path that never executes. It is left in place as
+correct-but-unused, and the comment there now says so.
+
+### How this was found
+
+Printing from `get_config_info` produced nothing, because it runs before
+the console is up. Capturing the values into globals and printing them
+after the banner worked. That trick -- **record early state, report it
+once output exists** -- is worth remembering for anything that runs
+before a console.
+
 ## FIXED: LITES's varargs were pre-ANSI; every printf argument was garbage
 
 ```
