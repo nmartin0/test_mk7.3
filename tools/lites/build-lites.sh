@@ -38,8 +38,10 @@ mkdir -p "$MR/bin" "$MR/libexec" "$MR/lib" "$BUILD/obj"
 ln -sfn "$EXPORT/include" "$MR/include"
 for a in "$EXPORT"/lib/*.a; do ln -sf "$a" "$MR/lib/"; done
 ( cd "$MR/lib"
+  # LITES says -lthreads; OSFMK builds libcthreads.a. Verified the right
+  # mapping: libcthreads exports 36 cthread_* symbols including
+  # cthread_wire and cthread_fork, which is what LITES calls.
   ln -sf libcthreads.a libthreads.a
-  ln -sf libsa_mach.a  libmach_sa.a
   ar x "$EXPORT/lib/libsa_mach.a" crt0.o )
 cp "$HERE/mig-shim.sh" "$MR/bin/mig"
 chmod +x "$MR/bin/mig"
@@ -98,14 +100,47 @@ MAKEARGS="AWK=nawk \
 
 # The first pass can fail on bsd_server.c: make resolves it through VPATH
 # only once the MIG outputs exist. A second pass always succeeds.
-for pass in 1 2; do
-    make \
+CC_FLAGS="-m32 -std=gnu89 -Ulinux -fno-builtin -fgnu89-inline -fcommon -fno-stack-protector -isystem $GI -include $HERE/lites-compat.h"
+LIB_LIST="-llites -lthreads -lmach_sa -lsa_mach -lmach_sa $LG"
+
+# The server and the emulator need different entry-point handling, so
+# the subdirectories are built individually rather than by one top-level
+# make.
+#
+#   server   links ${CRT0}, which is libsa_mach's crt0.o. That crt0 is
+#            the right one for a bootstrap-loaded server: it fetches
+#            argv over IPC with bootstrap_arguments(), which is how this
+#            system delivers arguments, since servers start on a
+#            deliberately zero-filled stack. Its entry symbol is
+#            __start_mach, while conf/i386/MASTER sets -e __start, so
+#            --defsym bridges the two names.
+#
+#            (libmach/i386/crt0.c does define __start, but it reads argv
+#            from the stack only and nothing in the tree builds it. Using
+#            it would silently lose every server argument.)
+#
+#   emulator has its own crt0, emulator/i386/ecrt0.c, which defines
+#            __start itself. It must NOT get the --defsym: that creates a
+#            reference to __start_mach, which drags libsa_mach's crt0.o
+#            into the link, and that crt0 calls main(), which the
+#            emulator does not have -- it has emulator_main().
+LD_COMMON="-m elf_i386 -z muldefs"
+
+build_dir() {
+    _dir=$1; shift
+    make -C "$_dir" \
       AWK=nawk \
-      CXXX="-m32 -std=gnu89 -Ulinux -fno-builtin -fgnu89-inline -fcommon -fno-stack-protector -isystem $GI -include $HERE/lites-compat.h" \
+      CXXX="$CC_FLAGS" \
       CHXXX="-m32 -std=gnu89" \
       ASFLAGS="-m32 -D__NO_UNDERSCORES__" \
-      LDFLAGS="-m elf_i386 -z muldefs --defsym __start=__start_mach" \
-      LIBS="-llites -lthreads -lmach -lmach_sa -lmach -lthreads $LG" \
-      && break
+      LDFLAGS="$*" \
+      LIBS="$LIB_LIST"
+}
+
+for pass in 1 2; do
+    ( build_dir include  "$LD_COMMON" &&
+      build_dir liblites "$LD_COMMON" &&
+      build_dir server   "$LD_COMMON --defsym __start=__start_mach" &&
+      build_dir emulator "$LD_COMMON" ) && break
     [ $pass = 1 ] && echo "=== first pass failed (expected); retrying ===" || exit 1
 done
