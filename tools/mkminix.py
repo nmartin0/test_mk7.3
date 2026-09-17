@@ -26,8 +26,30 @@ MAGIC   = 0x137F        # 14-character names
 NAMELEN = 14
 DIRENT  = 2 + NAMELEN
 
-def build(path, files):
-    nzones  = 1440                       # 1.44MB floppy
+def build(path, files, size=None):
+    # Size the filesystem from the image file if one already exists, so
+    # that a 16 MB disk image gets a 16 MB filesystem rather than a
+    # 1.44 MB one written into the front of it.
+    #
+    # This matters on a real disk in a way it never did on a floppy. The
+    # hd driver takes its geometry from the drive's IDENTIFY response,
+    # so the kernel believes the disk is its full size; if the backing
+    # file is shorter, reads past its end fail, and the bootstrap task
+    # reports the file as unloadable with D_NO_SUCH_DEVICE (0x9c6).
+    # A 995 KB server tripped exactly this while a 211 KB one did not.
+    #
+    # minix v1 addresses zones with 16-bit numbers, so 65535 zones of
+    # 1 KB is the ceiling: about 64 MB.
+    if size is None:
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+    nzones = max(1440, size // BS)
+    if nzones > 65535:
+        nzones = 65535                   # 16-bit zone numbers
+    # Inodes scale with the volume, but this holds a handful of servers,
+    # so a small fixed count is ample and keeps the metadata cheap.
     ninodes = 480
     imap_blocks = (ninodes + 1 + 8191) // 8192
     zmap_blocks = (nzones  + 1 + 8191) // 8192

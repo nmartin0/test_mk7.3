@@ -180,7 +180,54 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## Root cause: LITES asks for hd0a, which does not exist
+## Booting the servers from IDE
+
+`tools/boot-ide.sh` boots `/mach_servers` from a minix volume on a third
+IDE disk instead of the floppy, which takes the cycle from about 500
+seconds to a few. The floppy read was I/O bound, so hardware
+acceleration never helped it.
+
+```
+hd0  ext2   LITES root
+hd1  raw    paging, given to default_pager as hd1c
+hd2  minix  /mach_servers, booted from
+```
+
+`-append "-r BOOTDEV=hd BOOTUNIT=2 BOOTPART=2 -o"`. `model_dep.c` joins
+`BOOTDEV` and `BOOTUNIT`, looks the name up, and adds `BOOTPART` to the
+unit; `dev_name_lookup` computes `unit * d_subdev + partition`, and
+`d_subdev` is 16 for `hd`, so this is minor 34 -- unit 2, partition `c`,
+the whole-disk fallback.
+
+The minix reader needed no change: every access in
+`file_systems/minixfs/minixfs.c` goes through
+`device_read(fp->f_dev.dev_port, ...)`, so it is device-agnostic.
+
+### Two problems this surfaced
+
+**Names longer than 14 bytes.** A minix v1 directory entry holds 14, and
+LITES's binary name is 43. The manual flow had always copied it to
+`/tmp/startup` first. `mkminix.py` now takes `path:name=args` and
+renames on the way in, which keeps the directory entry and the generated
+`bootstrap.conf` in step by construction.
+
+**The filesystem was always 1.44 MB.** `nzones` was hardcoded to 1440
+and `bytearray(nzones * BS)` replaced whatever the image had been, so a
+16 MB disk image came back out as a 1.44 MB file. On a floppy that was
+invisible. On a disk it is not: the `hd` driver takes its geometry from
+IDENTIFY, so the kernel believes the disk is its full size, and reads
+past the end of a shorter backing file fail. The bootstrap task reported
+
+```
+(bootstrap): unloadable file format (result = 0x9c6)
+```
+
+-- `D_NO_SUCH_DEVICE` again -- while loading the 995 KB server, having
+loaded the 211 KB pager without trouble. `mkminix.py` now sizes the
+filesystem from the image file, capped at 65535 zones since minix v1
+zone numbers are 16-bit.
+
+## Superseded: LITES asks for hd0a
 
 `kr = 0x9c6` is **2502 = `D_NO_SUCH_DEVICE`**. A hardware breakpoint on
 `device_open`, printing the name at each call, showed what LITES
