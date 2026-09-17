@@ -156,3 +156,10 @@ job control, inspecting binaries -- and, at length, the ways a pipeline
 can quietly answer a different question than the one you asked. Chapter
 7 catalogues the ones that produced wrong conclusions here; chapter 9 is
 twenty lines.
+
+## Where the project is going
+
+`ROADMAP.md` holds the shape: what is done, what is next, the
+correctness work that replaces workarounds with the right thing, and
+what each reference tree is for. `docs/current-blocker.md` holds the
+live detail.

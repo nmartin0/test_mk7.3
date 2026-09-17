@@ -59,16 +59,57 @@ for f in "$K" "$BOOTSTRAP" "$PAGER" "$LITES"; do
 	[ -r "$f" ] || { echo "missing: $f"; exit 1; }
 done
 
-# The server volume. 16 MB is ample for two servers and leaves room to
-# add more; mkminix.py sizes its structures from the image it is given.
+# Both filesystems are ext2 now, so find the tools once. They live in
+# /sbin on Debian, which is not on a normal user's PATH.
+if command -v mke2fs >/dev/null 2>&1; then MKE2FS=mke2fs
+elif [ -x /sbin/mke2fs ]; then MKE2FS=/sbin/mke2fs
+else echo "mke2fs not found; install e2fsprogs"; exit 1; fi
+
+if command -v debugfs >/dev/null 2>&1; then DEBUGFS=debugfs
+elif [ -x /sbin/debugfs ]; then DEBUGFS=/sbin/debugfs
+else echo "debugfs not found; install e2fsprogs"; exit 1; fi
+
+# The server volume, an ext2 filesystem.
+#
+# This was a minix volume built by tools/mkminix.py, for two reasons
+# that both turned out to be avoidable.
+#
+# The first was practical: mkfs.minix left Debian 13, and the kernel's
+# minix reader is particular about the magic number, so the image had to
+# be written by hand.
+#
+# The second is a licence problem. file_systems/minixfs contains three
+# GPL files -- minix_ffs_compat.c, minix_ffs_compat.h and minix_fs.h --
+# and minixfs/machdep.mk builds minix_ffs_compat.o into libsa_fs.a, so
+# the bootstrap task binary linked GPL code. file_systems/ext2fs is
+# entirely GPL-free.
+#
+# The i386 bootstrap task already builds all three readers and tries
+# them in order (file_systems/AT386/machdep.mk and fs_switch.c):
+#
+#	AT386_OFILES = ${UFS_OFILES} ${EXT2FS_OFILES} ${MINIXFS_OFILES}
+#	&ufs_ops, &ext2fs_ops, &minixfs_ops,
+#
+# so ext2 needs no kernel change at all. stock mke2fs and debugfs build
+# and populate it, the same tools the root filesystem already uses, and
+# all three disks are now one filesystem type.
+#
+# ^filetype and the rest: see the root filesystem below for why.
 echo "building $SERVERS"
 rm -f "$SERVERS"
 dd if=/dev/zero of="$SERVERS" bs=1M count=16 2>/dev/null
-# LITES's binary name is 43 bytes and a minix v1 directory entry holds
-# 14, so it goes in as "startup" -- the ":name" form renames it in the
-# image and in the generated bootstrap.conf together.
-# LITES is given its root device as an argument, and that is the only
-# way it gets one.
+"$MKE2FS" -q -F -b 1024 \
+	-O ^resize_inode,^dir_index,^ext_attr,^sparse_super,^filetype \
+	-I 128 "$SERVERS"
+
+"$DEBUGFS" -w -R "mkdir /mach_servers" "$SERVERS" >/dev/null 2>&1
+"$DEBUGFS" -w -R "write $PAGER /mach_servers/default_pager" \
+	"$SERVERS" >/dev/null 2>&1
+"$DEBUGFS" -w -R "write $LITES /mach_servers/startup" \
+	"$SERVERS" >/dev/null 2>&1
+
+# bootstrap.conf gives each server its arguments, and for LITES that is
+# the only way it gets a root device.
 #
 # get_config_info() has two paths. With argc == 0 it uses the
 # compiled-in argv_space table, whose third entry is the root device.
@@ -90,7 +131,16 @@ dd if=/dev/zero of="$SERVERS" bs=1M count=16 2>/dev/null
 # Naming the device here makes argc 2, so parse_arguments reaches the
 # end and sets rootdev from it. Editing argv_space has no effect,
 # because that path never runs.
-python3 "$HERE/mkminix.py" "$SERVERS" "$PAGER=hd1c" "$LITES:startup=hd0c"
+#
+# Full paths are used, as the recovered MkLinux bootstrap.conf does.
+BSCONF=$(mktemp)
+cat > "$BSCONF" <<EOT
+default_pager /mach_servers/default_pager hd1c
+startup /mach_servers/startup hd0c
+EOT
+"$DEBUGFS" -w -R "write $BSCONF /mach_servers/bootstrap.conf" \
+	"$SERVERS" >/dev/null 2>&1
+rm -f "$BSCONF"
 
 # The root and paging disks, if they are not already there. Neither is
 # recreated by default: the root disk in particular may have contents
@@ -98,9 +148,6 @@ python3 "$HERE/mkminix.py" "$SERVERS" "$PAGER=hd1c" "$LITES:startup=hd0c"
 [ -f "$ROOT" ] || {
 	echo "creating $ROOT (20 MB, ext2)"
 	dd if=/dev/zero of="$ROOT" bs=1M count=20 2>/dev/null
-	if command -v mke2fs >/dev/null 2>&1; then MKE2FS=mke2fs
-	elif [ -x /sbin/mke2fs ]; then MKE2FS=/sbin/mke2fs
-	else echo "mke2fs not found; install e2fsprogs"; exit 1; fi
 	# ^filetype is the one that matters, and it is not obvious.
 	#
 	# In ext2 revision 0 a directory entry's name_len is a 16-bit

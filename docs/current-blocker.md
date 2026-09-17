@@ -262,6 +262,134 @@ That is a different working style from the automated boots, so the
 sensible arrangement is to keep PRODUCTION for scripted runs and switch
 to DEBUG when a question needs poking at live kernel state.
 
+# Two improvements found by comparing against DR3
+
+Comparing our tree against the DR3 release subtree by subtree showed
+almost everything byte-identical -- `stand`, `xkern`, `usr`, `tgdb`,
+`osc`, `makedefs` and `default_pager` differ in **zero** files. Exactly
+two files differ, and both are informative.
+
+## 1. The bootstrap task can read ext2. mkminix.py may be unnecessary.
+
+`file_systems/AT386/machdep.mk`:
+
+```make
+AT386_OFILES = ${UFS_OFILES} ${EXT2FS_OFILES} ${MINIXFS_OFILES} fs_switch.o
+```
+
+and `AT386/fs_switch.c` registers all three, tried in order:
+
+```c
+&ufs_ops,
+&ext2fs_ops,
+&minixfs_ops,
+```
+
+So `/mach_servers` does **not** have to be a minix volume. The i386
+bootstrap task builds a UFS reader, an **ext2** reader and a minix
+reader, and tries each in turn.
+
+`tools/mkminix.py` exists because `mkfs.minix` was dropped from Debian
+13 and the kernel's minix reader is picky about the magic number. If the
+server volume were ext2 instead, it could be built with stock `mke2fs`
+and populated with `debugfs` -- the same tools already used for the root
+filesystem -- and all three disks would be one filesystem type.
+
+Worth trying. `mkminix.py` works and is not urgent to replace, but this
+removes a hand-written tool from the critical path and is one fewer
+thing to be wrong.
+
+## 2. Our kernel's ext2 reader handles `filetype`; LITES's does not
+
+The one differing file in `file_systems` is `ext2fs/ext2_fs.h`:
+
+```c
+/* DR3 */                          /* ours (MkLinux) */
+unsigned short name_len;           unsigned char  name_len;
+                                   unsigned char  file_type;
+```
+
+MkLinux updated the **kernel-side** reader for the `filetype` feature.
+**LITES's own reader was not updated** -- `server/ufs/ext2fs/ext2_fs.h`
+still declares `__u16 name_len`, which is precisely why the root
+filesystem has to be made with `-O ^filetype`.
+
+So the two ext2 readers in this system disagree about the on-disk
+format. The kernel's is modern; LITES's is not.
+
+That means `-O ^filetype` is a workaround for a fixable defect, and the
+fix is already written in our own tree: apply the same two-field split
+to LITES's `ext2_fs.h` and teach `ext2_lookup` and `ext2_readdir` to
+mask `name_len` to eight bits. Both readers are then consistent, and the
+root filesystem can be made with stock `mke2fs` defaults.
+
+Not urgent -- `^filetype` works -- but it is the correct fix rather than
+an avoidance, and the reference for it is in-tree and permissively
+licensed.
+
+# Step 4: what the first program actually is
+
+## The emulator works
+
+```
+emulator [1] emul_exec_open success: "/dev/boot_device/mach_servers/mach_init" p=803 fd=-1 BT=20
+emulator [1] emul_exec_start: starting at x80615b0 k=xbfffdff0
+```
+
+With `libmach_sa` built, the emulator links, loads and **starts** a
+program. The exec path works end to end. (The program here is
+`default_pager` standing in as a placeholder, so the warnings that
+follow are it making calls LITES does not expect -- not a fault.)
+
+## mach_init is just the personality's first user program
+
+MkLinux's `mach_init` binary is in the reference collection at
+`new_release_kernel/mach_servers/mach_init`. It is PA-RISC, so not
+directly usable, but it is **not stripped**, and its strings settle what
+the program is:
+
+```
+/etc/init  /bin/init  /sbin/init  /etc/rc  /bin/sh  -/bin/sh
+HOME=/     HOME=/usr/root
+/dev/tty1  /dev/ttyS0
+"Unable to open an initial console."
+"Fork failed in mach_init"
+```
+
+That is **Linux's init sequence**, verbatim: open a console, try
+`/etc/init`, `/bin/init`, `/sbin/init`, fall back to `/bin/sh`. Its
+symbol table is 219 entries of which only `main` is its own; everything
+else is statically linked glibc.
+
+So `mach_init` is not a Mach-specific bootstrap program. It is **the
+personality's first user program**, an ordinary statically linked C
+program run under the emulator. The name is historical.
+
+**This means we can write one.** It needs to be a static i386 binary
+that the emulator recognises and that makes the personality's system
+calls. LITES ships none -- its `bin/Makefile.in` has an empty `all:`
+target.
+
+## One thing to check first: binary type detection
+
+`BT=20` in the trace above is the binary type index into `ATSYS_NAMES`
+in `include/sys/exec_file.h`. Counting -- bad, lites x5, bnr, netbsd,
+freebsd, ux, script, isc4, linux x3, ultrix, riscos, hpbsd, hpux,
+hpkludge, hpelf, osf1 -- index 20 is **`hpelf`**, an HP-UX ELF binary.
+
+The emulator classified an i386 ELF executable as HP-UX. That may be
+harmless, or it may mean `guess_binary_type_from_header()` in
+`liblites/exec_file.c` does not recognise this ELF properly -- worth
+settling before building a first program that has to be classified
+correctly. Note that file also contains
+
+```c
+switch ((tmp >> 16) && 0x3ff) {     /* && where & was meant */
+```
+
+which the compiler warns about as a boolean condition and which is
+almost certainly a typo for `&`.
+
 # Step 4: the emulator is the missing piece
 
 ## Correction: ext2 lookup works

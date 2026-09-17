@@ -151,12 +151,635 @@ only the profiled, broken `libmach_sa_p`. This confirms that adding it
 was necessary rather than a local workaround, and that the gap is
 upstream.
 
+### Complete inventory of the reference collection
+
+Everything in `nmartin0/mach_stuff`, examined. Marked by what it is
+worth to this project.
+
+| item | what it is | worth |
+|---|---|---|
+| `DR3 (2)/` | full DR3 kernel tree, 28 MB | **behind our base** -- see below |
+| `DR3_aswell/` | DR3 mklinux personality + build README | build procedure only; **no licence grant** |
+| `DR3_powermac/` | prebuilt PowerPC export tree | wrong architecture; confirms no `libmach_sa` |
+| `DR3/` | PowerPC host tools (`mig`, `migcom`, `config`, `makeboot`) | wrong architecture |
+| `Change/DR3/` | 13 files, i386 | `elf.c`, `Buildconf` useful -- below |
+| `Change/mklinux-1.0b2/` | i386 bootloader sources | identical to ours but for the copyright header |
+| `fdsrc/` | MkLinux Project floppy driver, 2001, SWIM3 + Darwin IOKit | PowerMac hardware; not our 82077 |
+| `System.map*` (4) | PowerPC Linux kernel symbol maps | nothing |
+| `bootstrap.conf` | a real config with `-k -S` | **significant** -- see collocation below |
+| `DR2.1u6-*.patch` | MkLinux DR2.1 u5 to u6 | dates our tree at or past u6d |
+| `X11R6.3/`, `usr/`, `var/` | PA-RISC userland and X11 | nothing |
+
+### The canonical build order, confirmed
+
+`DR3 (2)/build_world` is the upstream build script, and our sequence
+matches it:
+
+```sh
+build MAKEFILE_PASS=FIRST
+build -here mach_services/lib/libcthreads
+build -here mach_services/lib/libsa_mach
+build -here mach_services/lib/libmach
+build -here mach_services/lib/libmach_maxonstack
+build -here file_systems          # for the bootstrap task
+build -here bootstrap
+build -here mach_kernel MACH_KERNEL_CONFIG=PRODUCTION
+makeboot
+#build -here default_pager        # commented out upstream
+```
+
+Two things worth noting. `file_systems` before `bootstrap` is required,
+which this project worked out the hard way from a `-lsa_fs` link
+failure. And **`default_pager` is commented out by default upstream**,
+which explains why it is less exercised than the rest -- consistent with
+its exported `default_pager_object.h` having been shipped without the
+`default_pager_types.h` include.
+
+`Change/DR3/osfmk/src/osc/Buildconf` carries i386-specific ODE settings,
+including
+
+```
+on i386 setenv CARGS -D__NO_UNDERSCORES__
+```
+
+confirming that `-D__NO_UNDERSCORES__` is the canonical i386 flag, which
+this project passes by hand in `ASFLAGS`.
+
+`MKLINUX_BUILD.README` confirms the personality is built against the
+microkernel's **export tree** of headers and libraries, distributed
+separately as `DR3.osfmk.export.tgz`. That is exactly the role
+`MACH_RELEASE_DIR` plays in `build-lites.sh`.
+
+### Third sweep: the DR3 trees
+
+The collection gained four DR3 trees (`DR3`, `DR3 (2)`, `DR3_aswell`,
+`DR3_powermac`), four `System.map` files and a second `bootstrap.conf`.
+DR3 is a later release than the DR2.1u6d our tree dates to, so the
+obvious question was whether to move to it.
+
+**The answer is no. Our MkLinux base is ahead of DR3 for this work.**
+Measured on the files this project has patched:
+
+| file | DR3 vs MkLinux |
+|---|---|
+| `kern/bootstrap.c` | MkLinux adds `multiboot.h`, `mb_info`, `boot_script.h` -- **the `-kernel` boot path we use**. DR3 has none of it |
+| `intel/pmap.c` | MkLinux adds `INTEL_PTE_GLOBAL`. DR3 lacks it |
+| `i386/AT386/hd.c` | MkLinux carries `/* XXX This hangs with qemu, disable it for now */`. DR3 is the unmodified original that hangs |
+| `fd.c`, `ipc_kobject.c`, `bootstrap/elf.c` | identical |
+
+So DR3 is the earlier state and MkLinux is a QEMU- and multiboot-aware
+descendant of it. Moving to DR3 would lose the boot path.
+
+**DR3 still has every bug we fixed.** Its `getvtoc` sizes the whole-disk
+partition from `cmos_parm`, and its geometry selection is the same
+two-arm form with no non-zero check. So those fixes are genuine
+improvements over the final release, not local workarounds.
+
+**DR3 still has no `libmach_sa`** -- only `libmach_sa_p`. That gap now
+holds across `osfmk`, `pmk1.1`, `osfmk_2` and all four DR3 trees.
+
+### A richer bootstrap.conf, and a mode we have not considered
+
+The new top-level `bootstrap.conf` is more informative than the first:
+
+```
+-w default_pager /dev/boot_device/mach_servers/default_pager
+-k -S 524288000 startup /dev/boot_device/mach_servers/vmlinux
+```
+
+Two things are new. Servers are named by **full path** rather than bare
+name. And `-S 524288000` is a flag taking a numeric argument, which
+`bootstrap.c:784` documents:
+
+```c
+case 'S':
+    /* collocated server mapsize - implies -k */
+```
+
+`-k` sets `SERVER_IN_KERNEL_F`. So MkLinux ran its Linux personality
+**collocated in the kernel's address space**, with a 500 MB map, rather
+than as a separate task. That is a mode this project has not
+considered for LITES. Not something to act on now, but worth knowing it
+exists and is configured entirely from `bootstrap.conf`.
+
+The four `System.map` files are PowerPC Linux kernel symbol maps
+(`_stext` at `0x10000000`); not useful here.
+
+### Second sweep: the most valuable items
+
+**`linux/osfmach3/mach_init.c`** -- the source of the program LITES
+wants, 91 lines. **Read only. It is not licensed for use here.** See
+the licence note below before going near it.
+
+It matches the strings in the PA-RISC binary exactly, and it is an
+ordinary POSIX program: `open`, `dup`, `execve`, `fork`, `wait`,
+`printf`, `_exit`. Nothing Mach-specific in it at all.
+
+```c
+if ((open("/dev/tty1", O_RDWR, 0) < 0) &&
+    (open("/dev/ttyS0", O_RDWR, 0) < 0))
+        printf("Unable to open an initial console.\n");
+(void) dup(0); (void) dup(0);
+execve("/etc/init", argv_init, envp_init);
+execve("/bin/init", argv_init, envp_init);
+execve("/sbin/init", argv_init, envp_init);
+if (!(pid = fork())) do_rc("/etc/rc");
+...
+while (1) { if (!(pid = fork())) do_shell("/bin/sh"); ... }
+```
+
+So the first program is: open a console, try each init path, then spawn
+`/bin/sh` in a loop.
+
+### Licence: the personality tree carries no grant
+
+This was got wrong once and is corrected here. `mach_init.c` was
+described as "OSF code on the same terms as the rest of our tree, so we
+can use it". **That is false.** Its entire notice is:
+
+```c
+/*
+ * Copyright (c) Open Software Foundation, Inc.
+ *
+ */
+```
+
+A bare copyright notice with **no permission grant at all**. Compare a
+file from our own kernel:
+
+```c
+/*
+ * Copyright 1991-1998 by Open Software Foundation, Inc.
+ *              All Rights Reserved
+ *
+ * Permission to use, copy, modify, and distribute this software and
+ * its documentation for any purpose and without fee is hereby granted,
+ * ...
+ */
+```
+
+Under default copyright, no grant means all rights reserved. Seeing
+"Open Software Foundation" and "pmk1.1" and assuming the familiar
+permissive terms is the same failure as assuming two libraries are the
+same because their names look alike.
+
+**The split is systematic, and measured:**
+
+| tree | files carrying the grant |
+|---|---|
+| `linux/osfmach3` | **0 of 20** |
+| `linux/arch/osfmach3_i386` | **0 of 16** |
+| `osfmk/src/mach_kernel/kern` | 20 of 20 |
+| `pmk1.1/src/mach_services/lib/libmach` | 20 of 20 |
+
+The **kernel** trees are permissively licensed. The **personality**
+trees are not. Treat everything under `linux/osfmach3` and
+`linux/arch/osfmach3_i386` as read-only reference, in the same category
+as XNU and GNU Mach.
+
+### What may still be taken from it
+
+Under the rule in the Licensing section: facts and design, never
+expression.
+
+- That LITES execs its first program at `/mach_servers/mach_init` and
+  that it must be static. Both are facts about **our** system, already
+  established from `server_init.c` and `s_execve`.
+- That such a program is built with `gcc -static`. A fact about
+  compilation.
+- That a Unix first program opens a console, execs an init, and spawns
+  a shell. This is the design of Version 7 UNIX `init` and is in every
+  operating systems textbook; it predates this file by twenty years.
+
+What must **not** happen: writing ours with that file open, or
+reproducing its `execve` sequence, its argv and envp tables, or its
+message strings.
+
+**`Change/DR3/`** -- thirteen files from a release *later* than the
+DR2.1 our tree dates to, and they are precisely the ones this project
+has been working in, including `osfmk/src/bootstrap/elf.c`.
+
+That file confirms the read-only `PT_LOAD` segment is a known upstream
+problem, and shows upstream never solved it:
+
+```c
+} else {
+#ifndef ppc
+	    /* mklinux/ppc has a read-only section which is ignored */
+	BOOTSTRAP_IO_LOCK();
+	printf("ELF: Unknown program header flags 0x%x\n", ...
+#endif /* ppc */
+}
+```
+
+DR3 only suppresses the **warning** on ppc; the segment is still never
+mapped. Our fix, extending `text_size` to cover it, is a genuine
+improvement over upstream rather than a local workaround.
+
+DR3's `elf.c` also carries an alternative implementation behind
+`#ifndef ykpark`, which uses `trunc_page()` on both vaddr and offset --
+worth knowing if segment alignment ever becomes a problem.
+
+Its `conf/AT386/files` and `config.devices` differ from ours by enabling
+PCI and NCR SCSI drivers, which is not our path today but is where to
+look if more devices are ever wanted.
+
+**`osfmk_2/export/powermac/include/mach/default_pager_object.h`**
+contains the `#include <mach/default_pager_types.h>` that our exported
+copy lacked, independently confirming that the missing include -- which
+broke the `default_pager` build until the generated header was copied
+over it -- was a real defect and not a local build accident.
+
 ### Also present, not yet examined
 
 `ode/` (the build system), `X11R6.3`, `fdsrc`, `osfmk_2` (exports only),
 `Change/` (which contains a DR3 tree).
 
-## Surveyed and rejected: xMach's LITES
+## macMach5-92src: mixed licence, one useful piece
+
+Its README: "The MacMach system started as the Berkeley **Tahoe**
+release... converting all of the sources to compile with the GNU C
+compiler".
+
+**That matters for licensing.** 4.3BSD-Tahoe (1988) predates Net/2 and
+4.4BSD-Lite, so it still carries AT&T-derived code -- the subject of the
+USL litigation. LITES is 4.4BSD-Lite based and clean; Tahoe is not.
+
+Checked rather than assumed, and the split is sharp:
+
+| subtree | licence |
+|---|---|
+| `src/mach_kernel` | **20 of 20 sampled carry the CMU grant** -- permissive |
+| `src/mach_servers` | mixed: 4 CMU, 13 Berkeley-agreement |
+| `src/bin`, `src/etc` | Berkeley agreement -- **not usable** |
+
+The userland notices read:
+
+```
+ * Copyright (c) 1980,1986 Regents of the University of California.
+ * All rights reserved.  The Berkeley software License Agreement
+ * specifies the terms and conditions for redistribution.
+ * @(#)init.c 5.10 (Berkeley) 1/10/88
+```
+
+That is the **pre-Net/2** form, referring to an agreement that
+historically required an AT&T source licence, and the agreement is not
+in the tree. It is not the modern BSD licence text. So `src/bin`,
+`src/etc` -- including its `init` and shell -- are out, for the same
+reason `OSF1-SRC-V2.0` is.
+
+### The useful piece: a second mach_init
+
+`src/mach_servers/mach_init/` is **CMU-granted** in all four files
+(`main.c`, `service.c`, `test_service.c`, `waitfor.c`).
+
+Comparing it with `user-mach4`'s:
+
+| file | macMach (1992) | user-mach4 |
+|---|---|---|
+| `main.c` | 294 lines | 332 |
+| `service.c` | 568 lines | 575 |
+
+Same lineage, 46 differing lines in `main.c`. **user-mach4's is the
+later revision** -- consistent with Helander's 1994 changes on top of
+this CMU base -- and both implement `service_waitfor`.
+
+So user-mach4's remains the one to port, and macMach's is a useful
+second copy for cross-checking a question about the original.
+
+`src/mach_servers` also holds `ux.28`, the UX BSD single-server, but its
+licensing is in the mixed group and it is superseded by LITES anyway.
+
+## OSF1-SRC-V2.0: proprietary. Do not use.
+
+**This tree is Digital Equipment Corporation proprietary source and must
+not be used, copied, or read for design.** Every file checked in
+`sbin/init` carries:
+
+```
+ * Copyright (c) Digital Equipment Corporation, 1991, 1994
+ * All Rights Reserved.  Unpublished rights reserved under the
+ * copyright laws of the United States.
+ * The software contained on this media is proprietary to and embodies
+ * the confidential technology of Digital Equipment Corporation.
+ * Possession, use, duplication or dissemination of the software and
+ * media is authorized only pursuant to a valid written license from
+ * Digital Equipment Corporation.
+```
+
+That is not a licence with restrictions; it asserts that **possession
+itself** requires a written licence. It is categorically different from
+the CMU, OSF and GPL notices elsewhere in the collection, all of which
+grant something.
+
+### What it contains, recorded only so nobody looks again
+
+OSF/1 V2.0 **source**, in OSF subset format (`tar Zxf` each `OSCB*`
+file). `OSCBSBIN200` alone holds source for a full base userland --
+including `init` (with `init.c`, `getcmd.c`, `signals.c`, `output.c`,
+`init_sec.c`), `sh`, another `mach_init`, and `mount`, `ls`, `cat`,
+`cp`, `ps`, `fsck`, `newfs`, `disklabel` and around seventy more.
+
+It is exactly what step 4 needs, and **we cannot use any of it.**
+
+The permissively licensed alternatives already identified stand:
+`user-mach4/etc/mach_init` under the CMU grant for the first program,
+and for `/sbin/init` and a shell, a BSD-licensed userland obtained
+elsewhere.
+
+**If this tree is kept in the collection, it should be clearly marked.**
+Its presence next to permissively licensed material is a hazard,
+because the subset filenames give no hint of what is inside them.
+
+## Provenance clarified: our base is not plain MkLinux
+
+The collection holds `osfmk/` and `osfmk_random/`, which are **identical
+to each other** (zero files differ) and are the **original MkLinux
+OSFMK release**. Comparing them against the tree this project is built
+on settles the lineage:
+
+| tree | QEMU floppy fix | multiboot support |
+|---|---|---|
+| collection's `osfmk` / `osfmk_random` | **absent** | **absent** |
+| `slp/osfmk-mklinux` (our base) | present | present |
+
+So the chain is **OSF -> MkLinux -> slp's QEMU-adapted fork -> us**.
+Earlier notes here called our base "MkLinux", which is imprecise: it is
+a modernised fork of MkLinux, and the QEMU and multiboot work that makes
+`-kernel` booting possible was added there, not by OSF or MkLinux.
+
+That also explains why DR3 lacked multiboot despite being a later
+official release: the multiboot work never went upstream.
+
+**Measuring differences in these trees needs care.** Comparing the
+collection's `osfmk` with ours shows 280 differing files, but a majority
+differ **only in RCS keyword expansion** -- `$Header: /MkLinux/osfmk/...`
+against `$Header: /u1/osc/rcs/...` -- because they are different
+checkouts of the same code. Filter `Header:`, `Revision:` and `Log:`
+lines before counting, or the noise swamps the signal.
+
+`osfmk_anotherrandom/` is a PowerPC export tree, the same shape as
+`osfmk_2/` and `DR3_powermac/`.
+
+## mach4-UK22, the MIG implementations, and ode
+
+### mach4-UK22 (Utah Mach 4, Bryan Ford)
+
+Its README describes an i386 release "based on Remy Card's version of
+CMU's MK83, with **modifications to the server bootstrap code to load
+servers from a Linux ext2fs**", booting "directly from LILO as a
+Linux-like boot image". Both are things this project has independently
+arrived at.
+
+**Licensing is mixed and was mapped file by file:**
+
+| subtree | licence |
+|---|---|
+| `kernel`, `libmach`, `libthreads`, `mig` | CMU grant -- permissive |
+| `bootstrap` | mostly CMU, but **six GPL files**: `ffs_compat.c/.h`, `minix_ffs_compat.c/.h`, `minix_fs.h`, `minix_super.h` |
+| `bootstrap/ext2_file_io.c` | CMU grant -- permissive |
+
+A `COPYING` with GPL v2 sits in `bootstrap/`. **This check is what led to
+finding the same GPL files built into our own tree** -- see ROADMAP.
+
+**A different pager design.** `bootstrap/def_pager_setup.c` gives the
+default pager a **paging file** at `<server_dir>/paging_file` via
+`add_paging_file(master_device_port, file_name)`, rather than a raw
+device. Ours uses a raw disk named in `bootstrap.conf`. Worth knowing
+both routes exist.
+
+### MIG: we have our own source and do not need theirs
+
+**`gnu-osfmig` and `osfmig-0.90` are both GPL**, so neither is usable.
+`osfmig-0.90` describes itself as a distribution of "the OSF Mach 3.0
+interface generator MiG", the same lineage as ours.
+
+We do not need them. **OSFMK ships MIG in source** at
+`mach_services/lib/migcom/` -- 10,688 lines with `lexxer.l` and
+`parser.y` -- and `mach_services/lib/Makefile` already lists it as
+`SETUP_SUBDIRS = migcom`.
+
+Today `build-lites.sh` uses the **prebuilt `migcom` binary** from
+`tools/i386/i386_linux/hostbin/` (321 KB), which cannot be inspected or
+rebuilt. Building it from the tree's own source would remove a binary
+blob from the build. A first attempt failed on an ODE sandbox path
+rather than on the code, so this is open rather than ruled out.
+
+### ode
+
+`ode/bin` holds the ODE tools as **PA-RISC binaries** -- not usable
+here; we use a Linux port. The inventory is still useful as a record of
+what the environment provides: `build`, `make`, `md`, `mksb`, `workon`,
+`mklinks` (shadow source trees), `genpath`, `makepath`, `release`,
+`resb`, `sbinfo`, and the `bci`/`bco`/`bcs` source-control commands.
+
+## user-mach4: the LITES userland
+
+`user-mach4/` is the single most valuable thing in the collection. Its
+README states what it is:
+
+> The user collection is a group of programs and libraries that work
+> with Mach and **Lites**... taken from the USER collection, release 22
+> (USER22) distributed by CMU and put into a "mach4" style configure
+> framework and **some of them were modified to work with Lites** (most
+> notably ps, top and w)... they include **mach_init, which is required
+> to boot**.
+
+University of Utah, April 1996, Stephen Clawson. This is the userland
+that goes with the personality we are booting.
+
+### BSD licence forms, and which apply here
+
+Three different notices appear in BSD-derived code in and around this
+project. They are not interchangeable, and the difference decides
+whether something is usable.
+
+### 1. The 4-clause BSD licence -- what LITES carries
+
+**536 files in our LITES tree** carry the advertising clause:
+
+```
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgement:
+ *	This product includes software developed by the University of
+ *	California, Berkeley and its contributors.
+```
+
+**UC Berkeley retired that clause on 22 July 1999**, retroactively, for
+code copyrighted by the Regents. So this is effectively **3-clause BSD**
+and every "4-clause" reference to LITES in these notes should be read
+that way. It is fully compatible with this project.
+
+### 2. The post-settlement USL notice -- also clean
+
+**66 LITES files** additionally carry:
+
+```
+ *	The Regents of the University of California.  All rights reserved.
+ * (c) UNIX System Laboratories, Inc.
+ * All or some portions of this file are derived from material licensed
+ * to the University of California by American Telephone and Telegraph
+ * Co. or Unix System Laboratories, Inc. and are reproduced herein with
+ * the permission of UNIX System Laboratories, Inc.
+```
+
+"**reproduced herein with the permission of**" is the 4.4BSD-Lite,
+post-USL-settlement form. This is the settled, clean lineage, which is
+why LITES is a sound base and Tahoe-derived code is a different
+question.
+
+### 3. The pre-Net/2 pointer -- unclear, and treated as unusable
+
+`macMach5-92src`'s userland, and two files in `user-mach4`, carry:
+
+```
+ * All rights reserved.  The Berkeley software License Agreement
+ * specifies the terms and conditions for redistribution.
+```
+
+This is **not licence text with an advertising clause**; it is a pointer
+to a separate agreement, and that agreement is not in the collection.
+The 1999 retirement amends clause 3 of the licence text -- whether it
+reaches a file that only references an unincluded agreement is a
+question this project is not equipped to answer.
+
+**So these are treated as unusable on grounds of "form unclear and the
+referenced agreement absent", not "definitely encumbered".** If the
+agreement is located and turns out to be permissive, that judgement can
+be revisited. In the meantime the affected material -- MacMach's `init`
+and shell, `user-mach4`'s `w` and `hostinfo` -- is not needed, because
+permissive alternatives exist.
+
+### Summary
+
+| notice | status |
+|---|---|
+| 4-clause BSD | **usable** -- 3-clause since 1999 |
+| 4.4BSD-Lite USL permission notice | **usable** -- post-settlement |
+| CMU Mach grant | **usable** |
+| OSF grant | **usable** |
+| "Berkeley software License Agreement specifies..." | **not used** -- form unclear, agreement absent |
+| GPL (GNU Mach, `minixfs`, mach4 `bootstrap`) | incompatible -- design only |
+| DEC proprietary (`OSF1-SRC-V2.0`) | **do not read** |
+
+## Licensing## Licensing: permissive, with two exceptions
+
+**84 of 86 C files carry an explicit CMU grant** -- "Permission to use,
+copy, modify and distribute this software and its documentation is
+hereby granted". That is compatible with this tree.
+
+The two exceptions are `bin/w/w.c` and `bin/hostinfo/hostinfo.c`, which
+say only that "The CMU software License Agreement specifies the terms
+and conditions", referring to a document **not present in the
+collection**. Treat those two as unlicensed. Neither is needed to boot.
+
+**`etc/mach_init/main.c` and `service.c` both carry the explicit
+grant.**
+
+### What is in it
+
+Thirty-two programs, of which these matter to us:
+
+| program | why |
+|---|---|
+| `mach_init` | **required to boot** -- `main.c` 332 lines, `service.c` 575 |
+| `machid`, `snames` | required for gdb support under LITES |
+| `ps`, `top`, `w` | modified specifically for LITES |
+| `vminfo`, `vmstat`, `zprint`, `hostinfo`, `pinfo`, `stacks`, `thstate` | kernel inspection from userland |
+| `swapon` | **does not work** -- the README says so plainly, for mach3 or mach4. Our `bootstrap.conf` route to giving the pager a device was the right one |
+
+Seven libraries: `libcmucs` (6 C files plus per-architecture
+directories **including i386**), `libxmm` (26 C files), `libmachid`,
+and four that are MIG interface definitions only -- `libservice`,
+`libnetname`, `libnetmemory`, `libenv`.
+
+### Building it
+
+```sh
+../user/configure --prefix=/usr/mach4
+gmake
+```
+
+`mach_init` itself needs `-lservice -lthreads -lmach -lcmucs` and
+`-static`.
+
+### Settled: which `service.defs` is authoritative
+
+OSFMK's `libservice/Makefile` takes its definitions by VPATH from
+`mach_services/include/servers/service.defs`. The two differ, and not
+only in the copyright header:
+
+| tree | routines |
+|---|---|
+| OSFMK | `service_checkin` |
+| user-mach4 | `service_checkin`, **`service_waitfor`** |
+
+**user-mach4's is authoritative for `mach_init`.** Three pieces of
+evidence:
+
+- `etc/mach_init/service.c` **implements** `do_service_waitfor` -- it is
+  the service *server*, so it needs server stubs for both routines
+- `bin/waitfor/waitfor.c` **calls** `service_waitfor` -- the client side
+- `service.c`'s own history says "Added service_waitfor", so
+  user-mach4's interface is the later one
+
+OSFMK's copy is the earlier, reduced interface. Building `mach_init`
+against it would generate a dispatch table without `service_waitfor`,
+and the `waitfor` client would not work, though `mach_init` itself would
+still run.
+
+Licensing is fine either way: OSFMK's carries the OSF grant and
+user-mach4's carries the CMU grant, both explicit.
+
+## Re-surveyed: xMach's LITES does carry post-u3 fixes
+
+An earlier note dismissed xMach wholesale because it targets Mach 4 and
+its pager uses `memory_object_establish`. That was right about the pager
+and **wrong as a reason to stop looking**. A diff against a pristine
+1.1.u3 clone shows real post-u3 work, some directly relevant.
+
+Of the first 120 differing files, **58 differ only in CVS log headers**
+added in 2000 and **62 carry real changes**. The `ChangeLog` there is
+the u3 release's own, dated March 1996, so it describes changes already
+in our base; the post-u3 work is undocumented and must be found by
+diffing.
+
+Excluding architectures we do not build, the substantive changes are in
+the emulator (`e_linux.c`, `e_linux_trampoline.c`, `e_linux_sysent.c`,
+`emul_exec.c` -- mostly Linux binary support) and in four files this
+project has been debugging directly: `liblites/exec_file.c`,
+`server/kern/init_main.c`, `server/serv/device_misc.c` and
+`server/kern/vfs_conf.c`.
+
+### The finding that matters: ELF binary classification
+
+Our boot log shows the emulator classifying our i386 ELF server as
+`BT=20`, which `ATSYS_NAMES` spells `hpelf` -- an HP-UX ELF binary. The
+cause is in pristine `liblites/exec_file.c`:
+
+```c
+if ((hdr->magic == 0x464c457f)                        /* ELF */
+    && (unsigned) hdr->elf.ehdr.e_entry > 0x10000000) {
+        return;
+}
+```
+
+LITES classifies an ELF as its own **only if the entry is above
+`0x10000000`**. Our server's entry is `0x8049320`, so the test fails and
+classification falls through.
+
+xMach adds the `else` branch, reading program headers for ELF binaries
+below that threshold. That is the shape of the fix needed once a first
+program is built as an i386 ELF, since it will be misclassified the
+same way.
+
+**Not fixed in xMach:** `exec_file.c:273` still reads
+`switch ((tmp >> 16) && 0x3ff)`, `&&` where `&` was meant. Ours to fix.
+
+**Licensing:** the xMach modifications are by other hands with their own
+headers -- reference only: read the design, write our own.
+
+## Superseded: surveyed and rejected
 
 `github.com/neozeed/xMach` mirrors the SourceForge xMach project and
 carries a LITES tree with changes dated around 2000. It was checked in
@@ -1130,52 +1753,4 @@ Both are ours, so nothing in LITES or OSFMK is modified:
 
 | file | purpose |
 |---|---|
-| `tools/lites/mig-shim.sh` | LITES invokes `mig -cc <cmd>`; OSF's `mig` spells it `-cpp`, and silently treats `-cc` as a cpp flag so the command name becomes a filename. The shim translates and passes everything else through. |
-| `tools/lites/gensym-newline.patch` | a one-line change to LITES's `conf/gensym.awk`, carried as a patch rather than a fork |
-| `tools/lites/lites-compat.h` | injected with `-include`; typedefs `mig_reply_header_t` to `mig_reply_error_t` for untyped IPC |
-| `tools/lites/radix-bsd-malloc.patch` | routes `net/radix.h` through LITES's own `bsd_malloc` wrapper |
-
-## Build issues found so far
-
-All are 1990s-toolchain modernisation, none are interface problems:
-
-| issue | status |
-|---|---|
-| `conf/files:347` `# Linux file systems` rejected as an invalid cpp directive | open; BSD `config(8)` files use `#` comments but run through cpp |
-| `-nostdinc` without GCC's own include path, so `stdarg.h` is missing | solved with `-isystem $(gcc -m32 -print-file-name=include)` |
-| builds 64-bit by default, so `movl %%esp, %0` fails to assemble | solved with `-m32` via `CXXX`/`CHXXX` |
-| device call arity | solved by `--with-config=...+osfmach3` |
-| `gensym.awk` output rejected by modern cpp | solved by `tools/lites/gensym-newline.patch` |
-| `mig -cc` vs OSF's `-cpp` | solved by `tools/lites/mig-shim.sh` |
-| `conf/files` names `bsd_server.c` vs MIG's `bsd_1_server.c` | transient; VPATH resolves it once the MIG outputs exist |
-| `mig_reply_header_t` absent under untyped IPC | solved by `tools/lites/lites-compat.h` |
-| `net/radix.h` calls `malloc` with BSD arity | superseded by the variadic macros below |
-| 53 raw BSD-arity `malloc`/`free` calls in 46 files | solved by variadic macros in `tools/lites/lites-compat.h` |
-| BSD kernel `log()` vs GCC's builtin | solved by `-fno-builtin` |
-| `case SIG_DFL:` -- pointer constant as a case label | solved by casting the labels |
-| library names and `extern __inline__` duplicate symbols | **open**; two link errors, see above |
-| `-I-` deprecated, `#endif KERNEL` extra tokens | warnings only |
-
-## Known work before it can be tried
-
-- **autoconf 2.3** (1994). Will need the same treatment ODE did: modern
-  `gcc` rejecting K&R constructs, `install` detection, a `config.guess`
-  predating x86-64. `conf/config.guess` already emits
-  `i386-unknown-mach3`, so the target triple exists.
-- **`osfmach3.h` does not ship** -- it is generated by BSD `config(8)`
-  from the `options` line in `conf/MASTER`. Not a problem, just not
-  obvious.
-- **`MACH_RELEASE_DIR` layout.** LITES expects an installed Mach release
-  tree with `bin/mig`, headers and libs. Ours is an ODE export tree with
-  a different shape. Plumbing, not a blocker.
-- **Semantics, not interfaces.** LITES may call RPCs this kernel
-  implements as stubs. The 88 `#if OSFMACH3` sites show it ran on *an*
-  OSF Mach, not necessarily 7.3.
-
-## Dependency
-
-LITES uses Mach device RPCs in `server/serv/cons.c`, `tty_io.c` and
-`tape_io.c`, so it needs the same device path the bootstrap task uses.
-That path now works -- the bootstrap task opens `console` and prints
-successfully -- but there is still no readable block device. See
-`docs/current-blocker.md`.
+| `tools/lites/mig-shim.sh` | LITES invokes `mig -cc <cmd>`; OSF's `mig` spells it `-cpp`, and silently treats `-cc` as a cpp flag so the command nam
