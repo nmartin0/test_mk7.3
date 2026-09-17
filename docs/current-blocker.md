@@ -180,7 +180,52 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-# MILESTONE: the root filesystem mounts
+# MILESTONE: the root filesystem mounts AND reads
+
+```
+(lites): server_dir(/dev/boot_device/mach_servers) on root.
+(lites): init_program(/dev/boot_device/mach_servers/mach_init)
+panic: first program (%s) exec failed: x%x %s
+panic: init died
+```
+
+**Roadmap step 3 is complete.** The ext2 filesystem mounts, the root
+directory is read successfully, and LITES fails only because there is no
+init program on it to exec. That is step 4.
+
+## The last piece: mke2fs's filetype feature
+
+```
+bad directory entry: reclen is too small for name_len
+offset=0, inode=2, rec_len=12, name_len=513
+/: bad dir ino 2 at offset 0: mangled entry
+```
+
+`513` is `0x0201`. In ext2 revision 0 a directory entry's `name_len` is
+a 16-bit field; the **filetype** feature splits it into an 8-bit
+`name_len` and an 8-bit `file_type`, and `mke2fs` enables it by default.
+So the `"."` entry -- `name_len` 1, `file_type` 2 for a directory --
+reads as `name_len` 0x0201 to a 1995 reader, and the directory is
+rejected.
+
+`-O ^filetype` fixes it. The full set now used:
+
+```sh
+mke2fs -q -F -b 1024 \
+    -O ^resize_inode,^dir_index,^ext_attr,^sparse_super,^filetype \
+    -I 128 root.img
+```
+
+**Do not also pass `-r 0`.** Forcing revision 0 changes inode-size
+handling and the mount then fails with EINVAL (`0xc016`). Tested both
+ways.
+
+This is the third instance of the same shape in this project, after the
+minix magic number and the CHS geometry: a 1995 reader meeting a modern
+formatter's defaults. The lesson each time is to turn the modern
+features off rather than to teach the old reader about them.
+
+## Superseded: the root filesystem mounts
 
 ```
 panic: bad dir

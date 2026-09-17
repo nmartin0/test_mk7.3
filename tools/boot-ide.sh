@@ -101,8 +101,25 @@ python3 "$HERE/mkminix.py" "$SERVERS" "$PAGER=hd1c" "$LITES:startup=hd0c"
 	if command -v mke2fs >/dev/null 2>&1; then MKE2FS=mke2fs
 	elif [ -x /sbin/mke2fs ]; then MKE2FS=/sbin/mke2fs
 	else echo "mke2fs not found; install e2fsprogs"; exit 1; fi
+	# ^filetype is the one that matters, and it is not obvious.
+	#
+	# In ext2 revision 0 a directory entry's name_len is a 16-bit
+	# field. The filetype feature splits it into an 8-bit name_len
+	# and an 8-bit file_type, and mke2fs enables it by default.
+	# LITES's reader is from 1995 and expects the 16-bit form, so it
+	# reads the "." entry -- name_len 1, file_type 2 for a directory
+	# -- as name_len 0x0201, which is 513, and rejects the directory:
+	#
+	#   bad directory entry: reclen is too small for name_len
+	#   offset=0, inode=2, rec_len=12, name_len=513
+	#   /: bad dir ino 2 at offset 0: mangled entry
+	#
+	# The others are turned off for the same reason, being later
+	# additions the reader does not know. Do NOT also pass -r 0: that
+	# forces revision 0 and changes inode-size handling, after which
+	# the mount fails with EINVAL.
 	"$MKE2FS" -q -F -b 1024 \
-		-O ^resize_inode,^dir_index,^ext_attr,^sparse_super \
+		-O ^resize_inode,^dir_index,^ext_attr,^sparse_super,^filetype \
 		-I 128 "$ROOT"
 }
 [ -f "$SWAP" ] || {
