@@ -180,7 +180,117 @@ wrong direction for a round; the line ordering said otherwise.
 `-m 256` changes nothing -- same panic, same position -- which correctly
 rules out memory pressure.
 
-## The pager has a backing store; the panic is unchanged
+## Root cause: LITES asks for hd0a, which does not exist
+
+`kr = 0x9c6` is **2502 = `D_NO_SUCH_DEVICE`**. A hardware breakpoint on
+`device_open`, printing the name at each call, showed what LITES
+actually asks the kernel for:
+
+```
+"console"  "time"  "console0"  "hd0a"
+```
+
+**`hd0a`, not `hd0c`.** Partition `a` does not exist on an unpartitioned
+disk -- `getvtoc` falls back to making partition `c` the whole disk --
+so `hdopen` refuses and the root mount fails.
+
+The `default_root[] = "hd0c"` patch was real but irrelevant on this
+path. `server_init.c:711` holds a **second** compiled-in configuration:
+
+```c
+char argv_space[10][40] = {"/dev/hd0f/mach_servers/startup",
+                           "-s",
+                           "hd0a",                      /* the root device */
+                           "/dev/hd0a/mach_servers",
+                           (char *)0,};
+...
+parse_arguments(4, foo_argv);   /* XXX */
+```
+
+`get_config_info()` hands these to `parse_arguments` as **argc 4**, so
+these four strings are the configuration and `default_root` is never
+consulted. That also explains two older puzzles: `parse_arguments`'
+`if (argc == 0) return` guard never fires, and `-s` is already applied
+from `argv_space[1]` rather than from the `bootstrap.conf` attempt.
+
+The patch series now sets `hd0c` in both entries. `hd0f` in entry 0 is
+left alone: it only derives a path when none is given, and entry 3
+supplies one.
+
+### How this was found, and why it is worth noting
+
+Four steps, each a measurement rather than a hypothesis:
+
+1. `hbreak` at `panic`, read the stack -> `fmt` is valid, `kr = 0x9c6`
+2. decode `0x9c6` -> `D_NO_SUCH_DEVICE`
+3. `hbreak` at `device_open`, print the name at each call -> `hd0a`
+4. `grep` for `hd0a` -> a second hardcoded table
+
+**Each step was a measurement rather than a hypothesis, which is why it
+took four steps instead of the six failed rounds before it.** Those six
+-- `%r` mangling, unmapped rodata, partial text mapping, paging
+pressure, absent backing store, and a wild `fmt` pointer -- were each
+plausible, each argued from evidence already in hand, and each wrong.
+The difference was not cleverness. It was that steps 1 to 4 each
+produced a new fact, and the six rounds before them each produced a new
+interpretation of the same facts.
+
+## Superseded: the panic is "cannot mount root"
+
+A hardware breakpoint at `panic` caught the call with LITES current:
+
+```
+eip 0x80aa350   esp 0x4fe78
+0x4fe78:  0x08069a1a  0x080ef7e6  0x000009c6  0x080f16ad
+          return       fmt         arg1        arg2
+0x80ef7e6: "cannot mount root x%x %s"
+```
+
+**`fmt` is perfectly valid.** It points at the right string, in
+`.rodata`, fully readable, with the arguments behind it. The panic is
+the one in `init_main.c`, and `kr` is `0x9c6`.
+
+**So `printf` is the broken thing, not the pointer.**
+`printf("panic: %s\n", fmt)` printed `UWVS1+` while `fmt` pointed at
+correct text. Six hypotheses were built on reading that garbage as
+evidence about the pointer; the pointer was never wrong. The `-z
+muldefs` collision between LITES's `printf` in `server/kern/subr_prf.c`
+and `libsa_mach`'s is the only remaining explanation, and it is now
+confirmed by elimination rather than assumed.
+
+That also retires the `UWVS` analysis. `fmt` never pointed at code; the
+`UWVS` text was produced by a `printf` reading from somewhere other than
+its argument.
+
+### The real blocker: error 0x9c6 from the root mount
+
+`0x9c6` is 2502 decimal. It is a **Mach** error code, not an errno, so
+the earlier reasoning about `EIO` versus `EINVAL` was about the wrong
+kind of value entirely -- `(*mountroot)()` is returning a Mach error
+from the device layer, not a BSD errno from a filesystem check.
+
+Decode it before anything else. `mach_error_string` was already called
+on it, and its result is on the stack at `0x080f16ad`, so the text is
+available in the failing image.
+
+### Method notes
+
+**`hbreak`, not `break`, for a task that is not current.** A software
+breakpoint must write `int3` into the target page, so it can only be set
+while that page is mapped in the current context -- for a user task,
+only while that task is scheduled. A hardware breakpoint uses the CPU's
+debug registers and needs no memory access at all. In a microkernel,
+where the task of interest is one of several and rarely current when you
+attach, **`hbreak` is the default choice and `break` is the special
+case.** Several attempts were lost to this.
+
+**A broken instrument corrupted six rounds of reasoning.** The garbage
+string was treated as data about the program. It was data about
+`printf`. Fixing the instrument first -- which was attempted, but with
+`%s` through the same broken `printf` -- would have needed an
+independent output path to be conclusive.
+
+## Superseded: the pager has a backing store
 
 ```
 (default_pager): added device hd1c

@@ -219,6 +219,17 @@ breakpoint services reliably at a time, and breakpoint **conditions**
 and **ignore counts** may silently do nothing. Set one, measure,
 delete, set the next.
 
+*Use a hardware breakpoint when the target may not be the current
+task.* A software breakpoint is implemented by writing a trap
+instruction into the target's memory, so it can only be set while that
+memory is mapped in the current context. On a microkernel, where the
+task you care about is one of several and is rarely running at the
+moment you attach, this fails with "Cannot insert breakpoint / Cannot
+access memory" even though the address is perfectly valid. A hardware
+breakpoint uses the CPU's debug registers, needs no memory access to
+set, and can be placed before the target task even exists. Make it the
+default for user-space code in a multi-task system.
+
 *Do not blame hardware acceleration without evidence.* It is easy to
 attribute flaky debugging to KVM and disable it, which can turn a
 one-minute boot into a forty-minute one. In this project that was done
@@ -475,6 +486,25 @@ value changes when it should not, it is not measuring what you think.
 And when an instrument's output is unreadable, fixing the instrument
 usually beats working around it -- an unformatted message that names the
 failure is worth more than a formatted one that cannot be read.
+
+## 3.5b Prefer a new fact to a new interpretation
+
+When an investigation stalls, notice which kind of step you are taking.
+A step that produces a **new fact** -- a value read, a name printed, a
+count taken -- moves you forward whatever it shows. A step that produces
+a **new interpretation** of facts you already have moves you sideways,
+and can do so indefinitely.
+
+In this project one failure was chased through six rounds of the second
+kind: six explanations, each plausible, each argued from evidence
+already in hand, each wrong. It was then settled in four steps of the
+first kind -- read the stack at the fault, decode the error code, print
+the argument at the call, grep for the string that appeared. Roughly a
+day against half an hour.
+
+The tell is that you are re-reading files you have already read. When
+you catch yourself doing it, stop and ask what measurement would
+produce a fact you do not yet have.
 
 ## 3.6 Count things
 
