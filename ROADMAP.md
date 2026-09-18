@@ -191,7 +191,32 @@ from LITES's `cdevsw`. It installs an explicit list of binaries rather
 than the whole set, to keep the image small and make the dependency set
 visible rather than implied.
 
-**3. Link `mach_init` against that libc.** The port itself is done and
+**3. Link `mach_init` against that libc.** The requirements were worked
+out ahead of time and are small.
+
+From **NetBSD's libc**, all standard 4.4BSD:
+
+```
+open close dup execve fork kill getpid getppid
+sigblock sigmask sigpause sigsetmask alarm
+printf fprintf fflush _exit
+```
+
+From **Mach**, only three symbols: `cthread_fork_prepare`,
+`cthread_fork_parent` and `cthread_fork_child`, which are in
+`libcthreads`. Everything else went with the service server -- `main.c`
+now uses **no Mach types at all**; the only `task_t` and port references
+left are inside its HISTORY and explanatory comments.
+
+Those three stay rather than being dropped as a further simplification.
+`cthread_fork_prepare()` calls `vm_inherit(mach_task_self(),
+p->stack_base, p->stack_size, VM_INHERIT_COPY)` so the child gets the
+cthread stack, and `main.c`'s own HISTORY records that the explicit
+calls were added deliberately, so someone found them necessary.
+
+So the link is `main.o` + NetBSD libc + `libcthreads` + `libmach`, with
+`comp10` supplying the first. The Mach traps `libcthreads` makes work
+under LITES because Mach is underneath it. The port itself is done and
 committed at `mach_services/cmds/mach_init/`; it compiles and waits only
 for a libc.
 

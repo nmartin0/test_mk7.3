@@ -491,6 +491,60 @@ elsewhere.
 Its presence next to permissively licensed material is a hazard,
 because the subset filenames give no hint of what is inside them.
 
+## pmk1.1 is the OSF original, not the last release
+
+`pmk1.1` was worth a proper look, since it is sometimes described as the
+latest OSFMK ever released. Measured against our tree:
+
+| measure | result |
+|---|---|
+| version | 3.0 **PMK** -- identical to ours |
+| copyright | `Copyright 1996 1995`, marked `pmk1.1`; ours reads `Copyright 1991-1998`, marked `MkLinux` |
+| differing files | 1300 |
+| **of which, header-only** | **1212** -- copyright block and RCS keywords |
+| **genuine code differences** | **88** |
+| files only in pmk1.1 | 22, all `.s` assembly -- **renamed to `.S`** in ours, not lost |
+| files only in ours | 124 |
+
+Files this project never touched -- `kern/task.c`, `vm/vm_map.c` -- have
+**zero** differences outside the copyright block. The kernel proper is
+the same code.
+
+### The 88 real differences are MkLinux's additions
+
+- `kern/bootstrap.c`, 716 lines -- the **multiboot support**, which is
+  how we boot with `-kernel`. pmk1.1 has none of it
+- `ppc/*`, most of the remainder -- PowerMac support
+- `i386/AT386/model_dep.c` and `hd.c` -- MkLinux's QEMU work plus this
+  project's own patches
+
+So the lineage is **OSF PMK 1.1 -> MkLinux -> slp's QEMU fork -> us**,
+and pmk1.1 sits at the *start* of that chain rather than the end. It is
+the ancestor, not a later release.
+
+### What it is good for
+
+A **clean baseline**. Because 1212 of 1300 files differ only in headers,
+anything differing in *code* is either a MkLinux addition or one of our
+patches. That makes pmk1.1 the quick way to answer "did we change this,
+or did MkLinux?" -- a question that came up over `hd.c` and had to be
+reasoned out indirectly at the time.
+
+### A measurement trap worth recording
+
+Three separate errors were made counting these differences, and each
+gave a confidently wrong answer:
+
+- `sed 's|.*src/mach_kernel/||'` matches **greedily** to the *second*
+  path in `diff -rq` output, leaving `" differ"` on the end of every
+  filename. Use `awk '/^Files/{print $2}'` instead.
+- `diff` inside a `while read` loop **consumes the loop's stdin** and
+  the loop runs once. Redirect it: `diff ... </dev/null`.
+- Filtering only `Header:`/`Revision:`/`Log:` is not enough here,
+  because **every** file also differs in its copyright block. Without
+  filtering `Copyright`, `pmk1.1` and `MkLinux` too, all 1300 files look
+  like real changes.
+
 ## Provenance clarified: our base is not plain MkLinux
 
 The collection holds `osfmk/` and `osfmk_random/`, which are **identical

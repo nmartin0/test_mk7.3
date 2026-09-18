@@ -82,11 +82,27 @@ echo "fetching etc set"
 	curl -fsS -o "$WORK/sets/etc10.aa" "$MIRROR/etc10/etc10.aa" || true
 
 echo "extracting"
-rm -rf "$WORK/tree"
+# NetBSD 1.0's tar preserves 1994 permissions, and much of
+# usr/share/zoneinfo is r--r--r-- inside r-xr-xr-x directories. A plain
+# rm -rf cannot remove a file from a directory it cannot write, so make
+# the tree writable before deleting it.
+if [ -d "$WORK/tree" ]; then
+	chmod -R u+rwX "$WORK/tree" 2>/dev/null || true
+	rm -rf "$WORK/tree"
+fi
 mkdir -p "$WORK/tree"
-cat "$WORK"/sets/base10.* | (cd "$WORK/tree" && tar xzf -)
+
+# --no-same-permissions keeps the same thing from happening on the way
+# in: the files land owned by us and writable, which is what we want,
+# since the modes that matter are the ones debugfs sets in the image.
+# --no-same-owner because the archive's uid/gid are from 1994 and we are
+# not root.
+TARFLAGS="--no-same-owner --no-same-permissions"
+cat "$WORK"/sets/base10.* | (cd "$WORK/tree" && tar xzf - $TARFLAGS)
 [ -s "$WORK/sets/etc10.aa" ] && \
-	cat "$WORK"/sets/etc10.* | (cd "$WORK/tree" && tar xzf -) || true
+	cat "$WORK"/sets/etc10.* | (cd "$WORK/tree" && tar xzf - $TARFLAGS) || true
+
+echo "extracted $(find "$WORK/tree" -type f 2>/dev/null | wc -l) files"
 
 # What we actually need is small. A full base set is about 25 MB
 # extracted; a root that boots to a shell needs far less. Listing it
@@ -109,14 +125,34 @@ dd if=/dev/zero of="$ROOT" bs=1M count="$ROOT_MB" 2>/dev/null
 	-O ^resize_inode,^dir_index,^ext_attr,^sparse_super,^filetype \
 	-I 128 "$ROOT"
 
-for d in bin sbin etc dev tmp usr usr/bin usr/lib mach_servers; do
+for d in bin sbin etc dev tmp usr usr/bin usr/lib usr/libexec mach_servers; do
 	"$DEBUGFS" -w -R "mkdir /$d" "$ROOT" >/dev/null 2>&1
 done
 
 echo "populating"
+missing=
 for f in $NEED; do
-	[ -f "$WORK/tree/$f" ] || { echo "  missing: $f"; continue; }
+	if [ ! -f "$WORK/tree/$f" ]; then
+		missing="$missing $f"
+		continue
+	fi
 	"$DEBUGFS" -w -R "write $WORK/tree/$f /$f" "$ROOT" >/dev/null 2>&1
+done
+[ -n "$missing" ] && {
+	echo "  NOT FOUND in the base set:$missing"
+	echo "  (the NEED list is a guess at NetBSD 1.0's layout; adjust it)"
+}
+
+# NetBSD 1.0 is a.out, and shared libraries arrived in 1.0 for i386, so
+# the binaries may need /usr/libexec/ld.so and the libc shared object.
+# Install them if they are there; a statically linked sh does not need
+# them, and we find out which we have by looking.
+for f in usr/libexec/ld.so usr/lib/libc.so.12.0 usr/lib/libc.so.12.20; do
+	[ -f "$WORK/tree/$f" ] || continue
+	d=$(dirname "/$f")
+	"$DEBUGFS" -w -R "mkdir $d" "$ROOT" >/dev/null 2>&1
+	"$DEBUGFS" -w -R "write $WORK/tree/$f /$f" "$ROOT" >/dev/null 2>&1
+	echo "  installed /$f"
 done
 
 # /dev/console is what mach_init opens before it can report anything.
