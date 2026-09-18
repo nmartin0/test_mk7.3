@@ -1,3 +1,95 @@
+# CORRECTION: TIOCSCTTY is not the blocker, and the refusal is correct
+
+Measured, not reasoned. A probe in the `TIOCSCTTY` case of
+`server/kern/tty.c` printing each clause's inputs, one value per
+`printf`:
+
+```
+init: wait for single-user shell failed: No child processes; restarting
+sctty: pid 2   leader_is_self 1  s_ttyvp 0  p_session 49cea4
+sctty: t_session 0                                  -> granted
+init: /etc/spwd.db: No such file or directory
+Enter pathname of shell or RETURN for sh:
+sctty: pid 3   leader_is_self 1  s_ttyvp 0  p_session 49ce64
+sctty: t_session 49cea4                             -> REFUSED clause 2
+init: can't get /dev/console for controlling terminal: Operation not
+      permitted
+sctty: pid 4   t_session 0                          -> granted
+/etc/rc: Can't open /etc/rc
+sctty: pid 5   t_session 0                          -> granted
+```
+
+(The columns are joined here for width; each value was printed alone.)
+
+## What this establishes
+
+**The EPERM is correct BSD behaviour.** pid 3 is refused because
+`tp->t_session` is `0x49cea4`, which is pid 2's session -- another
+process already owns the console. That is exactly what the clause is
+for. There is no permission bug in `tty.c` to find.
+
+**`setsid()` works.** Every child is its own session leader:
+`leader_is_self 1`, `pgid == pid`, a distinct `p_session` each time.
+The session-leader clause never fires.
+
+**The shell runs.** `/etc/rc: Can't open /etc/rc` is `/bin/sh`
+executing and failing to open a file the minimal root does not have.
+pid 4 and pid 5 were both granted the console. NetBSD's userland is
+running under LITES.
+
+## What the real defect is
+
+The first message is the primary one:
+
+```
+init: wait for single-user shell failed: No child processes; restarting
+```
+
+That is `wait()` returning **ECHILD** to init for a child it has just
+forked. init concludes the shell died, and forks another -- while the
+first is still alive and still holds the console. The second child's
+`TIOCSCTTY` is then refused, correctly, and init reports "can't get
+/dev/console". The loop repeats.
+
+So the causal order is the reverse of what was assumed: the console
+message is a downstream symptom of a `wait()`/child-bookkeeping fault,
+not a tty permission problem. Chasing `TIOCSCTTY` further would have
+been chasing a correct refusal.
+
+## What I got wrong earlier in this same session
+
+The note at the head of this file claimed the ordering of init's
+messages proved the *first* forked child was being refused, since
+NetBSD's `single_user()` prompts before calling `setctty()`. The
+reasoning about NetBSD's source order was right and the conclusion was
+wrong: the refused process is pid 3, the second child, and pid 2 was
+granted the console before any of those messages appeared. The
+ordering of init's own output does not order the children, because
+init's messages and the probe's interleave from different processes.
+
+This is the same error the file already records twice -- a plausible
+inference from the wrong source -- and the fix was the same: print the
+identity of what is being measured, not just its value. `pid` and
+`p_session` are what made it unambiguous.
+
+## Next
+
+Find why `wait()` returns ECHILD. Start in `server/kern/kern_exit.c`
+and the proc bookkeeping `kern_fork()` sets up, and note that
+`init_main.c` builds `initproc` by calling `newproc()` directly rather
+than through `kern_fork()` -- a difference session 5 already had to
+patch once, for the shared region and the parent pointer.
+
+Worth printing, in init's own wait path: the child pid returned by
+fork, `p_pptr` of the child, and the contents of the parent's child
+list at the moment `wait()` decides there is nothing to wait for.
+
+The probe that produced this is not committed. It is a dozen `printf`
+calls around the clause in `server/kern/tty.c:865`; re-add it there if
+the tty path needs measuring again.
+
+---
+
 # Reproduced from a clean tree, session 6
 
 The blocker below is reproduced, on a sandbox rebuilt from nothing. The
