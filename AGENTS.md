@@ -349,6 +349,16 @@ conditionalise this either (`arch/x86/include/asm/shared/io.h`,
 `BUILDIO`). Superseded code belongs in git and in the notes block, not
 in live conditionals nothing can select.
 
+**`mach_services/lib/libmach/mach_init.c`** -- three lines, giving
+`mach_init` external linkage when `STANDALONE` is defined, via a
+`MACH_INIT_LINKAGE` macro. Only `libmach_sa` defines `STANDALONE`, and
+the built `libmach.a` is byte-identical across the change. Without it
+`libmach_sa` cannot be built in a form that satisfies both LITES
+components at once: the server needs `_rpc_glue_vector`, which only this
+file defines, and the emulator calls `mach_init` by name, which only
+`mach_init_sa.c` exported. Reasoning is in the AI-ONLY NOTE above the
+macro, and in `libmach_sa/Makefile`.
+
 That is the entire list. Everything else so far has been configuration.
 
 ### FIRST pass: working

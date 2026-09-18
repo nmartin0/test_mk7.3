@@ -18,15 +18,44 @@
 # common.mk -- which is the tree's own convention for a libmach variant
 # and is known to work.
 #
-# -DSTANDALONE is what selects the standalone behaviour, notably making
-# mach_init global rather than static (mach_init_sa.c against
-# mach_init.c), which is the symbol LITES's emulator links against.
+# -DSTANDALONE is what selects the standalone behaviour. Nothing in the
+# libmach sources tests it; common.mk is the only file in the tree that
+# does, and only to choose MACH_INIT_OFILE.
+#
+# AI-ONLY NOTE: MACH_INIT_OFILE is deliberately NOT overridden here, so
+# common.mk's default of mach_init.o applies.
+#
+# An earlier revision of this file set it to mach_init_sa.o, on the
+# stated grounds that mach_init_sa.c makes mach_init global rather than
+# static and that this is the symbol LITES links against. That is wrong
+# in both halves, and it makes the library unlinkable:
+#
+#   - Nothing in LITES references mach_init. Measured across every
+#     object of the server, the emulator and liblites: zero undefined
+#     references to it. Entry is through _mach_init_routine, a common
+#     symbol in crt0.o that mach_init.c and mach_init_sa.c both define,
+#     so either file satisfies the reference.
+#
+#   - mach_init.c is the only definition of _rpc_glue_vector. This
+#     library's own ms_thread_switch.o and ms_thread_depress_abort.o
+#     members reference it, so building with mach_init_sa.o produces an
+#     archive that cannot satisfy itself:
+#       ld: ...libmach_sa.a(MS_TH_switch.o): undefined reference to
+#           `_rpc_glue_vector'
+#
+# Note what this does NOT do: it does not merely quiet a link error.
+# Supplying a definition alone would be worse than the error, because
+# CAN_SHCIRCUIT() in mach/i386/rpc.h dereferences the pointer
+# unconditionally (_rpc_glue_vector->name), and cthreads calls
+# thread_switch, so a null vector is a fault on the first cthread yield.
+# mach_init.c initialises the vector from TASK_USER_DATA; mach_init_sa.c
+# never does, and also skips mach_init_ports(). Taking mach_init.o is
+# what makes the short-circuit path safe, not just resolvable.
 #
 USE_STATIC_LIBRARIES	=
 LOCAL_LIBMACH		= libmach_sa.a
 LOCAL_CFLAGS		= -DSTANDALONE
 LOCAL_MIGFLAGS		= -DSTANDALONE
-MACH_INIT_OFILE		= mach_init_sa.o
 
 #
 # common.mk includes ${LIBMACH_INCLUDE_PREFIX}${TARGET_MACHINE}/machdep.mk
