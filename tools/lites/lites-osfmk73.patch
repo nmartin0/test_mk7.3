@@ -933,3 +933,30 @@ index a74c4f7..a0e8a2a 100644
  
  	*ischild = FALSE;
  	return error;
+diff --git a/emulator/i386/emul_misc_asm.s b/emulator/i386/emul_misc_asm.s
+index b334e7a..827df51 100644
+--- a/emulator/i386/emul_misc_asm.s
++++ b/emulator/i386/emul_misc_asm.s
+@@ -73,7 +73,21 @@ emul_save_state:
+ 	pushf			/* flags via stack */
+ 	popl	%ecx		/* ... */
+ 	movl	%ecx,56(%edx)	/* ... flags to state[14] */
+-	movl	%esp,%ecx
++	/*
++	 * Save the esp the caller will have *after* this function
++	 * returns, not the one inside it.
++	 *
++	 * state[12] holds the return address, so a restore resumes at
++	 * the instruction after the call. But esp here still has that
++	 * return address on top of it; a real "ret" pops it and adds 4.
++	 * A restore does not, so the child resumed four bytes low and
++	 * every N(%esp) offset in the caller addressed the wrong slot.
++	 *
++	 * That is why e_fork_call's child path faulted on *pid = x while
++	 * the adjacent *ischild = TRUE succeeded: neighbouring slots,
++	 * one of which happened to hold something writable.
++	 */
++	leal	4(%esp),%ecx
+ 	movl	%ecx,60(%edx)	/* sp to state[15] */
+ 	mov	%ss,%ax
+ 	movl	%eax,64(%edx)	/* ss to state[16] */
