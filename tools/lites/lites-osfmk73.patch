@@ -136,38 +136,6 @@ index 464f3ee..6659637 100644
  
  union exec_data {
  	unsigned short	short_magic;
-diff --git a/server/kern/init_main.c b/server/kern/init_main.c
-index 14575d7..457bac5 100644
---- a/server/kern/init_main.c
-+++ b/server/kern/init_main.c
-@@ -359,8 +359,25 @@ noreturn system_setup()
- 	/* Mount the root file system. */
- 	kr = (*mountroot)();
- #if EXT2FS
--	/* XXX if FFS fails, fall back to EXT2FS */
--	if (kr == EINVAL) {
-+	/*
-+	 * XXX if FFS fails, fall back to EXT2FS
-+	 *
-+	 * EIO as well as EINVAL. ffs_mountfs() returns EIO when the
-+	 * superblock magic is wrong -- ffs_vfsops.c marks that return
-+	 * "XXX needs translation" -- so on a disk holding an ext2
-+	 * filesystem the fallback was never reached and ext2_mountroot()
-+	 * never ran. The symptom is a "cannot mount root" panic with no
-+	 * ext2 diagnostic at all, even though ext2_vfsops.c would have
-+	 * printed one had it been called.
-+	 *
-+	 * The same file is inconsistent about which errno means "this is
-+	 * not my filesystem": ffs_vfsops.c:214 sets EINVAL with the same
-+	 * "needs translation" comment, and :261 returns EINVAL outright.
-+	 * Widening the test here rather than changing what FFS returns
-+	 * keeps the policy in the caller, where it belongs, and leaves
-+	 * FFS's behaviour alone for anything else that depends on it.
-+	 */
-+	if (kr == EINVAL || kr == EIO) {
- 		extern int ext2_mountroot __P((void));
- 
- 		kr = ext2_mountroot();
 diff --git a/server/kern/kern_sig.c b/server/kern/kern_sig.c
 index f131504..057d880 100644
 --- a/server/kern/kern_sig.c
@@ -666,3 +634,38 @@ index a66679e..8f10802 100644
  	      if (rc != D_SUCCESS)
  		return(rc);
  
+diff --git a/include/i386/param.h b/include/i386/param.h
+index 3aa467d..8ab6921 100644
+--- a/include/i386/param.h
++++ b/include/i386/param.h
+@@ -155,7 +155,29 @@
+  * Base address for U*X system call emulator.
+  */
+ #define	EMULATOR_BASE	0xa0000000
+-#define	EMULATOR_END	0xa0040000
++/*
++ * The emulator's window, and at the top of it the four shared pages
++ * (emul_mapped.c: shared_readwrite at END-4 pages, shared_base_rw at
++ * END-2, shared_base_ro at END-1; mapin_user() maps them there).
++ *
++ * END was 0xa0040000, giving a 256 KB window. Our emulator's image is
++ * 249931 bytes and so runs to 0xa003d04b, while the shared region
++ * starts at END-4*0x1000 = 0xa003c000: an overlap of 4171 bytes. The
++ * emulator's own data and bss sat on top of the shared pages, so
++ * us_version read as garbage, the emulator disabled the shared region
++ * ("shared region mismatch b/1"), and the structures LITES keeps there
++ * -- us_vmspace, us_limit -- were read as pointers, which is why the
++ * first program died with a protection fault at an address that moved
++ * between runs.
++ *
++ * Widening the window to 512 KB moves the shared pages clear of the
++ * image without moving EMULATOR_BASE, so the emulator's link address is
++ * unchanged. Nothing else on i386 depends on END's exact value: it is
++ * used by mapin_user() and emul_mapped.c, which both follow it, and by
++ * three range checks in i386/e_machinedep.c that ask only whether the
++ * PC lies inside the emulator.
++ */
++#define	EMULATOR_END	0xa0080000
+ 				/* 256 Kbytes */
+ 
+ /*
