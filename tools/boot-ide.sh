@@ -213,7 +213,20 @@ sleep 2
 rm -f /tmp/console.log
 
 echo "booting from hd2c ..."
-qemu-system-i386 -enable-kvm -kernel "$K" \
+# KVM where it exists, TCG where it does not. -enable-kvm is fatal when
+# /dev/kvm is absent -- qemu exits before the guest starts -- and it is
+# absent inside a VM without nested virtualisation, which is where this
+# now gets run. TCG is slower per instruction but this boot is I/O bound
+# rather than CPU bound, which is the same reason the move from floppy to
+# IDE mattered and raw CPU speed did not.
+if [ -w /dev/kvm ]; then
+	ACCEL=-enable-kvm
+else
+	ACCEL=
+	echo "no /dev/kvm; falling back to TCG"
+fi
+
+qemu-system-i386 $ACCEL -kernel "$K" \
 	-append "-r BOOTDEV=hd BOOTUNIT=2 BOOTPART=2 -o" \
 	-initrd "$BOOTSTRAP" \
 	-drive file="$ROOT",format=raw,if=ide,index=0 \
