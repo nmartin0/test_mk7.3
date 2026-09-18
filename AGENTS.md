@@ -92,6 +92,51 @@ Say "178 of 203 objects compile", and say when a figure is an estimate.
 
 **Before claiming a fix works, reproduce the original failure first.**
 
+## Working from a sandboxed agent session
+
+Written after a session lost hours to these. They are properties of the
+harness, not of this project, and none is discoverable from the code.
+
+**A tool call whose command text contains `qemu-system-i386` can kill
+itself.** `pkill -f` matches any process whose command line *contains*
+the pattern, and the shell running your command is such a process:
+
+```
+$ pgrep -af qemu-system-i386
+154 /bin/sh -c ... pgrep -af "qemu-system-i386" ...     <- your own shell
+```
+
+The call then dies with no output and a failure status, which looks
+exactly like a crashed build. `DEBUGGING.md` section 9 has the rule;
+the tools here now use `pkill -x "qemu-system-i38"`, the 15-character
+name the kernel actually stores. Watch for it in anything you type by
+hand, including a `cp` of a console log that is sitting in the same
+command as a `pkill`.
+
+**A single call is capped at about 300 seconds, and a TCG boot takes
+longer.** So a boot cannot be started and waited on in one call. Start
+it detached and poll the log from later calls:
+
+```sh
+setsid /tmp/runboot.sh </dev/null >/tmp/qemu.out 2>&1 &
+# later calls:
+sleep 280; wc -c /tmp/console.log; tail -20 /tmp/console.log
+```
+
+Do **not** wrap the boot in `timeout`: a timeout that fires mid-boot
+leaves a truncated log that reads exactly like a hang at whatever line
+it reached. That produced one wrong diagnosis here.
+
+**Long builds must run in the foreground.** A backgrounded build can be
+killed at a call boundary, and what you find afterwards is a log that
+stops mid-file with no error in it -- indistinguishable from a build
+failure until you rerun it in the foreground and it succeeds.
+
+**Before calling a boot hung, check the guest is alive.** `wc -c` twice
+tells you whether the log is growing; `ps -o stat,time` on the QEMU
+process tells you whether anything is still running. A log that stops
+at an input prompt is correct behaviour, not a hang.
+
 ## Commit messages
 
 Subject ≤ 72 characters, body wrapped at 72. Explain *why*, name what was

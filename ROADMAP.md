@@ -336,6 +336,36 @@ an ELF as its own only when the entry is above `0x10000000`; ours are at
 bites the moment an i386 ELF first program is exec'd. xMach shows the
 shape of the fix.
 
+## Where step 4 actually stands, after session 6
+
+Step 4 is further than the sections below assume, and the remaining gap
+is different from the one they describe.
+
+**A NetBSD 1.0 userland is sourced and running** (step 2 is done, not
+pending). `tools/mkroot-netbsd.sh` builds the ext2 root from the real
+sets; `boot-ide.sh` installs `emulator` and `init` into
+`/mach_servers`. LITES execs NetBSD's own `/sbin/init`, which acquires
+the console, forks, and runs `/bin/sh`.
+
+**So "a shell prompt" is reached**, in the sense that init prints its
+single-user prompt and waits for input. What is not yet done is
+answering it: `boot-ide.sh` gives the guest a serial console written to
+a file, which cannot take keystrokes. `tools/boot-debug.sh` is the one
+with an interactive console, and driving `/bin/sh` by hand through it
+is untried.
+
+**What blocks an unattended boot is `kern_exit.c`'s hard-coded pid 2**,
+not the absence of `mach_init` -- see the head of
+`docs/current-blocker.md`. That reframes 4a below: porting `mach_init`
+is *one* of three ways to clear it, and it is the faithful one, because
+the hack is correct whenever pid 2 really is `mach_init`. The other two
+are to condition the hack on the init program, or to drop it for a
+directly booted BSD init. Both of those touch LITES source and would
+need regenerating into `tools/lites/lites-osfmk73.patch` in the same
+commit.
+
+4b is done: `boot-ide.sh` grew the population step.
+
 ## Next: finish step 4, a shell prompt
 
 ### 4a. The first program: build Mach 4's `mach_init`

@@ -223,16 +223,28 @@ Sep 17 22:44:14 init: can't get /dev/console for controlling terminal:
 
 ## What the ordering settles
 
-The three messages arrive in the order spwd.db, prompt, then the
-TIOCSCTTY failure, and that is one child, not three. NetBSD 1.0's
-`single_user()` runs the SECURE password check and the DEBUGSHELL
-prompt *before* it calls `setctty()`, so the failing ioctl is in the
-first child init forks.
+**This section was wrong and is kept as written, with the correction
+here, because the reasoning is a trap worth seeing.** See the ROOT
+CAUSE section at the head of this file: the refused process is pid 3,
+the *second* child, and the hypothesis dismissed below -- that an
+earlier child holds `tp->t_session` -- is exactly what is happening.
 
-That kills the hypothesis that an earlier child acquires the console
-and a later one is refused because `tp->t_session` still points at the
-dead session. Any explanation must account for the **first**
-`TIOCSCTTY` on a freshly opened console failing.
+The argument was: the three messages arrive in the order spwd.db,
+prompt, then the TIOCSCTTY failure, and NetBSD 1.0's `single_user()`
+runs the SECURE password check and the DEBUGSHELL prompt *before* it
+calls `setctty()`, so the failing ioctl must be in the first child init
+forks.
+
+Every step of that is true about NetBSD's source and the conclusion is
+still false, because init's messages do not order init's *children*.
+Two children were interleaving their output, and a third process -- the
+probe -- was printing between them. `METHODOLOGY.md` section 3.5 says
+this directly: ordering tells you about print order, not causal order;
+use it to generate hypotheses, not to close them.
+
+What settled it was printing `p_pid` and `p_session` inside the clause,
+which is section 3.5b: a new fact rather than a new reading of the
+facts already in hand.
 
 The three clauses that can return EPERM are in `server/kern/tty.c:865`,
 not `server/serv/tty_io.c` as the session 5 handoff says:

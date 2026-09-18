@@ -157,6 +157,40 @@ can quietly answer a different question than the one you asked. Chapter
 7 catalogues the ones that produced wrong conclusions here; chapter 9 is
 twenty lines.
 
+## State as of session 6: NetBSD init runs, and the blocker is known
+
+The stack boots end to end. LITES mounts the ext2 root, execs NetBSD
+1.0's unmodified 1994 `/sbin/init`, init opens and acquires
+`/dev/console`, forks a shell, and `/bin/sh` runs far enough to try
+`/etc/rc`. Zero panics.
+
+What stops it is **one hard-coded pid**. `wait4()` in
+`server/kern/kern_exit.c` carries a block whose own comment calls it a
+"major hack for BSD init compatibility": if the caller is pid 1 and the
+child is pid 2, it hides that child, because under LITES pid 2 is
+`mach_init`. We boot `-i /init`, skipping `mach_init`, so init is pid 1
+and its first shell takes pid 2 -- and is hidden from its own parent.
+`wait()` returns ECHILD, init forks again, and the second child is
+refused the console *correctly* because the first still holds it.
+
+Controlled boot with the hack skipped: no ECHILD, no console refusal,
+one prompt instead of a repeating cycle, and init sits at
+`Enter pathname of shell or RETURN for sh:` with QEMU alive. The full
+evidence, and the three ways forward, are at the head of
+`docs/current-blocker.md`. **The choice among them is open and belongs
+to the maintainer** -- nothing in the tree is changed for it.
+
+Two defects that were blocking any rebuild are fixed and pushed:
+`libmach_sa` could not link at all, so the tree did not build LITES from
+clean; and `mkroot-netbsd.sh` produced roots with an empty `/dev`.
+`boot-ide.sh` now also populates `/mach_servers`, which used to be
+hand-typed.
+
+`ENVIRONMENT.md`'s quick start now lists the library builds it omitted,
+names the three external trees with their URLs, and gives the sequence
+from a clean clone to NetBSD init. Reading it first is the difference
+between an hour and a day.
+
 ## Where the project is going
 
 `ROADMAP.md` holds the shape: what is done, what is next, the
