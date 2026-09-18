@@ -1,3 +1,120 @@
+# ROOT CAUSE: init's ECHILD is LITES's own mach_init pid-2 hack
+
+Measured, then controlled. Found by reading `server/kern/kern_exit.c`,
+not by booting.
+
+`wait4()` scans the caller's child list and counts matches in `nfound`.
+At the end of the loop:
+
+```c
+#if defined(LITES)
+	/*
+	 * XXX major hack for BSD init compatibility.
+	 *
+	 * Under lites, mach_init (pid 2) is a child of BSD init (1).
+	 * ... For now we just pretend mach_init isn't there ...
+	 */
+	if (q->p_pid == 1 && p->p_pid == 2) {
+		nfound--;
+		continue;
+	}
+#endif
+	}
+	if (nfound == 0)
+		return (ECHILD);
+```
+
+LITES hard-codes that **pid 2 is mach_init** and hides it from init's
+`wait()`, so that init does not block for 30 seconds on a child that
+never exits.
+
+We boot with `-i /init`, which skips mach_init entirely and makes
+NetBSD's init the first program, pid 1. The first shell it forks
+therefore takes **pid 2** -- the reserved pid -- and the hack fires
+against a legitimate child. `nfound` drops to zero and `wait()` returns
+ECHILD.
+
+## This explains every symptom, in order
+
+1. init (pid 1) forks the single-user shell, which is pid 2. It
+   acquires the console normally -- the probe recorded
+   `sctty: pid 2 ... granted`.
+2. init calls `wait()`. The hack hides pid 2, `nfound` is 0, ECHILD:
+   `wait for single-user shell failed: No child processes; restarting`.
+3. init forks again. That child is pid 3. Pid 2 is still alive and
+   still owns the console, so pid 3's `TIOCSCTTY` is refused --
+   correctly -- and init reports `can't get /dev/console for
+   controlling terminal`.
+4. Later children (pid 4, pid 5) are granted the console, because by
+   then the earlier ones are gone. The probe recorded exactly that.
+
+So the console error was two steps downstream of the cause, and the
+`TIOCSCTTY` code was never at fault.
+
+## The control
+
+`kern_exit.c` patched to announce the hack and skip it, one value per
+`printf`. One boot, otherwise identical:
+
+```
+wait4: mach_init hack would hide pid 2
+wait4: hack DISABLED for this run
+init: /etc/spwd.db: No such file or directory
+Enter pathname of shell or RETURN for sh:
+```
+
+The hack fires on pid 2, as predicted. With it skipped:
+
+| marker in console log        | hack enabled | hack skipped |
+|------------------------------|--------------|--------------|
+| `No child processes`         | present      | **0**        |
+| `can't get /dev/console`     | present      | **0**        |
+| `Enter pathname of shell`    | repeating    | **1**        |
+
+The log then stops growing and stays stopped for over ten minutes,
+while QEMU remains alive and running (`ps` state R, 8 minutes of CPU).
+That is init blocked reading the console at its single-user prompt,
+which is the correct behaviour -- not a hang. The respawn loop is
+gone.
+
+## What this does NOT establish
+
+The probe is not a fix and is not committed. Deleting the hack is one
+of the options below, not a decision; the tree is unchanged.
+
+The `-serial file:` console cannot take input, so the prompt has not
+been answered and `/bin/sh` has not been driven interactively.
+`tools/boot-debug.sh` is the one with an interactive console.
+
+## The options, to be decided rather than assumed
+
+1. **Run mach_init as the first program**, which is what LITES expects
+   and what makes pid 2 genuinely mach_init. This is ROADMAP step 4a;
+   the port exists at `mach_services/cmds/mach_init/` and waits only
+   on a libc to link against. The hack then becomes correct again and
+   needs no change. Most faithful, most work.
+2. **Condition the hack on the init program actually being
+   mach_init**, rather than on the bare number 2. A LITES source
+   change, so it would have to be regenerated into
+   `tools/lites/lites-osfmk73.patch` in the same commit.
+3. **Drop the hack** when booting a BSD init directly. Smallest
+   change, but it silently breaks the configuration LITES was written
+   for, which is the one option 1 restores.
+
+Option 1 is the design; options 2 and 3 are ways to run a
+configuration LITES did not anticipate. The choice belongs to the
+maintainer.
+
+## Correction to commit d157d38
+
+That commit's message says a launching tool call "may report failure
+while qemu is in fact running". That is a misdiagnosis. The calls were
+dying because `pkill -f qemu-system-i386` matches the caller's own
+shell, exactly as DEBUGGING.md section 9 describes. Fixed in the
+commit that precedes this one.
+
+---
+
 # CORRECTION: TIOCSCTTY is not the blocker, and the refusal is correct
 
 Measured, not reasoned. A probe in the `TIOCSCTTY` case of
