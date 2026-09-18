@@ -79,6 +79,71 @@ Two details there correct assumptions this project has been running on:
 the pager is given a **paging file** rather than the raw `hd1c` device
 we currently use -- which matches `mach4-UK22`'s `def_pager_setup.c`.
 
+### Verified against the real NetBSD 1.0 sets
+
+The sets are mirrored in the reference collection at
+`nmartin0/mach_stuff` under `netbsd-1.0-i386/binary/`, so they can be
+inspected directly rather than reasoned about. What they show:
+
+**`/bin/sh` and `/sbin/init` are statically linked.** Their a.out
+headers, with `a_midmag` read big-endian as NetBSD packs it:
+
+| file | midmag | MID | flags |
+|---|---|---|---|
+| `bin/sh` | `0x0086010b` | 134 (`MID_I386`) | **0x0** |
+| `sbin/init` | `0x0086010b` | 134 | **0x0** |
+| `bin/ls` | `0x0086010b` | 134 | **0x0** |
+| `usr/libexec/ld.so` | `0xc086010b` | 134 | 0x30 |
+
+`EX_DYNAMIC` is `0x20` and `EX_PIC` is `0x10`, so only `ld.so` itself is
+dynamic. NetBSD 1.0 kept the traditional rule that `/bin` and `/sbin`
+are static because `/usr` may not be mounted at boot.
+
+**That removes the largest risk in this plan.** There is no `ld.so` on
+the path to a shell prompt, so the dynamic-linking question -- whether
+`ld.so`'s own mmap and relocation work survives the emulator -- does not
+arise until we want something from `/usr/bin`.
+
+**The emulator's test matches exactly.** `bin/sh`'s first four bytes
+read little-endian are `0x0b018600`, which is precisely the constant
+`emul_exec.c` compares against. That code was written against this
+release.
+
+**The `NEED` list was a guess and is now fact.** Every binary in it
+exists at the path assumed, and the list has been widened to the useful
+contents of `bin` and `sbin`.
+
+### Correction: the emulator knows NetBSD explicitly
+
+An earlier note here said NetBSD binaries "fall through to
+`BT_FREEBSD`". That is true of `liblites/exec_file.c`, but **not** of
+the emulator, which is what actually runs user programs.
+`emulator/emul_exec.c` tests for NetBSD first and by name:
+
+```c
+if ((exdata.magic & ~0xfc) == 0x0b018600) {
+	/*
+	 * NetBSD magic's are in inverted byte order
+	 * 0xfc is mask for flags field.
+	 */
+	*binary_type = BT_NETBSD;
+```
+
+`0x86` is 134, `MID_I386`. So NetBSD/i386 a.out is recognised properly
+and gets `BT_NETBSD`, not a fallback.
+
+**And `~0xfc` masks out the flags field deliberately**, which is where
+NetBSD's `EX_DYNAMIC` bit lives. Static and dynamic binaries therefore
+both match this test, on purpose. That is a deliberate accommodation of
+shared libraries rather than an accident.
+
+NetBSD 1.0 is the release where i386 gained shared libraries, per
+NetBSD's own release notes, so `/bin/sh` may well be dynamic. Whether
+`ld.so` then runs correctly under the emulator is a separate question
+and untested -- but the binary will at least be classified correctly,
+and `e_trampoline.c` gives `BT_NETBSD` the same BSD syscall table as
+`BT_386BSD` and `BT_FREEBSD`.
+
 ### What the loaders expect from a NetBSD binary
 
 Settled before going looking for install media.

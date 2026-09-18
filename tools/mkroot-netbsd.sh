@@ -41,6 +41,10 @@
 #
 set -e
 
+# The sets are also mirrored in the reference collection at
+# nmartin0/mach_stuff under netbsd-1.0-i386/binary, so MIRROR can be
+# pointed at a local path to avoid refetching:
+#   MIRROR=file:///path/to/mach_stuff/netbsd-1.0-i386/binary
 MIRROR=${MIRROR:-https://archive.netbsd.org/pub/NetBSD-archive/NetBSD-1.0/i386/binary}
 WORK=${WORK:-/tmp/netbsd10}
 ROOT=${ROOT:-/tmp/root.img}
@@ -108,8 +112,17 @@ echo "extracted $(find "$WORK/tree" -type f 2>/dev/null | wc -l) files"
 # extracted; a root that boots to a shell needs far less. Listing it
 # explicitly keeps the image small and makes the dependency set visible
 # rather than implied.
+# Verified against the real base10 set, not guessed. Every one of these
+# exists at this path, and bin/sh and sbin/init are both **statically
+# linked** -- their a.out flags field is 0, where EX_DYNAMIC is 0x20.
+# Only usr/libexec/ld.so carries EX_DYNAMIC|EX_PIC (flags 0x30), and
+# nothing here needs it. NetBSD 1.0 kept the traditional rule that /bin
+# and /sbin are static because /usr may not be mounted at boot.
 NEED="sbin/init bin/sh bin/ls bin/cat bin/cp bin/mv bin/rm bin/mkdir
-      bin/echo bin/pwd bin/ps bin/date bin/stty sbin/mount sbin/umount"
+      bin/echo bin/pwd bin/ps bin/date bin/stty bin/test bin/sync
+      bin/chmod bin/ln bin/kill bin/sleep bin/df
+      sbin/mount sbin/umount sbin/mknod sbin/reboot sbin/halt
+      sbin/fsck sbin/dmesg sbin/disklabel"
 
 echo "creating $ROOT (${ROOT_MB} MB, ext2)"
 rm -f "$ROOT"
@@ -143,10 +156,9 @@ done
 	echo "  (the NEED list is a guess at NetBSD 1.0's layout; adjust it)"
 }
 
-# NetBSD 1.0 is a.out, and shared libraries arrived in 1.0 for i386, so
-# the binaries may need /usr/libexec/ld.so and the libc shared object.
-# Install them if they are there; a statically linked sh does not need
-# them, and we find out which we have by looking.
+# Not needed for a shell prompt: /bin/sh and /sbin/init are static, as
+# verified from their a.out headers. Installed anyway if present, so
+# that anything from /usr/bin added later has what it needs.
 for f in usr/libexec/ld.so usr/lib/libc.so.12.0 usr/lib/libc.so.12.20; do
 	[ -f "$WORK/tree/$f" ] || continue
 	d=$(dirname "/$f")
