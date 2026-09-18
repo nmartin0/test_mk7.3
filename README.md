@@ -20,6 +20,7 @@ ordinary user tasks and can be built and debugged at runtime.
 | `DEBUGGING.md` | how to find out why the kernel misbehaves; read before debugging. |
 | `docs/` | design notes, open decisions, and the current state. |
 | `docs/archive/` | solved investigations, kept for their eliminated hypotheses and instrument traps. |
+| `docs/GIT-HYGIENE.md` | commit and history conventions, and how this history was repaired. |
 | `tools/` | debugging helpers. |
 | `PRINCIPLES.md` | why the decisions are what they are. |
 
