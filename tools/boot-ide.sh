@@ -50,12 +50,13 @@ K="$MK_BUILD/obj/at386/mach_kernel/PRODUCTION/mach_kernel.PRODUCTION"
 BOOTSTRAP="$MK_BUILD/obj/at386/bootstrap/bootstrap"
 PAGER="$MK_BUILD/obj/at386/default_pager/default_pager"
 LITES="$HOME/lites-build/obj/server/startup.Lites.1.1.u3.STD+WS+osfmach3+ext2fs"
+EMULATOR="$HOME/lites-build/obj/emulator/emulator.Lites.1.1.u3"
 
 SERVERS=/tmp/servers.img
 ROOT=/tmp/root.img
 SWAP=/tmp/swap.img
 
-for f in "$K" "$BOOTSTRAP" "$PAGER" "$LITES"; do
+for f in "$K" "$BOOTSTRAP" "$PAGER" "$LITES" "$EMULATOR"; do
 	[ -r "$f" ] || { echo "missing: $f"; exit 1; }
 done
 
@@ -205,6 +206,70 @@ rm -f "$BSCONF"
 	echo "creating $SWAP (32 MB, raw)"
 	dd if=/dev/zero of="$SWAP" bs=1M count=32 2>/dev/null
 }
+
+# /mach_servers ON THE ROOT FILESYSTEM, which is a different place from
+# the server volume above and is easy to confuse.
+#
+# LITES resolves emulator_path and init_program_path against the server
+# directory named in bootstrap.conf, strips the /dev/<root> prefix, and
+# opens what is left on the ROOT filesystem. So /mach_servers/emulator
+# and /mach_servers/init are read from hd0c, not from the hd2c volume
+# that the bootstrap task loaded startup itself from.
+#
+# Nothing used to put them there. mkroot-netbsd.sh creates the directory
+# and leaves it empty, so a fresh root booted straight into
+#
+#   panic: first program (/mach_servers/init) exec failed: xc002
+#          file or directory does not exist
+#
+# and the fix was a hand-typed debugfs incantation that lived only in a
+# console log. ROADMAP.md 4b asks for exactly this step.
+#
+# The emulator is unconditional: LITES needs it for every process.
+# The init program is NetBSD's own /sbin/init, copied rather than
+# pointed at, because -i names a path relative to the server directory
+# and cannot reach /sbin.
+populate_root_servers() {
+	"$DEBUGFS" -w -R "mkdir /mach_servers" "$ROOT" >/dev/null 2>&1
+
+	"$DEBUGFS" -w -R "rm /mach_servers/emulator" "$ROOT" >/dev/null 2>&1
+	"$DEBUGFS" -w -R "write $EMULATOR /mach_servers/emulator" \
+		"$ROOT" >/dev/null 2>&1
+
+	# debugfs's write leaves mode 0644, and exec wants an execute bit
+	# even for root. Its mknod does not resolve paths but its write
+	# does; see mkroot-netbsd.sh for the difference.
+	"$DEBUGFS" -w -R "sif /mach_servers/emulator mode 0100755" \
+		"$ROOT" >/dev/null 2>&1
+
+	if "$DEBUGFS" -R "stat /sbin/init" "$ROOT" 2>/dev/null |
+	    grep -q "Type: regular"; then
+		rm -f /tmp/.nbinit.$$
+		"$DEBUGFS" -w -R "dump /sbin/init /tmp/.nbinit.$$" \
+			"$ROOT" >/dev/null 2>&1
+		"$DEBUGFS" -w -R "rm /mach_servers/init" "$ROOT" >/dev/null 2>&1
+		"$DEBUGFS" -w -R "write /tmp/.nbinit.$$ /mach_servers/init" \
+			"$ROOT" >/dev/null 2>&1
+		"$DEBUGFS" -w -R "sif /mach_servers/init mode 0100755" \
+			"$ROOT" >/dev/null 2>&1
+		rm -f /tmp/.nbinit.$$
+	else
+		echo "  note: no /sbin/init in $ROOT, so /mach_servers/init"
+		echo "        was not installed -- run mkroot-netbsd.sh first"
+	fi
+
+	# Check rather than assume: every failure above is silent, because
+	# debugfs exits 0 whether or not it did anything.
+	for n in emulator init; do
+		"$DEBUGFS" -R "stat /mach_servers/$n" "$ROOT" 2>/dev/null |
+		    grep -q "Type: regular" ||
+			{ echo "boot-ide: /mach_servers/$n missing from $ROOT" >&2
+			  return 1; }
+	done
+	echo "  /mach_servers: emulator init"
+}
+
+populate_root_servers || exit 1
 
 [ "$1" = "-n" ] && { echo "built; not booting"; exit 0; }
 
