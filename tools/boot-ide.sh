@@ -208,7 +208,13 @@ rm -f "$BSCONF"
 
 [ "$1" = "-n" ] && { echo "built; not booting"; exit 0; }
 
-pkill -f qemu-system-i386 2>/dev/null || true
+# Kill by the name the kernel actually stores, not by command line.
+# Linux truncates comm to 15 characters and "qemu-system-i386" is 16, so
+# `pkill -x qemu-system-i386` matches nothing; and `pkill -f` matches any
+# process whose command line merely CONTAINS the string -- including the
+# shell running this script, and including an agent's own tool call.
+# See DEBUGGING.md section 9.
+pkill -x "qemu-system-i38" 2>/dev/null || true
 sleep 2
 rm -f /tmp/console.log
 

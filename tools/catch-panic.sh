@@ -37,7 +37,13 @@ PANIC=$(nm "$B" | awk '$2 == "T" && $3 == "panic" { print "0x" $1 }')
 [ -n "$PANIC" ] || { echo "could not find panic in $B"; exit 1; }
 echo "panic() is at $PANIC"
 
-pkill -f qemu-system-i386 2>/dev/null || true
+# Kill by the name the kernel actually stores, not by command line.
+# Linux truncates comm to 15 characters and "qemu-system-i386" is 16, so
+# `pkill -x qemu-system-i386` matches nothing; and `pkill -f` matches any
+# process whose command line merely CONTAINS the string -- including the
+# shell running this script, and including an agent's own tool call.
+# See DEBUGGING.md section 9.
+pkill -x "qemu-system-i38" 2>/dev/null || true
 sleep 2
 rm -f "$LOG"
 

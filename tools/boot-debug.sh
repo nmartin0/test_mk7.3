@@ -63,7 +63,13 @@ for f in "$BOOTSTRAP" /tmp/servers.img /tmp/root.img /tmp/swap.img; do
 	[ -r "$f" ] || { echo "missing: $f -- run boot-ide.sh first"; exit 1; }
 done
 
-pkill -f qemu-system-i386 2>/dev/null || true
+# Kill by the name the kernel actually stores, not by command line.
+# Linux truncates comm to 15 characters and "qemu-system-i386" is 16, so
+# `pkill -x qemu-system-i386` matches nothing; and `pkill -f` matches any
+# process whose command line merely CONTAINS the string -- including the
+# shell running this script, and including an agent's own tool call.
+# See DEBUGGING.md section 9.
+pkill -x "qemu-system-i38" 2>/dev/null || true
 sleep 1
 
 cat <<'EOT'
