@@ -870,3 +870,66 @@ index 0fedb29..46b259b 100644
  	mach_error_t kr;
  	struct exec_section secs[NSECTIONS];
  	int i;
+diff --git a/emulator/i386/e_machinedep.c b/emulator/i386/e_machinedep.c
+index a74c4f7..a0e8a2a 100644
+--- a/emulator/i386/e_machinedep.c
++++ b/emulator/i386/e_machinedep.c
+@@ -49,6 +49,30 @@ e_fork_call(boolean_t isvfork, pid_t *pid, boolean_t *ischild)
+ 
+ 	volatile int x;
+ 
++	/*
++	 * emul_save_state() returns twice, like setjmp(): once in the
++	 * parent with 0, once in the child with the parent's pid. After
++	 * the second return, any local or parameter not declared
++	 * volatile has an indeterminate value -- the compiler may have
++	 * cached it in a register the restore does not reload, or have
++	 * considered its stack slot dead.
++	 *
++	 * Only x was volatile. pid and ischild are read on the child
++	 * path and are parameters, so they cannot be redeclared; they
++	 * are copied here, before the save, and used from these copies
++	 * afterwards.
++	 *
++	 * The two asm volatile statements bracketing the save were the
++	 * previous attempt at this. They clobber eax, edx and ecx only,
++	 * which sufficed for the compiler of 1995. A modern GCC reloaded
++	 * pid from its stack slot, which in the child held garbage, so
++	 * *ischild = TRUE succeeded and *pid = x faulted at an address
++	 * that varied between runs.
++	 */
++	pid_t * volatile	v_pid = pid;
++	boolean_t * volatile	v_ischild = ischild;
++	volatile boolean_t	v_isvfork = isvfork;
++
+ 	/*
+ 	 * Set up registers for child.  It resumes on its own stack.
+ 	 */
+@@ -64,8 +88,8 @@ e_fork_call(boolean_t isvfork, pid_t *pid, boolean_t *ischild)
+ 		     : /* no outputs */
+ 		     : "eax", "edx", "ecx", "cc");
+ 	if (x != 0) {
+-		*ischild = TRUE;
+-		*pid = x;
++		*v_ischild = TRUE;
++		*v_pid = x;
+ 		child_init();
+ 		if (syscall_debug > 1)
+ 		    e_emulator_error("CHILD parent=%d", x);
+@@ -79,14 +103,14 @@ e_fork_call(boolean_t isvfork, pid_t *pid, boolean_t *ischild)
+ 	/*
+ 	 * Create the child.
+ 	 */
+-	error = (isvfork?bsd_vfork:bsd_fork)
++	error = (v_isvfork?bsd_vfork:bsd_fork)
+ 	    (our_bsd_server_port,
+ 	     (int *)&state,
+ 	     i386_THREAD_STATE_COUNT,
+ 	     rv);
+ 
+ 	if (error == 0)
+-	    *pid = rv[0];
++	    *v_pid = rv[0];
+ 
+ 	*ischild = FALSE;
+ 	return error;
