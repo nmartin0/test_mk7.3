@@ -9,8 +9,17 @@ without rediscovering anything.
 
 ## Quick start
 
+First, the three trees that are not in this repository:
+
 ```sh
 git clone https://github.com/nmartin0/test_mk7.3.git
+git clone https://github.com/andreiw/ode4linux.git     ~/ode4linux
+git clone https://github.com/nmartin0/lites-1.1.u3.git ~/lites-1.1.u3
+```
+
+Then:
+
+```sh
 cd test_mk7.3
 
 export ODE4LINUX=~/ode4linux          # the ODE toolset source
@@ -19,11 +28,35 @@ export MK_BUILD=~/.cache/mk7.3        # all build output goes here
 sh build/bootstrap-ode.sh             # once: build ODE's tools
 sh build/mksandbox.sh                 # once: prepare the sandbox
 sh build/ode.sh MAKEFILE_PASS=FIRST   # export headers, run MIG
+
+# The libraries. NOT optional, and not only for LITES: without them
+# $MK_BUILD/export/at386/lib does not exist and build-lites.sh stops at
+# "missing: .../lib" before it compiles anything.
+for l in libcthreads libsa_mach libmach libmach_maxonstack libmach_sa; do
+	sh build/ode.sh -here mach_services/lib/$l
+done
+
+sh build/ode.sh -here file_systems
+sh build/ode.sh -here bootstrap        # the bootstrap task
+sh build/ode.sh -here default_pager    # boot-ide.sh requires it
 sh build/ode.sh -here mach_kernel MACH_KERNEL_CONFIG=PRODUCTION
 ```
 
+`libmach_sa` is easy to miss and is **not** in `build_world`'s list,
+because it did not exist upstream -- this tree adds it. Everything that
+links `-lmach_sa` fails without it, and the failure names the missing
+library rather than the missing build step.
+
 Result: `$MK_BUILD/obj/at386/mach_kernel/PRODUCTION/mach_kernel.PRODUCTION`,
-about 1,021,600 bytes, `ELF 32-bit LSB executable, Intel 80386`.
+**1,025,836 bytes**, `ELF 32-bit LSB executable, Intel 80386`.
+
+That number was 1,021,600 here for a long time and is still quoted that
+way in `WORKFLOW.md`'s example of good evidence. The current figure is
+corroborated twice: `HANDOFF.md` records 1,025,800, and
+`docs/current-blocker.md` records 1,025,836 against a PRODUCTION build.
+A fresh build measured 1,025,836 exactly. If yours differs by a few
+tens of bytes, check the version string -- `vers.o` embeds the build
+date and the hostname, and both vary in length.
 
 Boot it:
 
@@ -34,7 +67,41 @@ qemu-system-i386 -kernel mach_kernel.PRODUCTION \
 python3 tools/vgadump.py /tmp/mon /tmp/vga.bin 8
 ```
 
-There is **no serial console**; output goes to VGA. See `DEBUGGING.md`.
+There is **no serial console** on that path; output goes to VGA. See
+`DEBUGGING.md`. The LITES boot below is different -- `boot-ide.sh` does
+give the guest a serial console and writes it to `/tmp/console.log`.
+
+## From a clean clone to NetBSD init
+
+The whole sequence, after the build above:
+
+```sh
+sh tools/lites/build-lites.sh ~/lites-1.1.u3 ~/lites-build
+
+MIRROR=file://$HOME/mach_stuff/netbsd-1.0-i386/binary \
+	sh tools/mkroot-netbsd.sh          # /tmp/root.img, ext2, NetBSD 1.0
+
+STARTUP_ARGS='-s -i /init' sh tools/boot-ide.sh
+```
+
+`boot-ide.sh` builds the server volume, installs `emulator` and `init`
+into `/mach_servers` on the root image, and boots. `STARTUP_ARGS` picks
+single user; without it the boot is multi-user and there is no `/etc/rc`
+in a minimal root.
+
+Expect, in `/tmp/console.log`: the LITES banner, then NetBSD init
+reaching `Enter pathname of shell or RETURN for sh:`. Under TCG that
+takes about five minutes. It will also show the ECHILD respawn loop
+described in `docs/current-blocker.md`, which is the open blocker and
+not a setup mistake.
+
+Two things that are **not** setup mistakes either, and cost time before
+they were recognised:
+
+- `emulator [N] e_mapped_timeofday init failed 2` -- `/dev/time` does
+  not exist and the fallback is deliberate.
+- `init: /etc/spwd.db: No such file or directory` -- the minimal root
+  has no password database.
 
 ## Host toolchain
 
@@ -56,8 +123,37 @@ equivalent providing 32-bit startup files and headers) must be present.
 
 | path | what | modified? |
 |---|---|---|
-| `~/ode4linux` | ODE toolset source (Warkentin, 2014) | **no** |
+| `~/ode4linux` | ODE toolset source (Warkentin, 2014), `github.com/andreiw/ode4linux` | **no** |
+| `~/lites-1.1.u3` | the LITES source, `github.com/nmartin0/lites-1.1.u3` | by `build-lites.sh`, idempotently |
 | `$MK_BUILD` | all build output, default `~/.cache/mk7.3` | n/a |
+| `~/mach_stuff` | reference collection, `github.com/nmartin0/mach_stuff` | **no** |
+
+`build-lites.sh` applies `tools/lites/lites-osfmk73.patch` to the LITES
+clone in place, so that tree ends up modified and `git status` there is
+not empty. It detects an already-patched tree and skips, so re-running
+is safe.
+
+`mach_stuff` is large. Only the NetBSD sets are needed, and a partial
+clone gets them without the rest:
+
+```sh
+git clone --filter=blob:none --no-checkout \
+	https://github.com/nmartin0/mach_stuff.git ~/mach_stuff
+cd ~/mach_stuff && git sparse-checkout init --cone
+git sparse-checkout set netbsd-1.0-i386/binary/base10 \
+	netbsd-1.0-i386/binary/etc10
+git checkout main
+```
+
+`tools/mkroot-netbsd.sh` defaults to fetching from `archive.netbsd.org`,
+which is unreachable from a restricted sandbox. Point it at the local
+mirror instead -- note the sets live under `binary/base10/`, and
+`MIRROR` names the directory above that:
+
+```sh
+MIRROR=file://$HOME/mach_stuff/netbsd-1.0-i386/binary \
+	sh tools/mkroot-netbsd.sh
+```
 
 The repository stays clean after a full build. `mksandbox.sh` writes
 symlinks that `.gitignore` covers; `git status` should be empty.
