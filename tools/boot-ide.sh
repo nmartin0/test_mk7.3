@@ -133,10 +133,42 @@ dd if=/dev/zero of="$SERVERS" bs=1M count=16 2>/dev/null
 # because that path never runs.
 #
 # Full paths are used, as the recovered MkLinux bootstrap.conf does.
+#
+# STARTUP_ARGS goes between the server's path and its root device, which
+# is where LITES's own argument parsing expects flags. Default is empty,
+# which is the multi-user boot this script has always done. For the
+# single-user boot the tty work needs:
+#
+#	STARTUP_ARGS='-s -i /init' sh tools/boot-ide.sh
+#
+# The root device stays last either way: parse_arguments() takes the
+# final argument as the root device, so anything appended after it is
+# read as the device name instead.
+#
+# The server directory is named explicitly, as the fourth argument.
+# server_init.c's parse_arguments() reads the two positional arguments
+# after the flags as "Arg 2 (now 0) should be root name / Arg 3 (now 1)
+# should be server_dir_name (3.0 style)", so the order is
+# <root device> <server dir> and both are needed.
+#
+# Leaving the server directory off does not default to anything sane. It
+# takes the argc < 2 path, which builds the directory out of the root
+# name and the directory part of argv[0] -- and argv[0] is not what
+# bootstrap.conf says here, because the bootstrap task rewrites it to the
+# full path it loaded the server from. The two concatenate:
+#
+#	(lites): path(/dev/hd0c/dev/boot_device/mach_servers) derived from root
+#	(lites): init_program(/dev/boot_device/mach_servers/init)
+#	panic: first program (/dev/boot_device/mach_servers/init) exec failed
+#
+# so LITES looks for a literal /dev/boot_device/mach_servers directory on
+# the root filesystem, finds nothing, and panics with init died. Naming
+# the directory strips back to /mach_servers/init, which is where
+# mkroot-netbsd.sh puts things.
 BSCONF=$(mktemp)
 cat > "$BSCONF" <<EOT
 default_pager /mach_servers/default_pager hd1c
-startup /mach_servers/startup hd0c
+startup /mach_servers/startup ${STARTUP_ARGS} hd0c /dev/hd0c/mach_servers
 EOT
 "$DEBUGFS" -w -R "write $BSCONF /mach_servers/bootstrap.conf" \
 	"$SERVERS" >/dev/null 2>&1

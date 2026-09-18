@@ -1,3 +1,103 @@
+# Reproduced from a clean tree, session 6
+
+The blocker below is reproduced, on a sandbox rebuilt from nothing. The
+console now reads:
+
+```
+Sep 17 22:44:11 init: wait for single-user shell failed: No child
+                      processes; restarting
+Sep 17 22:44:13 init: /etc/spwd.db: No such file or directory
+Enter pathname of shell or RETURN for sh:
+Sep 17 22:44:14 init: can't get /dev/console for controlling terminal:
+                      Operation not permitted
+```
+
+## What the ordering settles
+
+The three messages arrive in the order spwd.db, prompt, then the
+TIOCSCTTY failure, and that is one child, not three. NetBSD 1.0's
+`single_user()` runs the SECURE password check and the DEBUGSHELL
+prompt *before* it calls `setctty()`, so the failing ioctl is in the
+first child init forks.
+
+That kills the hypothesis that an earlier child acquires the console
+and a later one is refused because `tp->t_session` still points at the
+dead session. Any explanation must account for the **first**
+`TIOCSCTTY` on a freshly opened console failing.
+
+The three clauses that can return EPERM are in `server/kern/tty.c:865`,
+not `server/serv/tty_io.c` as the session 5 handoff says:
+
+```c
+if (!SESS_LEADER(p) ||
+    (p->p_session->s_ttyvp || tp->t_session) &&
+    (tp->t_session != p->p_session))
+	return (EPERM);
+```
+
+`login_tty()` calls `setsid()` and ignores its return value, so a
+`setsid()` that failed in the child would leave it a non-session-leader
+and produce exactly this EPERM with nothing logged. That is the first
+thing to measure, and it is measurable: print which clause fired,
+together with `p_pid`, `p_pgid`, `s_leader`'s pid, `s_ttyvp` and
+`tp->t_session`, rather than the values alone.
+
+## Getting back to this state
+
+Two defects had to be fixed before the tree would reach it at all; both
+are committed, with their reasoning, and neither is related to the tty.
+
+- `libmach_sa` could not link. The committed tree did not build LITES.
+- `mkroot-netbsd.sh` built roots whose `/dev` was empty.
+
+A third was a boot configuration error rather than a bug, and it is
+what the commit carrying this note fixes: with no server directory
+named in `bootstrap.conf`, LITES derives one by concatenating the root
+name with the directory part of `argv[0]`, and `argv[0]` is the full
+path the bootstrap task loaded the server from, not what
+`bootstrap.conf` says. The result is
+
+```
+(lites): path(/dev/hd0c/dev/boot_device/mach_servers) derived from root
+(lites): init_program(/dev/boot_device/mach_servers/init)
+panic: first program (...) exec failed: xc002 file or directory does
+       not exist
+panic: init died
+```
+
+so LITES looks for a literal `/dev/boot_device/mach_servers` directory
+on the root filesystem. Naming the directory explicitly, which
+`server_init.c` calls the 3.0 style, strips the paths back to
+`/mach_servers/init` and `/mach_servers/emulator`.
+
+Those two files are **not** installed by any script. `mkroot-netbsd.sh`
+creates `/mach_servers` and leaves it empty; the emulator and the init
+program have to be written into it by hand:
+
+```sh
+debugfs -w -R "write ~/lites-build/obj/emulator/emulator.Lites.1.1.u3 \
+	/mach_servers/emulator" /tmp/root.img
+debugfs -w -R "dump /sbin/init /tmp/nbinit" /tmp/root.img
+debugfs -w -R "write /tmp/nbinit /mach_servers/init" /tmp/root.img
+debugfs -w -R "sif /mach_servers/init mode 0100755" /tmp/root.img
+```
+
+`debugfs`'s `write` does resolve a path, unlike its `mknod`. The `sif`
+is needed because `write` leaves the mode at 0644 and exec wants a set
+execute bit even for root.
+
+Then, for the single-user boot this needs:
+
+```sh
+STARTUP_ARGS='-s -i /init' sh tools/boot-ide.sh
+```
+
+`-i /init` is relative to the server directory, so it names
+`/mach_servers/init`, which is why NetBSD's `/sbin/init` is copied
+there rather than pointed at in place.
+
+---
+
 # SOLVED: NetBSD's init talks to the console
 
 ```
