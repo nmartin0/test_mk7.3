@@ -171,11 +171,50 @@ done
 # Character major 0 is "console" in LITES's cdevsw -- see
 # server/i386/conf.c, where entry 0 is { "console", 0, console_ops }.
 # The rest follow the same table: 1 tty, 2 kmem/null, 8 com.
-"$DEBUGFS" -w -R "mknod /dev/console c 0 0" "$ROOT" >/dev/null 2>&1
-"$DEBUGFS" -w -R "mknod /dev/tty c 1 0"     "$ROOT" >/dev/null 2>&1
-"$DEBUGFS" -w -R "mknod /dev/null c 2 2"    "$ROOT" >/dev/null 2>&1
-"$DEBUGFS" -w -R "mknod /dev/mem c 2 0"     "$ROOT" >/dev/null 2>&1
-"$DEBUGFS" -w -R "mknod /dev/kmem c 2 1"    "$ROOT" >/dev/null 2>&1
+#
+# debugfs's mknod takes a NAME IN THE CURRENT DIRECTORY, not a path.
+# Given a path it allocates the inode, reports "Allocated inode: N", exits
+# 0, and links it into the cwd under the whole string -- so `mknod
+# /dev/console c 0 0` leaves the root directory holding an entry literally
+# named "/dev/console", slashes included, and /dev empty. Measured with a
+# raw dirent dump; e2fsck calls it "Entry '/dev/console' in / (2) has
+# illegal characters in its name."
+#
+# Earlier versions of this script had no follow-up at all, so every root
+# it built had a /dev with nothing in it. The obvious repair -- keep the
+# mknod and add `ln <N> /dev/console` -- is worse than it looks: the
+# stray root entry stays, `ln` adds the real one, and the inode ends up
+# with two links and a link count of 1. e2fsck rejects that too.
+#
+# Doing the cd first is what actually works: one entry, in /dev, correct
+# old-style rdev in i_block[0] (0x202 for c 2 2, which is what LITES's
+# ext2_inode_cnv.c reads via di_db[0]), and a clean e2fsck.
+#
+# Modes: mknod leaves permission bits at 0000. Root bypasses them, and
+# everything here runs as uid 0, but they are set anyway so the nodes are
+# what NetBSD's MAKEDEV would have produced.
+"$DEBUGFS" -w "$ROOT" >/dev/null 2>&1 <<-'EOF'
+	cd /dev
+	mknod console c 0 0
+	mknod tty c 1 0
+	mknod null c 2 2
+	mknod mem c 2 0
+	mknod kmem c 2 1
+	sif /dev/console mode 020600
+	sif /dev/tty mode 020666
+	sif /dev/null mode 020666
+	sif /dev/mem mode 020640
+	sif /dev/kmem mode 020640
+EOF
+
+# A device node that did not get linked is the failure this whole block
+# exists to prevent, and it is silent -- so check rather than assume.
+for n in console tty null mem kmem; do
+	"$DEBUGFS" -R "stat /dev/$n" "$ROOT" 2>/dev/null |
+	    grep -q "Type: character special" || {
+		echo "mkroot: /dev/$n was not created" >&2; exit 1; }
+done
+echo "  /dev: console tty null mem kmem"
 
 echo
 echo "$ROOT:"
