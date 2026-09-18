@@ -79,6 +79,51 @@ Two details there correct assumptions this project has been running on:
 the pager is given a **paging file** rather than the raw `hd1c` device
 we currently use -- which matches `mach4-UK22`'s `def_pager_setup.c`.
 
+### The a.out toolchain problem, and a way round it
+
+**Linking `mach_init` against NetBSD's libc needs a toolchain we do not
+have.** `comp10` supplies `usr/lib/libc.a` (453 KB) and the full
+`usr/include`, and the symbols are there -- `_open`, `_execve`, `_fork`,
+`_printf`, `_sigblock` all present with a.out's leading underscore. But:
+
+```
+$ nm usr/lib/libc.a
+nm: truncate.o: file format not recognized
+
+$ ld --version && ld --help | grep 'supported targets'
+GNU ld (GNU Binutils for Ubuntu) 2.42
+ld: supported targets: elf64-x86-64 elf32-i386 ... pe-i386 ... binary ihex
+```
+
+`ar` reads the archive, but every member is a.out and **binutils 2.42
+has no a.out target at all**. Alan Modra's "various i386-aout and
+i386-coff target removal" deleted `bfd/i386netbsd.c` among others, so
+anything recent cannot link these objects.
+
+Building a pre-removal binutils (around 2.30) as
+`--target=i386-netbsdaout` would work, and the GitHub mirror
+`bminor/binutils-gdb` is reachable from the sandbox. That is a real but
+bounded piece of work.
+
+**But it may not be necessary.** `/sbin/init` is already a working
+NetBSD binary, and LITES has a flag to run it directly:
+
+```c
+		    case 'i':
+			/* Allow non-default init program file name: */
+			strcpy(init_program_name, argv[1]);
+```
+
+It sits inside `#if SECOND_SERVER`, and our build has
+`#define SECOND_SERVER 1` in the generated `second_server.h`, so **the
+flag is compiled in**.
+
+If LITES can be pointed straight at `/sbin/init` via `bootstrap.conf`,
+then `mach_init` is not needed to reach a shell, the cross-toolchain is
+not needed to build it, and the port already committed becomes
+belt-and-braces rather than a dependency. Worth testing before building
+any toolchain.
+
 ### Verified against the real NetBSD 1.0 sets
 
 The sets are mirrored in the reference collection at

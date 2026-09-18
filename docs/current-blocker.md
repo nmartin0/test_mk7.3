@@ -1,3 +1,1967 @@
+# SOLVED: NetBSD's init talks to the console
+
+```
+Sep 17 20:11:55 init: wait for single-user shell failed: No child processes; restarting
+Sep 17 20:11:57 init: /etc/spwd.db: No such file or directory
+Enter pathname of shell or RETURN for sh:
+Sep 17 20:11:57 init: can't get /dev/console for controlling terminal: Operation not permitted
+```
+
+**`Enter pathname of shell or RETURN for sh:`** -- NetBSD 1.0's
+single-user prompt, printed by an unmodified 1994 binary running under
+LITES on OSFMK 7.3. Zero panics.
+
+## The bug
+
+`tty_param()` ends:
+
+```c
+error = device_set_status(tp->t_device_port, TTY_STATUS,
+			  (int *)&ttstat, ttstat_count);
+return (error);
+```
+
+OSFMK's i386 console is the `kd` driver, which **does not implement
+`TTY_STATUS`**, so that returns `D_INVALID_OPERATION` -- 2505, `0x9c9`.
+`tty_open()` then did:
+
+```c
+rc = tty_param(tp, &tp->t_termios);
+if (rc != D_SUCCESS)
+	return(rc);		/* raw Mach error */
+```
+
+and that propagated **untranslated** through `cons_open()` and
+`spec_open()` to `open()`, where `e_mach_error_to_errno()` mapped it to
+`ENOTTY`. So every `open("/dev/console")` failed with "Inappropriate
+ioctl for device", and init could never acquire a console.
+
+## The fix
+
+Treat a device that refuses `TTY_STATUS` as one that simply does not
+have it:
+
+```c
+if (rc == D_INVALID_OPERATION)
+	rc = D_SUCCESS;
+```
+
+The surrounding code already assumes this interface may be absent:
+`tty_param()` discards the matching `device_get_status()` with a
+`(void)` cast, and the next line sets `TS_CARR_ON` with the comment
+`/* should get from TTY_STATUS */`. Only the `set` path treated absence
+as fatal.
+
+## How it was found, since the trail was long
+
+Seven wrong turns, each eliminated by measurement rather than argument:
+
+1. `prot = 0` on the mapped sections -- **my own format string**, `%x`
+   against a 64-bit `off_t`, desynchronising the varargs.
+2. `e_getuid` returning a garbage euid -- the trampoline deliberately
+   preserves the caller's `edx`.
+3. `initproc->p_pptr` unset -- true, and fixed, but not this bug.
+4. The `VBLK` vnode in `spec_open` -- a different device; the console is
+   `dev 0`, that was `dev 2`.
+5. `ext2_inode_cnv.c` never setting `i_rdev` -- `di_rdev` is a macro for
+   `di_db[0]`, which the block loop does copy.
+6. `ext2_specop_p` being incomplete -- `{ &vop_open_desc, spec_open }`
+   is correctly wired.
+7. `MNT_NODEV` on the ext2 root -- the mount sets `MNT_RDONLY`, not
+   `MNT_NODEV`.
+
+What finally located it was probing `cons_open()` and reading the value
+`tty_open()` returned: `0x9c9`, which is not an errno at all.
+
+## Remaining, and all of it ordinary
+
+- `can't get /dev/console for controlling terminal: Operation not
+  permitted` -- `TIOCSCTTY` is refused. Next thing to look at.
+- `/etc/spwd.db` and `/etc/ttys` are absent from our minimal root.
+- `e_mapped_timeofday init failed 2` -- `/dev/time` does not exist; the
+  fallback to `e_gettimeofday()` is deliberate.
+
+# Console open: what is established, precisely
+
+## 25 really is ENOTTY
+
+Confirmed in LITES's own table:
+
+```c
+include/sys/errno.h:105:  #define ___ENOTTY  25  /* Inappropriate ioctl for device */
+```
+
+And the translation preserves it. `e_open()` does
+
+```c
+err = kr ? e_mach_error_to_errno(kr) : 0;
+```
+
+and `e_mach_error_to_errno()` passes through
+`e_kernel_error_to_lites_error()`, which unwraps a LITES errno rather
+than inventing one. So **LITES genuinely returns ENOTTY from
+`open("/dev/console", O_RDWR)`** -- this is not the mislabelled-number
+trap that caught the `code`/`subcode` reading earlier.
+
+## Where ENOTTY comes from in the server
+
+Four sites return it. Three are in `tty_ioctl` and `device_misc.c`,
+reached only from `ioctl()`. The fourth is the interesting one:
+
+```c
+/* server/kern/subr_xxx.c */
+/*
+ * Unsupported ioctl function.
+ */
+enoioctl()
+{
+	return (ENOTTY);
+}
+```
+
+`enoioctl` is the stub a `cdevsw` entry uses for an operation it does
+not implement. ENOTTY arriving from `open()` therefore suggests a
+**device operation vector reaching a stub**, rather than an open check
+failing.
+
+## The other established facts
+
+- `/dev/console` never reaches `spec_open()`. The probe, narrowed to
+  major 0, only ever sees a **block** device with `dev = 2`, while the
+  console node is `c 0 0`, `dev = 0`.
+- `revoke("/dev/console")` on the same path **succeeds**, returning
+  `(x0 x0)`. So `namei()` resolves it and the vnode exists.
+- The ext2 root is mounted **`MNT_RDONLY`** -- `ext2_mountroot()` sets
+  `mp->mnt_flag = MNT_RDONLY` then adds `MNT_ROOTFS`. Opening a device
+  node `O_RDWR` on a read-only filesystem is legal in BSD, since the
+  restriction applies to the filesystem rather than the device, but it
+  is worth eliminating.
+
+## Next
+
+Two probes, one boot:
+
+1. **`vn_open()`**, in `server/kern/vfs_syscalls.c`: print its return
+   and the `v_type` it sees for the console path. `revoke()` proves the
+   lookup succeeds, so the rejection is in `vn_open()`'s own checks or
+   in `VOP_OPEN`.
+2. **`ext2_specop_p`**: `ext2_vfsops.c:935` passes this vector to
+   `ufs_vinit()` for special files. If it is incomplete -- an entry left
+   as `enoioctl` or an equivalent stub where `spec_open` should be --
+   that would produce exactly ENOTTY from `open()` on any device node in
+   an ext2 filesystem, while leaving `revoke()` unaffected.
+
+The second is the stronger hypothesis. It also predicts that **no**
+device node on ext2 can be opened, which is testable with `/dev/null`
+and would be a general defect rather than a console-specific one.
+
+# CORRECTION: the VBLK node is not the console
+
+The previous entry reported `spec_open()` receiving the console as
+`VBLK`. **That was the wrong device.** Narrowing the probe to major 0
+and printing the full `dev`:
+
+```
+so: CONSOLE v_type   3      VBLK
+so: CONSOLE dev      2      minor 2
+```
+
+`/dev/console` was created as `c 0 0`, so its `dev` is **0**, not 2.
+Every hit on major 0 has minor 2 and is a **block** device, so these are
+some other node going through `bdevsw[0]` -- not the console.
+
+**So `/dev/console` never reaches `spec_open()` at all**, and the
+original reading was right. The `VBLK` finding was real but about a
+different device, and drawing the console conclusion from it was the
+same mistake as reading `getuid`'s success as proof the proc was
+correct: a plausible number from the wrong source.
+
+## What is actually established
+
+- `open("/dev/console", O_RDWR)` returns 25.
+- It does **not** reach `spec_open()`, so it fails in `namei()` or
+  `vn_open()` before device dispatch.
+- `revoke("/dev/console")` on the **same path** succeeds, returning
+  `(x0 x0)`. So the path resolves and the vnode is found -- the failure
+  is specific to opening it, not to naming it.
+
+That last point is the useful one and is new: `revoke()` and `open()`
+take the same `namei()` route, and one works. Whatever rejects the open
+is between the successful lookup and `VOP_OPEN`.
+
+## Next
+
+Probe `vn_open()` in `server/kern/vfs_syscalls.c` -- its return value,
+and the `v_type` it sees -- for the console path specifically. Since
+`revoke()` proves the lookup succeeds, the fault is in `vn_open()`'s own
+checks: it tests `v_type` against the requested mode, rejects `VBLK` and
+`VCHR` in some configurations, and checks the mount's `MNT_NODEV` flag.
+
+**`MNT_NODEV` is worth checking first.** `spec_open()` has
+
+```c
+if (vp->v_mount && (vp->v_mount->mnt_flag & MNT_NODEV))
+	return (ENXIO);
+```
+
+and `vn_open()` may have an equivalent. If the ext2 root is mounted with
+`MNT_NODEV` set -- by default, or because the flag word is
+uninitialised -- every device node on it would be unusable while
+ordinary files and `revoke()` continued to work. That fits every
+observation.
+
+# REAL NEWS: the device node arrives as VBLK, not VCHR
+
+`spec_open()` **is** entered -- the earlier conclusion that it was not
+reached was wrong, and came from probing `tty_open()` in a build that
+did not also probe `spec_open()`. With the probe in the right place:
+
+```
+so: entered
+so: v_type   3
+so: dev      2
+so: maj      0
+```
+
+In BSD's vnode types -- `VNON=0, VREG=1, VDIR=2, VBLK=3, VCHR=4` --
+**`v_type` is 3, `VBLK`.** A console must be `VCHR`.
+
+`spec_open()` switches on `vp->v_type`:
+
+```c
+switch (vp->v_type) {
+case VCHR:
+	if ((u_int)maj >= nchrdev)
+		return (ENXIO);
+	...
+	error = (*cdevsw[maj].d_open)(dev, ap->a_mode, S_IFCHR, ap->a_p);
+```
+
+The `VBLK` arm does entirely different checks and never reaches
+`cdevsw[maj].d_open`. **That is exactly why `cons_open()` and
+`tty_open()` never fired**, and it explains the failure without any of
+the tty-layer theories.
+
+## Where VBLK comes from
+
+The node was created as a **character** device:
+
+```sh
+debugfs -w -R "mknod /dev/console c 0 0" root.img
+debugfs -w -R "ln <33> /dev/console"     root.img
+```
+
+and `debugfs` reported mode `20000`, which is `S_IFCHR`. So the on-disk
+inode is right, and something between the ext2 inode and `vp->v_type`
+turns a character device into a block device.
+
+That conversion is in the ext2 reader, and it is where the earlier
+`i_rdev` question really belongs -- not the device number, which is
+arriving (`dev` and `maj` are consistent with a node in that range), but
+the **type**.
+
+## Next
+
+Find where ext2 sets `v_type` from the inode mode. UFS does this in
+`ufs_vnops.c`/`ufs_inode.c` via `IFTOVT()`; the ext2 reader has its own
+path. Printing the mode it reads alongside the `v_type` it derives will
+show whether the mode is wrong on arrival or the mapping is.
+
+**Also note `dev = 2` with `maj = 0`**, so minor 2 -- while
+`/dev/console` was created as `c 0 0`, giving `dev` 0. So this
+particular `spec_open` call may be for a different node entirely, and
+the probe should print the vnode or path to be sure which device is
+being opened before drawing conclusions about the console specifically.
+
+# The console open never reaches tty_open
+
+Probes placed in `tty_open()` -- on `cdev_name_string()`'s result and on
+`device_open()`'s -- **never fire**, while the emulator still reports:
+
+```
+[2] e_open(/dev/console x2 x2)   -> 25
+```
+
+So `/dev/console` fails **before** `cons_open()` and `tty_open()` are
+called at all. The failure is in the VFS layer, not the tty layer, and
+the earlier suspicion of `cdev_name_string()` or `device_open()` is
+ruled out.
+
+That also disposes of the question of whether `25` is a Mach code or an
+errno: it is produced somewhere else entirely, so neither of the two
+`return (rc)` paths that motivated the question is involved.
+
+## What was checked on the ext2 side, and a correction
+
+The natural suspect is the device node itself. In ext2, a device's
+major and minor live in `i_block[0]` of the inode, and the reader has to
+carry that into the in-core inode as `i_rdev`.
+
+`grep` shows `rdev` appearing exactly once in
+`server/ufs/ext2fs/ext2_inode_cnv.c`, and only as `#undef i_rdev`, while
+the UFS reader references `ip->i_rdev` throughout. **That looked
+conclusive and is not.** In the BSD `dinode`, `di_rdev` is a macro for
+`di_db[0]`, and the conversion does:
+
+```c
+for (i = 0; i < NDADDR; i++)
+	di->di_db[i] = ei->i_block[i];
+```
+
+which copies `i_block[0]` -- exactly where ext2 keeps the device number
+-- into the slot `di_rdev` names. So the device number may well arrive
+correctly, and the absence of the identifier `i_rdev` proves nothing.
+
+Recorded because the first reading was wrong and would have sent the
+next attempt down a dead end.
+
+## Next
+
+Find what actually returns 25 for this open. The path is
+`e_open` -> LITES's `open()` -> `namei()` -> `vn_open()` -> `VOP_OPEN`,
+and the device dispatch happens in `spec_open()`. Probing `vn_open()`'s
+return, and `spec_open()`'s entry and return, will locate it in one
+boot. `spec_open()` is also where an `i_rdev` of zero would be rejected,
+so the ext2 question can be settled at the same time by printing the
+device number it actually sees.
+
+Note `/dev/console` was created as `c 0 0`, giving `rdev` 0, and LITES's
+console **is** character major 0. If anything on that path treats a zero
+device number as "no device", the node would need a different minor --
+which is cheap to test once the failing function is known.
+
+# Located: open("/dev/console", O_RDWR) fails in tty_open
+
+`e_open` already traces its path at `syscall_debug > 1`, so with tracing
+forced on the sequence is unambiguous:
+
+```
+[1] e_open(/dev/time x0 x0)                -> ENOENT
+[1] e_open(/etc/localtime x0 x0)           -> ENOENT
+[1] e_open(/usr/share/zoneinfo/GMT ...)    -> ENOENT
+[2] e_open(/dev/console x2 x2)             -> 25          <-- O_RDWR
+```
+
+The three ENOENTs are cosmetic -- `/dev/time` is the mapped-time device
+(hence `e_mapped_timeofday init failed 2`), and the timezone files are
+simply not in our minimal root. **The one that matters is
+`/dev/console` with `O_RDWR` returning 25.**
+
+## Why 25 is probably not ENOTTY
+
+`cons_open()` (`server/serv/cons.c`) finds the console major by name in
+`cdevsw`, builds `makedev(major, 0)` -- so our node's minor number is
+irrelevant -- and calls `tty_open()`. That does:
+
+```c
+rc = cdev_name_string(dev, name);
+if (rc != 0)
+	return (rc);		/* bad name */
+mode = D_READ|D_WRITE;
+rc = device_open(device_server_port, ..., name, ...);
+```
+
+Both failure paths **`return (rc)` directly** -- a Mach `kern_return_t`
+handed back as though it were a BSD errno. So the `25` the emulator
+reports is very likely an untranslated Mach code, not `ENOTTY`, and
+reading it as ENOTTY would send the next person the wrong way.
+
+The two candidates are `cdev_name_string()` failing to build the device
+name, or `device_open()` refusing it. Both are reachable and both would
+surface as this same number.
+
+## Next
+
+Trace `rc` separately at each of those two returns, one value per
+`printf`. That distinguishes a naming failure from an open failure, and
+also reveals whether the value is a Mach error (large, structured) or a
+small errno -- which settles the translation question at the same time.
+
+This is the same pattern as the `code`/`subcode` confusion earlier in
+this file: a number that looks like a familiar errno but is not one.
+
+## Still cosmetic, not chased
+
+`/dev/time` is missing, so `e_mapped_timeofday` falls back to
+`e_gettimeofday()` on every process. Harmless, and the fallback is
+deliberate.
+
+# REAL NEWS: init runs properly. The device nodes were never created.
+
+With `syscall_debug` forced on, NetBSD's `init` is doing exactly the
+right thing:
+
+```
+e_getuid  e_getpid  e_setsid  e_setlogin
+e_sigaction x16     e_bsd_sigprocmask
+e_close e_close e_close
+e_sysctl
+e_machine_fork
+```
+
+Root check, pid check (now passing), session, login name, sixteen signal
+handlers, closing inherited descriptors, then forking for the
+single-user shell. That is a correct NetBSD init startup.
+
+## The blocker was my own tooling
+
+The child was calling `revoke(_PATH_CONSOLE)` and getting **ENOENT**,
+because `/dev` contained nothing but `boot_device`:
+
+```
+$ debugfs -R "ls -l /dev" nbroot.img
+  15 . | 2 .. | 29 boot_device
+```
+
+**`debugfs`'s `mknod` allocates an inode but does not link it into the
+directory.** It reports "Allocated inode: 33" and exits successfully, so
+every `mknod` in the root-building recipe silently did nothing. The node
+has to be linked afterwards:
+
+```sh
+debugfs -w -R "mknod /dev/console c 0 0" root.img   # allocates inode 33
+debugfs -w -R "ln <33> /dev/console"       root.img # links it -- required
+```
+
+That affects `tools/mkroot-netbsd.sh`, which uses `mknod` alone and
+therefore produces a root with no device nodes at all. **It needs
+fixing.**
+
+## Result
+
+With the nodes linked:
+
+```
+[2] return[2]  e_machine_fork = (x0 x1)
+[2] return[56] e_revoke       = (x0 x0)      <-- succeeds now
+[2] return[48] e_bsd_sigprocmask
+[2] return[46] e_sigaction
+[2] return[83] e_setitimer
+[2] err_return[111] e_sigsuspend -> 4        EINTR
+[2] return_SIG14                             SIGALRM
+```
+
+The child made **63 syscalls**, against a handful before.
+
+# Next: opening the console returns ENOTTY
+
+```
+err_return[5] e_open -> 25
+```
+
+25 is `ENOTTY`. The node exists and `revoke` works, so the path resolves
+and the device is found -- it is the open itself that fails, in LITES's
+tty layer.
+
+`server/i386/conf.c` entry 0 is
+`{ "console", 0, console_ops }` with `cons_open`, and the emulator
+resolves `/dev/console` to it. Whether `cons_open` needs a controlling
+terminal established first, or the minor number matters, or the console
+port is not attached, is the thing to read next.
+
+`e_setsid` succeeded earlier, so the child does have its own session,
+which is normally the precondition for acquiring a controlling tty.
+
+# MILESTONE: multiple processes running. fork works.
+
+```
+emulator [1] e_mapped_timeofday init failed 2
+emulator [2] e_mapped_timeofday init failed 2
+emulator [3] e_mapped_timeofday init failed 2
+emulator [4] e_mapped_timeofday init failed 2
+```
+
+**Zero exceptions**, down from 364,450. No panic. NetBSD's `/sbin/init`
+is alive and forking children, and the emulator is running four
+processes.
+
+# The bug: emul_save_state saved the wrong stack pointer
+
+`emulator/i386/emul_misc_asm.s`, a hand-written `setjmp`:
+
+```asm
+movl	0(%esp),%ecx
+movl	%ecx,48(%edx)	/* pc to state[12] -- the return address */
+...
+movl	%esp,%ecx
+movl	%ecx,60(%edx)	/* sp to state[15] -- esp INSIDE this function */
+```
+
+The saved `pc` is the return address, so a restore resumes at the
+instruction after the call -- correct. But the saved `esp` still has that
+return address on top of it. A real `ret` pops it and adds 4; a restore
+does not. **So the child resumed four bytes low, and every `N(%esp)`
+offset in the caller addressed the wrong slot.**
+
+That is exactly why `*ischild = TRUE` succeeded and `*pid = x` faulted
+four bytes away: neighbouring slots, one of which happened to hold
+something writable.
+
+**The fix** is one instruction -- save the `esp` the caller will have
+*after* the return:
+
+```asm
+leal	4(%esp),%ecx
+movl	%ecx,60(%edx)
+```
+
+## Confirmed by measurement
+
+Before the fix, `state.uesp` was consistently below `e_fork_call`'s own
+`esp`, and the child's probes never ran at all. After it:
+
+```
+ffk: child esp    bfffde08     the child branch executes
+ffk: v_pid        bfffdf10     the same value the parent had
+```
+
+The child now sees the caller's frame as the caller left it.
+
+## Why 1995 did not hit this
+
+The saved `pc` and `esp` disagree by exactly the 4 bytes a `call`
+pushes, so whether it matters depends entirely on what the compiler puts
+where in the caller's frame. With the code generation of the day the
+wrong slots happened to be harmless. It is the same shape as the other
+faults in this chain: an assumption that held for one compiler and does
+not hold for another.
+
+## Where it stands now
+
+Booting with `-s` in `bootstrap.conf`:
+
+```
+startup /mach_servers/startup -s -i /init hd0c
+```
+
+`server_init.c:359` turns that into `boothowto |= RB_SINGLE`, and
+`init_main.c` passes `-s` through to the first program, so NetBSD's
+`init` should take its single-user path and run `/bin/sh` on the
+console.
+
+It still forks repeatedly -- fewer children than before, but the pattern
+is unchanged: process 1 forks, the child does not survive, and process 1
+forks again. That is NetBSD `init`'s respawn loop.
+
+**So init is reaching its child path and the child is failing to become
+a shell.** The next thing to find is where: the child either fails to
+open the console, fails to `exec /bin/sh`, or execs it and the shell
+exits immediately.
+
+Worth checking first, in order:
+
+1. **Is `/bin/sh` reachable at the path init uses?** It is at `/bin/sh`
+   in the ext2 root, but init may look elsewhere in single-user, and the
+   emulator resolves paths through LITES's VFS.
+2. **Does opening `/dev/console` succeed?** It was created with
+   `mknod /dev/console c 0 0`, which matches LITES's `cdevsw` entry 0,
+   but nothing has confirmed an `open()` on it works.
+3. **Does the shell exec and then exit?** A statically linked NetBSD
+   `sh` with no terminal, no `/etc/profile` and closed descriptors may
+   simply exit.
+
+**Syscall tracing is no longer on.** `syscall_debug > 2` gates it, and
+`syscall_debug` is a BSS global that was **non-zero by accident** before
+the BSS fix -- the tracing that guided this whole investigation was
+enabled by the very corruption being investigated. It now correctly
+reads zero, so it has to be turned on deliberately to see what the child
+is doing.
+
+## Remaining
+
+`e_mapped_timeofday init failed 2` on every process. Error 2 is
+`ENOENT`. Not fatal -- the processes run regardless -- but it is the
+next thing to look at, along with what init is doing with its four
+children and why it has not reached a shell.
+
+# The setjmp fix did not work, and that is informative
+
+Copying `pid`, `ischild` and `isvfork` into `volatile` locals before
+`emul_save_state()` and using those afterwards **did not fix the
+fault**. It moved it:
+
+```
+before:  eip a0012d21    mov %eax,(%edx)     *pid = x
+after:   eip a0012d42    mov %edx,(%eax)     *v_pid = x
+```
+
+Same statement, compiled differently. The compiler now reads both
+pointers from stack slots:
+
+```asm
+a0012d30:  mov  0xc(%esp),%eax
+a0012d34:  movl $0x1,(%eax)       ; *v_ischild = TRUE   -- succeeds
+a0012d3a:  mov  0x8(%esp),%eax
+a0012d3e:  mov  0x4(%esp),%edx
+a0012d42:  mov  %edx,(%eax)       ; *v_pid = x          -- faults
+a0012d44:  call a0001c80 <child_init>
+```
+
+**This rules out register caching.** Both values come from memory, so
+the problem is not that the compiler kept something in a register the
+restore did not reload. The child's stack slot at `0x8(%esp)` holds
+garbage while the one at `0xc(%esp)` four bytes away is fine.
+
+## What that means
+
+The child's stack is **partially** wrong. Adjacent slots in the same
+frame disagree, which is not what a missing or unmapped stack looks
+like, and not what a register-allocation hazard looks like either.
+
+Candidates, in the order they seem worth testing:
+
+1. **`emul_save_state()` restores a slightly different `esp` in the
+   child than the parent had**, so the same offsets address different
+   slots. The fault `esp` is `bfffde24`; comparing it against the
+   parent's `esp` at the save would settle this immediately.
+2. **The saved state is stale** -- taken before the frame was fully
+   built, so the child resumes with an `esp` that was correct at save
+   time but does not match the frame the code then expects.
+3. **The copy-on-write of the stack page races the child's first
+   write**, leaving part of the page unfaulted.
+
+## Progress worth keeping
+
+The volatile change is retained. It is correct regardless -- a
+`setjmp`-style function must not read non-`volatile` locals after the
+second return -- and leaving the code relying on three inline-asm
+clobbers would be storing up the same class of failure for the next
+compiler. But it is not this bug, and the commit says so.
+
+**Also new:** `e_mapped_timeofday init failed 2` now appears, which it
+did not before. Error 2 is `ENOENT`. Worth noting but not chased.
+
+# The fault storm is in e_fork_call, on the child path
+
+Limiting the exception trace to three and capturing the thread state
+localises it exactly:
+
+```
+exception: exc     1          EXC_BAD_ACCESS
+exception: code    5276a0     the faulting address -- varies each time
+exception: signal  a          SIGBUS
+exception: eip     a0012d21   constant
+exception: esp     bfffde34   a valid stack address
+```
+
+`eip` is **inside the emulator's text** (`a0001000`-`a0024423`), not in
+init. The same instruction faults every time; only the address it
+touches varies.
+
+```
+a0012c90 T e_fork_call
+
+a0012d14:  mov  0x64(%esp),%edx    ; a pointer argument, from the stack
+a0012d18:  movl $0x1,(%eax)
+a0012d1e:  mov  (%esp),%eax
+a0012d21:  mov  %eax,(%edx)        ; <-- faults, writes through edx
+a0012d23:  call a0001c80 <child_init>
+```
+
+So **init called `fork()`** -- it got past `getuid`, `getpid` and
+whatever else -- and in the **child** path the emulator writes through a
+pointer that holds garbage. The varying fault address is that pointer
+differing between runs, which is the signature of reading uninitialised
+or stale memory.
+
+## Why it loops rather than dying
+
+The fault is taken in the emulator, which is also what delivers signals.
+Signalling the process re-enters the faulting path, faults again, and
+repeats -- 364,450 times before the run was cut short. The loop is a
+consequence of where the fault is, not a separate bug.
+
+## The faulting line, exactly
+
+`emulator/i386/e_machinedep.c:43`, `e_fork_call(boolean_t isvfork,
+pid_t *pid, boolean_t *ischild)`:
+
+```c
+	x = emul_save_state(&state);
+	...
+	if (x != 0) {			/* the child */
+		*ischild = TRUE;	/*  movl $0x1,(%eax)              */
+		*pid = x;		/*  mov (%esp),%eax; mov %eax,(%edx)  <-- faults */
+		child_init();		/*  call a0001c80 <child_init>    */
+		...
+```
+
+The disassembly matches line for line. **`*pid = x` faults** because
+`pid`, a parameter reloaded from `0x64(%esp)`, holds garbage in the
+child.
+
+`*ischild = TRUE` did **not** fault, so one parameter pointer survived
+and the other did not. Both were on the parent's stack, so whatever went
+wrong is partial rather than the whole frame being absent.
+
+## Stack inheritance is probably not it
+
+`server_exec.c` allocates the user stack with
+
+```c
+kr = vm_allocate(p->p_task, &stack_start, stack_size, FALSE);
+```
+
+and `vm_allocate` gives `VM_INHERIT_DEFAULT`, which is
+`VM_INHERIT_COPY`. The emulator itself never calls `vm_inherit()` or
+`cthread_fork_prepare()`, and it runs on the user stack rather than a
+cthread stack, so there is nothing else to set.
+
+More decisively: **`*ischild = TRUE` succeeded on the same stack frame
+that `*pid = x` faulted on.** If the stack were missing or unreadable,
+both would fail. The frame is there; one pointer value in it is wrong.
+
+## The likely cause: a setjmp hazard
+
+```c
+e_fork_call(boolean_t isvfork, pid_t *pid, boolean_t *ischild)
+{
+	struct i386_thread_state	state;
+	int rv[2];
+	errno_t error;
+	volatile int x;			/* only x is volatile */
+
+	asm volatile("nop" : : : "eax", "edx", "ecx", "cc");
+	x = emul_save_state(&state);	/* returns twice, like setjmp */
+	asm volatile("nop" : : : "eax", "edx", "ecx", "cc");
+
+	if (x != 0) {			/* the child */
+		*ischild = TRUE;
+		*pid = x;		/* pid reloaded from 0x64(%esp) */
+```
+
+`emul_save_state()` returns twice. **Any local or parameter not declared
+`volatile` has an indeterminate value after the second return**, and
+only `x` is marked. The two `asm volatile` statements are an attempt to
+force reloads, but they clobber only `eax`, `edx` and `ecx` -- they say
+nothing about what the compiler may have cached in a callee-saved
+register or about which stack slots it considers live.
+
+That fits the evidence exactly: one parameter pointer is usable and the
+other is not, the bad value varies between runs, and the faulting
+instruction reloads from a fixed stack offset.
+
+**It also explains why this was never seen in 1995.** The clobber lists
+happened to be sufficient for the compiler of the day. A modern GCC
+makes different decisions about what to keep where, and this function
+has no contract that constrains it.
+
+**The fix** is to declare `pid` and `ischild` (and anything else read
+after the save) `volatile`, which is what the C standard requires of a
+`setjmp`-style function, rather than relying on inline-asm clobbers.
+That needs testing rather than assuming: the parameters cannot be
+redeclared in place, so they must be copied to `volatile` locals before
+the save and used from those afterwards.
+
+## Superseded: stack inheritance across fork
+
+The child resumes at the state saved by `emul_save_state()`, on whatever
+stack the fork produced. If that stack is not inherited correctly, every
+reloaded parameter is garbage -- which is precisely what
+`VM_INHERIT_COPY` exists to arrange:
+
+```c
+/* libcthreads, cthread_fork_prepare() */
+vm_inherit(mach_task_self(), p->stack_base, p->stack_size,
+	   VM_INHERIT_COPY);
+```
+
+That is the same machinery noted earlier when porting `mach_init`, whose
+own HISTORY records that the explicit `cthread_fork_{prepare,parent,
+child}` calls were added deliberately because they were needed.
+
+**So the question is whether the emulator's stack is marked
+`VM_INHERIT_COPY` before `bsd_fork` is called.** If it is shared or not
+inherited, the child writes through pointers into a stack that is not
+its own, or not there at all.
+
+## Where to look
+
+`e_fork_call` is in `emulator/i386/`. The instruction sequence --
+`*eax = 1` then `*edx = <stack word>` immediately before
+`call child_init` -- looks like the two-value fork return being written
+through caller-supplied pointers, the same `rval[0]`/`rval[1]` pair the
+trampoline uses:
+
+```c
+/* emulator/i386/e_trampoline.c */
+err = e_fork((pid_t *) rval);
+if (*rval)
+    rval[1] = 0;
+else
+    rval[1] = 1;
+```
+
+So the suspect is how `rval` reaches `e_fork_call` on the child side,
+where the stack has just been replaced by the fork. Reading the C source
+of `e_fork_call` against this disassembly is the next step.
+
+## Worth noting
+
+This is the fourth bug in this chain to come from **uninitialised or
+stale memory being used as a pointer**, after the shared region, the
+emulator's BSS, and `getpid_cache`. Three of those had the same root --
+`MAX_PHDRS`. Whether this one does too is not yet known, but it is the
+first question to ask.
+
+# FIXED: MAX_PHDRS. getpid now works. New failure after it.
+
+The fix, in three parts, all needed together:
+
+- **`MAX_PHDRS` 4 -> 16** in `include/sys/elf.h`.
+- **The loop in `parse_exec_file()` bounded by `MAX_PHDRS`** as well as
+  `e_phnum`, so a binary with more headers loses segments rather than
+  reading past the fixed-size array.
+- **`NSECTIONS` -> `MAX_PHDRS + 1`** in both callers, and the guard
+  corrected from `nsecs < e_phnum` to `nsecs <= e_phnum`. The loop writes
+  `secs[phdr+1].how = EXEC_M_STOP` after the last segment, so the array
+  needs one entry **more** than the header count. The old test let a
+  six-header binary into a six-entry array and wrote one past the end --
+  the same class of overrun, found while fixing the first.
+
+## Measured before and after
+
+| | before | after |
+|---|---|---|
+| `li->zero_start` | `8` | **`a003fc44`** |
+| `li->zero_count` | `ff8` | **`13bc`** |
+| `getpid_cache` at first call | `1f1a0` | **`0`** |
+
+And getpid now goes to the server and resolves correctly:
+
+```
+gp: p                7004
+gp: initproc         7004
+gp: p->p_pid         1
+gp: initproc->p_pid  1
+```
+
+Same proc, right pid. NetBSD `init`'s `if (getpid() != 1)` check passes
+for the first time.
+
+# NEW: a fault storm immediately after
+
+init gets past `getpid` and then takes **364,450** protection faults, at
+addresses that vary each time:
+
+```
+exception: exc=1
+exception: code=5276a0
+exception: subcode=2
+exception: signal=10
+...repeating...
+```
+
+Every one is `EXC_BAD_ACCESS` with `KERN_PROTECTION_FAILURE`, delivered
+as SIGBUS. The process is signalled, the signal handling faults, and it
+repeats without progress.
+
+That it loops rather than dying suggests the fault is taken while
+delivering the signal for the previous fault -- so the first fault's
+cause and the loop's cause may be different, and the loop should be
+stopped before diagnosing the fault. `thread_psignal()` in
+`server/serv/ux_exception.c` is where the signal is delivered.
+
+**Note the addresses are in the same range as the original SIGBUS**
+(`0x776a0` appears again). With the emulator's BSS now correctly
+cleared, whatever is mapped there is worth re-examining -- the earlier
+conclusion that the region was corrupted by the BSS overlap may have
+been only half the story.
+
+# COMPLETE ROOT CAUSE: MAX_PHDRS is 4, the emulator has 6
+
+`include/sys/elf.h`:
+
+```c
+/* XXX Assumes the program headers will immediately follow the file header,
+   which, while usually OK, isn't right according to the ELF spec.
+
+   Also places a ceiling on the number of program headers.  */
+
+#define MAX_PHDRS 4
+typedef struct {
+  Elf32_Ehdr ehdr;
+  Elf32_Phdr phdrs[MAX_PHDRS];
+} elf_exec;
+```
+
+The emulator, linked by modern GNU ld:
+
+```
+Start of program headers:   52      <- the first assumption holds
+Number of program headers:  6       <- the second does not
+
+LOAD       0xa0000000 R       phdrs[0]
+LOAD       0xa0001000 R E     phdrs[1]
+LOAD       0xa0025000 R       phdrs[2]
+LOAD       0xa003bfe4 RW      phdrs[3]   filesz 0x3c60  memsz 0x434c
+GNU_STACK                     phdrs[4]   OUT OF BOUNDS
+GNU_RELRO                     phdrs[5]   OUT OF BOUNDS
+```
+
+`parse_exec_file()` loops `for (phdr = 0; phdr < elf->ehdr.e_phnum;
+phdr++)` -- to **6** -- over an array of **4**. `phdrs[4]` and
+`phdrs[5]` read past the end of the struct.
+
+**And the order is exactly wrong.** `phdrs[3]`, the real data/bss
+segment, correctly sets
+
+```
+li->zero_start = 0xa003bfe4 + 0x3c60 = 0xa003fc44
+```
+
+Then the two out-of-bounds reads follow. Whatever lies past the struct
+was read as a program header, and if it looks like a writable `PT_LOAD`
+with a non-zero `p_memsz` it passes both guards and **overwrites**
+`zero_start` -- which is how it becomes `8`.
+
+`GNU_STACK` and `GNU_RELRO` are exactly the headers modern linkers add
+and 1995 linkers did not. The ceiling of 4 was adequate for the ELF of
+its day.
+
+## The complete chain
+
+1. `MAX_PHDRS` is 4; the emulator has 6 program headers.
+2. `parse_exec_file()` reads two headers out of bounds.
+3. Garbage overwrites `li->zero_start`, `0xa003fc44` becoming `8`.
+4. `set_emulator_state()` passes `8` in `ebx` and `0xff8` in `edi`.
+5. `ecrt0` zeroes bytes 8 to 0x1000 -- the first page -- and never
+   touches the emulator's BSS.
+6. `getpid_cache`, a BSS global declared `= 0`, holds `0x1f1a0`.
+7. `e_getpid` returns the cache without messaging the server.
+8. NetBSD `init` runs `if (getpid() != 1) errx(1, "already running")`.
+9. `errx` writes to stderr, gets `EBADF`, exits 1.
+10. `panic: init died`.
+
+Every step measured.
+
+## The fix
+
+Bound the loop by `MAX_PHDRS` **and** raise the ceiling. Both are
+needed: raising it alone leaves the same overrun for any binary with
+more headers, and bounding alone would silently ignore real segments.
+
+A third improvement is worth taking at the same time: honour `e_phoff`
+rather than assuming the headers follow the file header, which the
+comment in that file already admits is not what the ELF spec says.
+
+And `ecrt0` should refuse to clear from an address outside the
+emulator's own image. That check would have turned four hours of silent
+corruption into an immediate error.
+
+# ROOT CAUSE FOUND: zero_start is 8
+
+Probed in `set_emulator_state()`, one argument per `printf`:
+
+```
+ses: zero_start    8
+ses: zero_count    ff8
+ses: pc            a0001020
+```
+
+The entry point is correct. **`zero_start` is `8`.** It should be
+`0xa003fc44`, the end of the emulator's `.data`.
+
+So `ecrt0` does:
+
+```c
+register char *zero_start asm("ebx");	/* = 8 */
+register int   zero_count asm("edi");	/* = 0xff8 */
+...
+for ( ; zero_count > 0; zero_count--)
+	*zero_start++ = 0;
+```
+
+It zeroes bytes `8` through `0x1000` -- the first page of the address
+space -- and **never touches the emulator's BSS**.
+
+## The whole chain, end to end
+
+1. `zero_start`/`zero_count` are computed as `8`/`0xff8` instead of
+   `a003fc44`/`0x13bc`.
+2. `ecrt0` therefore clears the wrong page and leaves the emulator's BSS
+   holding whatever was in those pages.
+3. `getpid_cache`, a BSS global at `a003fca4` declared
+   `pid_t getpid_cache = 0;`, holds `0x1f1a0`.
+4. `e_getpid` tests `(!XXX_enable_getpid_cache || getpid_cache == 0)`,
+   finds the cache non-zero, and returns it **without messaging the
+   server** -- which is why a server-side probe on `syscode == 20` never
+   fired.
+5. NetBSD's `init` runs `if (getpid() != 1) errx(1, "already running")`,
+   which fires.
+6. `errx()` writes to stderr, fails with `EBADF` since no descriptors
+   are open, and exits 1.
+7. LITES panics with "init died".
+
+Every step of that is now measured rather than inferred.
+
+## Where the bad value comes from
+
+`liblites/exec_file.c` has a correct ELF computation:
+
+```c
+li->zero_start = elf->phdrs[phdr].p_vaddr + elf->phdrs[phdr].p_filesz;
+li->zero_count = secs[phdr].size - secs[phdr].amount;
+```
+
+which for our emulator gives `a003c000 + 0x3c44 = a003fc44`. The value
+`8` cannot come from that, so either this branch does not run for the
+emulator, or the program headers it reads are not the emulator's.
+
+`server_exec_load()` -- the function whose comment says it loads
+"only emulators or other native programs" -- computes the same fields
+from **a.out** header fields (`exech->a_data`, `exech->a_bss`) and has
+no `BT_LITES_ELF` case at all. Applying a.out arithmetic to an ELF
+header is the obvious way to get a small nonsense number.
+
+**Next:** print `binary_type` in `server_exec_load()` and confirm which
+path the emulator takes, then give it a correct ELF case or route it
+through `parse_exec_file()`.
+
+## A second bug, free with the first
+
+`ecrt0` writing to address `8` is scribbling over the first page. It has
+not caused a visible failure yet, but any fix should also make that
+impossible -- a sanity check on `zero_start` before the loop would have
+turned this silent corruption into an immediate, obvious error.
+
+# NAILED: the emulator's BSS is not zeroed
+
+`e_getpid` never reaches the server. Probed at the decision point:
+
+```
+gpc: cache    1f1a0
+gpc: enable   1
+```
+
+```c
+if (!XXX_enable_getpid_cache || getpid_cache == 0) {
+	... real syscall ...
+} else {
+	*pid = getpid_cache;		/* taken: no message is sent */
+}
+```
+
+`getpid_cache` is declared `pid_t getpid_cache = 0;` yet holds
+`0x1f1a0` on the **first** call, so the cache branch is taken and
+returns garbage. That is why the server-side probe on `syscode == 20`
+never fired: no getpid message is ever sent.
+
+## Why the cache is garbage
+
+```
+a003c28c D XXX_enable_getpid_cache	 correctly 1
+a003fca4 B getpid_cache			 garbage
+```
+
+`getpid_cache` is in **BSS**, at `0xa003fca4`. The emulator's crt0
+clears only a fragment:
+
+```c
+/* emulator/i386/ecrt0.c */
+/*
+ * ebx points to the BSS dirty page (shared with data)
+ *	that needs to be cleared.
+ * edi is the clearing count for the BSS fragment.
+ */
+register char *zero_start asm("ebx");
+register int   zero_count asm("edi");
+...
+/* Clear beginning of BSS (on the page shared with DATA) */
+for ( ; zero_count > 0; zero_count--)
+	*zero_start++ = 0;
+```
+
+The server passes those in `ebx`/`edi` through `set_emulator_state()`.
+Only the page BSS shares with data is cleared; everything beyond is
+expected to be zero-filled by its anonymous mapping. `getpid_cache` is
+three pages past that fragment, so nothing zeroes it.
+
+**Every zero-initialised global in the emulator beyond the first BSS
+page is affected**, not just this one. `getpid_cache` is simply the
+first that got read.
+
+## An independent confirmation of the earlier fix
+
+`0xa003fca4` falls inside the **old** shared region
+(`0xa003c000`-`0xa0040000`). So the emulator's BSS really did reach into
+those pages, which corroborates the overlap fix from measurement rather
+than argument.
+
+## Why: the native loader has no ELF case
+
+The emulator is loaded by `server_exec_load()`, described in its own
+comment as loading "only emulators or other native programs". Its
+binary-type switch accepts exactly four types:
+
+```
+case BT_LITES_Z:
+case BT_LITES_Q:
+case BT_LITES_SOM:
+case BT_LITES_MIPSEL:
+default:
+	printf("server_exec_load: unknown binary_type x%x", binary_type);
+	return ENOEXEC;
+```
+
+**There is no `BT_LITES_ELF` case**, and everything after the switch is
+a.out arithmetic:
+
+```c
+data_size          = round_page(exech->a_data);
+bss_fragment_start = data_start + exech->a_data;
+bss_fragment_size  = data_size - exech->a_data;
+bss_residue_size   = exech->a_bss - bss_fragment_size;
+```
+
+`a_data` and `a_bss` are a.out header fields. Our emulator is ELF, whose
+real layout is
+
+```
+.data   VMA a003c000  size 3c44   ends a003fc44
+.bss    VMA a003fc60  size  6d0   ends a0040330
+```
+
+`liblites/exec_file.c` does have a correct ELF path, computing
+`zero_start = p_vaddr + p_filesz` and a count covering the rest of the
+segment -- which would cover `getpid_cache` at `a003fca4`. But that path
+is not the one the emulator goes through.
+
+## This also explains the `0x10000000` threshold
+
+Earlier this file recorded puzzlement at `exec_file.c` classifying an
+ELF as `BT_LITES_ELF` only when its entry is above `0x10000000`. The
+reason is now clear: **the emulator is deliberately linked high**, at
+`0xa0001020`, so that it classifies as LITES-native rather than as a
+foreign binary. The threshold is how LITES tells its own components from
+the programs it runs. It was never a bug.
+
+## Next
+
+Establish which of these is true, since they need different fixes:
+
+1. `server_exec_load()` is genuinely being used for the emulator, in
+   which case it reaches `default:` and returns `ENOEXEC` -- but the
+   emulator plainly runs, so this cannot be the whole story.
+2. Something else loads the emulator and computes `zero_start` and
+   `zero_count` from a.out fields on an ELF header, producing a
+   clearing range that misses `getpid_cache`.
+
+Printing `li->zero_start` and `li->zero_count` in `set_emulator_state()`
+and comparing them against `a003fc44` and `0x13bc` will settle it in one
+boot.
+
+## Superseded: find what maps the emulator's BSS The
+emulator is loaded by the server, so the mapping is made there --
+`emul_exec_map_section()` handles `EXEC_M_ZERO_ALLOCATE` with
+`vm_map(..., MACH_PORT_NULL, ..., TRUE /* anywhere? */, ...)`, which
+should give zero-filled anonymous memory. Either the emulator's BSS is
+not going through that path, or its size is understated so only part of
+it is mapped and the rest lands on whatever was already there.
+
+# FIXED: the emulator image overlapped the shared region
+
+`include/i386/param.h` reserved a 256 KB window for the emulator and put
+the four shared pages at the **top of that same window**:
+
+```
+EMULATOR_BASE  0xa0000000
+emulator image ends              0xa003d04b   (249931 bytes)
+shared region starts (END-4*pg)  0xa003c000   <-- 4171 bytes inside the image
+EMULATOR_END   0xa0040000
+```
+
+The emulator's own data and bss sat on the shared pages. `us_version`
+read as garbage, the emulator disabled the region, and the structures
+LITES keeps there -- `us_vmspace`, `us_limit` -- were used as pointers.
+
+**Fix: widen the window to 512 KB.** `EMULATOR_END` becomes
+`0xa0080000`, so the shared pages move to `0xa007c000`-`0xa0080000`,
+clear of the image. `EMULATOR_BASE` is unchanged, so the emulator's link
+address is unchanged. Nothing else on i386 depends on END's exact value:
+`mapin_user()` and `emul_mapped.c` both follow it, and the three range
+checks in `i386/e_machinedep.c` only ask whether the PC lies inside the
+emulator.
+
+**Proof it was the cause.** Before the fix the emulator read `0xb` at
+`shared_base_ro`. With `us_version` deliberately stamped `0x1234` on the
+server side, it then read `shared region mismatch 1234/1` -- the
+marker, proving it had reached the real region for the first time. With
+`USHARED_VERSION` restored, the mismatch message disappears entirely.
+
+## Result: init runs
+
+The SIGBUS is gone. `/sbin/init` no longer faults; it executes and exits
+deliberately:
+
+```
+return[24] e_getuid = (x0 ...)        uid 0       correct
+return[20] e_getpid = (x1f1a0 ...)    pid 127392  WRONG
+err_return[4] e_write -> 9            EBADF
+exit(1)
+```
+
+One syscall became four, and the last is a clean `exit`, not a fault.
+
+# Next: e_getpid returns garbage
+
+NetBSD 1.0's `init` does:
+
+```c
+if (getuid() != 0)  errx(1, "%s", strerror(EPERM));   /* passes */
+if (getpid() != 1)  errx(1, "already running");       /* fires */
+```
+
+`e_getpid` returns `0x1f1a0`, 127392, where it must return 1. `errx()`
+then writes to stderr, which fails with `EBADF` because no descriptors
+are open yet, and exits 1.
+
+## What has been checked so far
+
+- **The cache is not to blame.** `e_bsd.c:66` initialises
+  `getpid_cache = 0` and `XXX_enable_getpid_cache = TRUE`, so the
+  condition `(!XXX_enable_getpid_cache || getpid_cache == 0)` is true on
+  the first call and the real syscall path runs.
+- **The server's implementation is correct.**
+  `server/kern/kern_prot.c:62` does `*retval = p->p_pid`, and the exec
+  probe printed `p_pid` as 1 for this process.
+- **The value looks like an address, not a pid.** `0x1f1a0` falls inside
+  init's own bss (`0x1e000`-`0x1ff50`), so something is returning a
+  pointer where a pid belongs.
+
+**Eliminated: `p_pptr`.** `COMPAT_43` is indeed 1 in this build, and
+`p2->p_pptr = p1` is set at `serv_fork.c:479`, inside `kern_fork()`
+after `newproc()` returns -- so `initproc->p_pptr` really was never set,
+exactly like its shared region. Setting it in `init_main.c` next to the
+shared-region fix **did not change the returned value**, which stays
+`0x1f1a0`. The fix is kept because it is correct on its own terms, but
+it is not this bug.
+
+**The plumbing is clean end to end.** Traced both directions:
+
+```c
+/* emulator: emul_generic.c */
+bsd_msg.req.rval2 = rvalp[1];          /* send */
+rvalp[0] = bsd_msg.rep.rval[0];        /* receive */
+
+/* server: ux_syscall.c */
+retval[0] = 0;
+retval[1] = req->rval2;
+error = (*callp->sy_call)(p, req->arg, retval);
+rep->rval[0] = retval[0];
+
+/* server: kern_prot.c */
+*retval = p->p_pid;
+```
+
+Nothing drops or reorders the value. **So `p->p_pid` really is
+`0x1f1a0` for whichever proc the server resolved** -- which is not the
+one the exec probe saw as pid 1.
+
+### The proc is resolved from the message port
+
+```c
+p = proc_receive_lookup(req->hdr.msgh_local_port, seqno);
+```
+
+If that returns the wrong proc, or a stale one, every field read through
+`p` is wrong. That fits better than any plumbing fault, and it explains
+something otherwise odd: **`e_getuid` returning 0 is not evidence that
+the proc is right.** A garbage or wrong proc whose `cr_uid` happens to
+read zero looks exactly like success. So the first "correct" syscall may
+never have been correct -- only lucky.
+
+**Next:** print `p` and `p->p_pid` from inside `ux_generic_server()`,
+one argument per call, and compare against `initproc`. If they differ,
+the bug is in `proc_receive_lookup()` or in what port the emulator sends
+on; if they match, then `p_pid` is being corrupted after `newproc()`,
+which is the same family of defect as the shared region and the parent
+pointer.
+
+### Superseded lead: the uninitialised word
+
+```c
+/* emulator/emul_generic.c */
+bsd_msg.req.rval2 = rvalp[1];
+```
+
+`rvalp` is the caller's return array, and the callers look like this:
+
+```c
+errno_t e_getpid(pid_t *pid)
+{
+	integer_t rv[2];		/* uninitialised */
+	...
+	kr = emul_generic(process_self(), SYS_getpid, &a, &rv);
+```
+
+So `rv[1]` is stack garbage and is **sent to the server as an input**.
+`e_getuid` and the other short syscalls share the pattern. Whether the
+server uses `rval2` on the way in, and what it sends back, is the next
+thing to read -- `bsd_msg.req` is a MIG request structure, so the reply
+handling in the same file will say.
+
+Note the returned `0x1f1a0` is inside init's bss, and the second value
+`0x1dbbc` is identical to the one `e_getuid` returned, which is the
+preserved `edx`. So the two calls agree about `rval[1]` and disagree
+about `rval[0]`, which is consistent with the pid being overwritten
+rather than never set.
+
+### Superseded suspect: the parent pointer
+
+```c
+	*retval = p->p_pid;
+#if COMPAT_43 || defined(COMPAT_SUNOS)
+	retval[1] = p->p_pptr->p_pid;
+#endif
+```
+
+`retval[1]` dereferences `p_pptr`, the parent proc. `initproc` is made
+by calling `newproc()` directly from `init_main.c` rather than through
+`kern_fork()`, which is exactly the path that was already found to skip
+initialisation -- so whether its parent linkage is set is worth
+checking, and whether `COMPAT_43` is even on in this build.
+
+Two things to fix, in order:
+
+1. **`e_getpid`** -- find why it returns that value. The process is pid
+   1 on the server side (`proc_died()` panics on `p_pid == 1`, and the
+   exec probe printed `p_pid` as 1), so the value is being lost or
+   mistranslated between the server and the emulator.
+2. **Descriptors** -- `/dev/console` needs opening as fd 0, 1 and 2
+   before init runs, or by init itself. With `getpid` fixed, init gets
+   further and will need them.
+
+# ROOT CAUSE: the emulator image overlaps the shared region
+
+Measured, not inferred.
+
+| | address |
+|---|---|
+| `EMULATOR_BASE` | `0xa0000000` |
+| emulator image ends (text 233359 + data 15456 + bss 1744 = 250559) | **`0xa003d2bf`** |
+| shared **RW** region starts (`EMULATOR_END - 4*vm_page_size`) | **`0xa003c000`** |
+| shared **RO** page (`EMULATOR_END - vm_page_size`) | `0xa003f000` |
+| `EMULATOR_END` | `0xa0040000` |
+
+**The emulator's image overruns into the shared region by 4,799
+bytes.** `include/i386/param.h` reserves only 256 KB between
+`EMULATOR_BASE` and `EMULATOR_END`, and places the four shared pages at
+the top of that same window. Our emulator is 245 KB of image, which
+leaves less than the four pages the shared region needs.
+
+## How this was established
+
+Each step measured with one argument per `printf`, after the earlier
+lesson about multi-argument traces:
+
+1. The section protections are correct (`prot` 5, 3, 3) -- ruled out.
+2. The stamp lands: writing `0x1234` to `initproc->p_shared_ro` reads
+   back as `0x1234` on the server side.
+3. The exec path sees the same proc and the same memory: `p_pid` 1,
+   `p_shared_off` `0x14000`, `us_version` `0x1234`, immediately before
+   `mapin_user()`.
+4. The emulator reads the **right address**: `vm_page_size` is `0x1000`
+   and `shared_base_ro` is `0xa003f000`, exactly `EMULATOR_END - page`.
+5. And it reads `0xb` there, not `0x1234`.
+
+Right proc, right offset, right address, wrong contents. The only
+remaining explanation is that something else occupies those pages -- and
+the emulator's own image does.
+
+## Why this fits every symptom
+
+- **"shared region mismatch b/1"**: `us_version` reads whatever the
+  emulator's data segment happens to hold at that offset.
+- **The moving fault address** (`0x776a0`, `0x8bad0`, `0x51bad0`): the
+  shared region contains `us_vmspace` and `us_limit`, which LITES uses
+  as real structures. Garbage there is used as pointers, and where it
+  points varies with whatever the emulator last wrote.
+- **Death after one syscall**: `getuid` returns cleanly through the
+  syscall path, then libc start-up touches something derived from the
+  corrupted region.
+
+## The fix, and why it needs care
+
+Three candidates, in order of preference:
+
+1. **Shrink the emulator.** It is built with debugging probes and
+   `syscall_debug` support. A production build may fit in 256 KB, which
+   would make this a configuration problem rather than a layout one.
+2. **Move `EMULATOR_END` up** in `include/i386/param.h`. Changes a
+   published address boundary, so anything else assuming that layout
+   must be checked first -- `emul_mapped.c`, `mapin_user()`, and the
+   emulator's own link address all reference it.
+3. **Map the shared region somewhere else entirely**, away from the
+   emulator's window.
+
+Option 1 should be tried first because it is reversible and tells us
+whether the original layout was ever adequate or whether we have simply
+grown past it.
+
+# The stamp lands; the emulator reads different memory
+
+Measured, with one argument per `printf`:
+
+| probe, immediately after stamping `initproc` | value |
+|---|---|
+| `initproc->p_shared_ro` | `0x4d0000` -- a valid mapping |
+| `initproc->p_shared_off` | `0x14000` |
+| `us_version` read back | **1** |
+
+**The server-side write succeeds.** `us_version` reads back as
+`USHARED_VERSION`. And the emulator still reports:
+
+```
+emulator [1] shared region mismatch b/1
+```
+
+So the server and the emulator are looking at **different memory**,
+which is the whole problem stated precisely.
+
+## Why that is surprising
+
+The backing store should be common. `alloc_mapped_uarea()` in
+`server_init.c` maps four pages from `shared_memory_port` at
+`shared_offset` into the *server*, and sets
+
+```c
+p->p_shared_off = shared_offset;
+p->p_shared_rw  = shared_address + 2*vm_page_size;
+p->p_shared_ro  = shared_address + 3*vm_page_size;
+```
+
+`mapin_user()` in `serv_fork.c` maps the *same port* into the user task:
+
+```c
+vm_map(p->p_task, &user_addr /* EMULATOR_END - vm_page_size */, ...,
+       shared_memory_port, p->p_shared_off + 3*vm_page_size,
+       ..., VM_PROT_READ, VM_PROT_READ, VM_INHERIT_NONE);
+```
+
+With `p_shared_off = 0x14000`, both sides should reference offset
+`0x17000` of `shared_memory_port`. The emulator reads
+`EMULATOR_END - vm_page_size`, which is exactly what that maps to.
+
+`server_exec.c` calls `mapin_user(p)` at lines 355 and 429, so the exec
+path does re-map after building the new task.
+
+## The remaining question, narrowly
+
+**Is the process that execs actually `initproc`?** Everything above
+holds only if the `struct proc` whose region was stamped is the one
+whose task the emulator runs in. The emulator labels its output
+`emulator [1]`, and `proc_died()` panics on `p_pid == 1`, so the failing
+process is pid 1 -- but that has not been checked against `initproc`.
+
+The cheap test: stamp `us_version` with a recognisable value such as
+`0x1234`, and print `p_shared_off` from inside `server_exec.c` just
+before `mapin_user()`. If the offsets differ, the exec'd proc is not
+the one that was stamped. If they match and the emulator still sees the
+old value, the mapping itself is wrong.
+
+## Still unexplained
+
+The moving fault address -- `0x776a0`, `0x8bad0`, `0x51bad0` -- remains
+the strongest hint that something uninitialised is being used as a
+pointer. Whether that is the shared region is still not established, and
+should not be assumed until the mismatch above is understood.
+
+# The shared region: three creation paths, one of them incomplete
+
+Tracked down properly. There are three ways a proc comes into being in
+LITES, and they do not all set up the shared region.
+
+| path | shared region |
+|---|---|
+| `proc0`, in `init_main.c` | uses it (`p_vmspace`, `p_limit` point into it) but never stamps it |
+| `kern_fork()`, `serv_fork.c:404+` | **complete**: `mapin_user()`, then `us_version`, `us_proc_pointer`, both share locks |
+| `newproc()`, `serv_fork.c:280` | **allocates the proc only** -- no region setup at all |
+
+`kern_fork()` calls `newproc()` and then does the region work itself.
+But `init_main.c:440` calls `newproc()` **directly**:
+
+```c
+initproc = newproc(p, TRUE, FALSE);
+```
+
+so none of it runs for the first program. `us_version` holds whatever
+the page contained -- `0xb` -- and `emul_mapped.c` refuses the region,
+leaving `shared_enabled` at 0 for the one process with no parent to
+inherit a good region from.
+
+## What was tried, and why it was not enough
+
+Stamping the fields on `initproc` after `newproc()` returns -- mirroring
+exactly what `kern_fork()` does -- **did not clear the mismatch.** The
+emulator still reports `b/1`.
+
+The reason is the step before the stamping. `kern_fork()` does:
+
+```c
+if ((result = mapin_user(p2)) != KERN_SUCCESS) { ... panic("kern_fork"); }
+bcopy(p1->p_shared_ro, p2->p_shared_ro, sizeof(struct ushared_ro));
+...
+p2->p_shared_ro->us_version = USHARED_VERSION;
+```
+
+**`mapin_user()` is what maps the region into the user task**, at the
+address the emulator looks for (`EMULATOR_END - vm_page_size`). Without
+it, writing `us_version` through `initproc->p_shared_ro` on the server
+side changes a page the emulator is not reading. Something else is
+mapped at that address in the user task, which is why the emulator gets
+`0xb` rather than faulting.
+
+So the fix needs `mapin_user(initproc)` as well, in the right order, and
+possibly the `bcopy` from `proc0` that `kern_fork` does first. That is
+the next thing to try, and it should be tried as one change with the
+stamping, not separately.
+
+## Still not established
+
+Whether any of this causes the SIGBUS. The users of the shared region
+test `shared_enabled` before touching it, so a disabled region should
+degrade to syscalls rather than fault. The fault address still moves
+between runs (`0x776a0`, `0x8bad0`, `0x51bad0`), which suggests
+something uninitialised being used as a pointer rather than a fixed
+wrong mapping -- consistent with, but not proof of, an uninitialised
+shared region.
+
+# NAILED: the trace bug was mine, and it exposed a real one
+
+## The instrument was fine; my format string was wrong
+
+`e_emulator_error()` is not broken. My probe was:
+
+```c
+e_emulator_error("... off=%x prot=%x max=%x",
+                 ..., section->offset, section->prot, section->maxprot);
+```
+
+and `struct exec_section`'s `offset` is declared `off_t`, which in this
+tree is
+
+```c
+include/sys/types.h:74:  typedef quad_t off_t;   /* file offset */
+```
+
+**eight bytes.** The `%x` conversion does `va_arg(adx, unsigned int)`
+and consumes four, so the va_list desynchronises and every argument
+after it shifts by one. That is precisely the observed `off=0`,
+`prot=0`, `max=5`: `prot` read `offset`'s high half and `max` read
+`prot`.
+
+So the earlier "prot=0" finding, the "one-field shift", and the
+suspicion that the emulator's varargs are broken were all one mistake --
+mine -- and the section protections were correct from the start.
+
+**The rule stands, for a better reason than I gave it.** One argument
+per call is not a workaround for a broken printf; it is how to avoid
+writing a format string that silently misreads a 64-bit argument. This
+printf has no `default:` case in its conversion switch either, so an
+unrecognised conversion consumes nothing and shifts everything after it
+the same way.
+
+## The real bug it exposed: the first program's shared region is never versioned
+
+Because `e_emulator_error` is sound, this message is trustworthy and was
+wrongly doubted:
+
+```
+emulator [1] shared region mismatch b/1
+```
+
+It is a two-argument call with two `int`s, so it reports exactly what it
+says: `us_version` is `0xb` where `USHARED_VERSION` is 1.
+
+`us_version` is assigned in exactly one place in the whole tree:
+
+```
+server/serv/serv_fork.c:415:  p2->p_shared_ro->us_version = USHARED_VERSION;
+```
+
+**Only on fork.** The first program is `exec`'d, never forked, so its
+shared region is never initialised and `us_version` holds whatever the
+page contained. `emul_mapped.c` then refuses it:
+
+```c
+if (shared_base_ro->us_version != USHARED_VERSION) {
+	e_emulator_error("shared region mismatch %x/%x", ...);
+	return;			/* shared_enabled stays 0 */
+}
+```
+
+so `shared_enabled` remains 0 for the one process that has no parent to
+inherit a good region from.
+
+## Next
+
+Whether that causes the SIGBUS is not yet established -- the users of
+the shared region test `shared_enabled` before touching it, so a
+disabled region should degrade to syscalls rather than fault. But it is
+a genuine defect on the exec path, it affects exactly the process that
+is failing, and it is the first thing in this investigation that is both
+real and unexplained.
+
+Find where the shared region is set up for `exec` as opposed to `fork`,
+and whether anything reaches `shared_base_rw` without checking
+`shared_enabled` first.
+
+# CORRECTION: the protections are fine. The instrument was lying.
+
+The previous entry concluded that `/sbin/init`'s sections are mapped
+with `prot = 0` and that the struct is read shifted by one field. **Both
+are wrong.** Re-probing with one argument per `e_emulator_error()` call:
+
+| probe | value |
+|---|---|
+| `ap: s0.prot` (after `parse_exec_file`) | **5** |
+| `ap: s0.maxprot` | **7** |
+| `ms: va=1000, prot` (in `map_section`) | **5** |
+| `ms: va=1d000, prot` | **3** |
+| `ms: va=1e000, prot` | **3** |
+| `sizeof(struct exec_section)` | `0x2c`, identical at both points |
+
+`prot` is 5, 3, 3 and `maxprot` is 7 throughout, exactly as
+`exec_file.c` sets them. **There is no shift, and the mapping is
+correct.**
+
+## The real finding: e_emulator_error corrupts multi-argument calls
+
+The earlier `prot=0 max=5` reading came from a six-argument
+`e_emulator_error()`. The same values printed one per call are right. So
+that function mangles its arguments beyond the first.
+
+**This has been corrupting diagnostics throughout.** Anything printed by
+a multi-argument `e_emulator_error()` is suspect, including:
+
+```
+emulator [1] shared region mismatch b/1
+```
+
+which is a two-argument call, so the claim that `us_version` is `0xb`
+against an expected `1` may itself be wrong.
+
+It is not the obvious cause. `e_bsd.c:2875` uses proper ANSI varargs --
+`va_list adx; va_start(adx, fmt); va_arg(adx, ...)` -- and includes
+`<machine/stdarg.h>`, which resolves to the `include/i386/stdarg.h` this
+project already repaired. So the fix is elsewhere: possibly the mix of
+`putchar()` and buffered output in that function, or a difference in how
+the emulator directory is compiled. A controlled test -- a call with
+known constant arguments -- will settle it without guessing.
+
+## What this means for the fault
+
+**The cause of init's SIGBUS is still unknown.** The one solid
+measurement that survives is the exception itself, which was traced with
+single-argument prints and is therefore trustworthy:
+
+```
+exception: exc=1        EXC_BAD_ACCESS
+exception: code=776a0
+exception: subcode=2    KERN_PROTECTION_FAILURE
+exception: signal=10    SIGBUS
+```
+
+A protection failure at an address past the end of the image, at a
+location that moved between runs. With the section protections now known
+to be correct, that address is not in the program's own image, so the
+question becomes what else is mapped there and who touches it.
+
+## Method note
+
+This is the second time in this investigation that a multi-argument
+trace produced a confident, wrong answer, and the second time that
+re-printing one value per call settled it. **For anything printed by
+LITES or its emulator, one argument per call is the only form to
+trust** until the varargs defect is found and fixed.
+
+# The fault: sections are mapped with prot=0
+
+Traced to the mapping step. `emul_exec_map_section()` receives every
+section of `/sbin/init` with **`prot = 0`**, i.e. `VM_PROT_NONE`:
+
+```
+map_section: how=1 va=1000  size=1c000 off=0     prot=0 max=5
+map_section: how=1 va=1d000 size=1000  off=1c000 prot=0 max=3
+map_section: how=3 va=1e000 size=2000  off=0     prot=0 max=3
+```
+
+`max` is right -- 5 is `READ|EXECUTE` for text, 3 is `READ|WRITE` for
+data and bss -- but the current protection is none, so any access
+faults. That matches the symptom exactly: `EXC_BAD_ACCESS` with
+`KERN_PROTECTION_FAILURE` (the page exists, the permission is wrong),
+and an address that moves between runs because it is wherever the
+program happens to touch first.
+
+## parse_exec_file fills it correctly
+
+Probing immediately after `parse_exec_file()` returns, before anything
+else touches the array:
+
+```
+after parse: bt=7 s0.prot=5 s0.max=7 s1.prot=3 s2.prot=3
+```
+
+So liblites sets `prot` to 5, 3, 3 and `maxprot` to 7, exactly as
+`exec_file.c` lines 372-382 and the `case BT_NETBSD` branch intend.
+
+**Between `parse_exec_file()` returning and `emul_exec_map_section()`
+reading, `prot` becomes 0 and `maxprot` becomes what `prot` held.** The
+values shift by exactly one field.
+
+## What has been ruled out
+
+- **Not a duplicate struct.** `struct exec_section` is defined only in
+  `include/sys/exec_file.h`. `emul_exec.c` does not include it directly
+  but gets it through `e_defs.h`, which does.
+- **Nothing writes `prot` in between.** The only assignment is
+  `secs[i].file = image_port`, the field immediately *before* `prot` --
+  suggestive, but a correct `mach_port_t` store cannot overrun into the
+  next field.
+- **Probably not the instrument.** `e_emulator_error()` uses proper
+  ANSI varargs (`va_list`, `va_start(adx, fmt)`) and compiles against
+  the `include/i386/stdarg.h` this project already fixed. Worth
+  confirming, given that a broken printf would explain an apparent shift
+  with no mechanism, and this code base has been bitten by exactly that
+  before.
+
+## The decisive next test
+
+Re-probe inside `emul_exec_map_section()` with **one argument per
+call**, as was done for the exception trace, which is what turned the
+`code`/`subcode` confusion from guesswork into fact. That separates "the
+struct really is being read shifted" from "the trace is lying", and
+those need different fixes.
+
+If the shift is real, the next suspect is a compilation flag difference
+between `liblites` and `emulator` -- the two are built as separate
+directories with different flags, and a packing or enum-size difference
+would do exactly this.
+
+# MILESTONE: a real NetBSD binary runs under LITES
+
+```
+emulator [1] emul_exec_open success: "/dev/boot_device/mach_servers/init" p=803 fd=-1 BT=7
+emulator [1] emul_exec_start: starting at x1020 k=xbfffdff0 (x1 xbfffe000 x0 x0)
+emulator [1] emul_syscall[24] e_getuid(xbfffdff4, xbfffdff0, x0, ...)
+emulator [1] return[24] e_getuid = (x0 x1dbbc)
+panic: init died
+```
+
+**NetBSD 1.0's `/sbin/init`, unmodified, loaded and executed a system
+call.** Everything in the chain worked:
+
+- **`BT=7`** is index 7 in `ATSYS_NAMES`: **`netbsd`**. Classified
+  correctly, as predicted from `emul_exec.c`'s explicit MID_I386 test
+- **entry `0x1020`** matches the a.out header decoded from the binary
+- **`e_getuid` returned 0**, so init's root check passed
+
+## How it was reached, without mach_init
+
+`mach_init` was **not** needed. LITES's `-i` flag names an alternative
+first program, and it is compiled in because our build has
+`#define SECOND_SERVER 1`:
+
+```
+startup /mach_servers/startup -i /init hd0c
+```
+
+`init_program_path` resolves to `/dev/boot_device/mach_servers/init` in
+LITES's own VFS on the ext2 root, so the binary and the emulator both go
+there. `/bin/sh` and the device nodes live at their normal paths.
+
+**This takes the a.out cross-toolchain off the critical path.**
+`mach_init` cannot be linked without one -- binutils 2.42 has no a.out
+target at all -- but it does not have to be, to reach a shell.
+
+## Where it stops, and what was ruled out
+
+`init` dies after exactly one syscall.
+
+**The obvious suspect was investigated and is innocent.** `e_getuid`
+writes only `rv[0]` and leaves `rv[1]` untouched, which looked like it
+would hand the program a garbage euid in `edx`. It does not: the
+trampoline initialises the pair from the caller's own registers before
+dispatch:
+
+```c
+rval[0] = 0;
+rval[1] = regs->edx;		/* preserve the caller's edx */
+```
+
+So the `x1dbbc` in the trace is whatever `edx` held when init made the
+call, faithfully preserved -- deliberate, for syscalls that do not set a
+second value. Nothing to fix there.
+
+### What the absence of further syscalls tells us
+
+NetBSD 1.0's `init` begins roughly:
+
+```c
+if (getuid() != 0)   errx(1, ...);     /* traced, returned 0 */
+if (getpid() != 1)   errx(1, ...);     /* NOT traced */
+if (setsid() < 0)    warn(...);        /* NOT traced */
+```
+
+`getpid` and `setsid` are ordinary syscalls and would appear in the
+trace. Neither does, and `errx()` would itself call `write` and `exit`,
+also absent. So **init never reached its second syscall**: it faulted
+between the two rather than exiting deliberately.
+
+Two candidates from the trace:
+
+```
+emulator [1] shared region mismatch b/1
+emul_exec_start: starting at x1020 k=xbfffdff0 (x1 xbfffe000 x0 x0)
+```
+
+- **`envp` is 0.** Those four values are argc=1, argv=0xbfffe000,
+  envp=0, and 0. A null environment pointer faults anything that walks
+  it, and libc start-up code routinely does.
+- **"shared region mismatch"** is the emulator complaining about its own
+  shared region before the program starts at all. Unexplained so far.
+
+## FOUND: init faults in heap space, SIGBUS
+
+Adding a trace to `catch_exception_raise()` in
+`server/serv/ux_exception.c` -- the one place where the cause is still
+known, since `proc_died()` learns of the death through a Mach dead-name
+notification that carries no reason -- gives:
+
+```
+emul_syscall[24] e_getuid(...)
+exception: task 44be14 exc 1 code 489120 subcode 2 -> signal 10
+panic: init died
+```
+
+`exc 1` is **`EXC_BAD_ACCESS`**, signal 10 is **SIGBUS**, and the
+address is `489120` = **`0x776a0`**.
+
+### Where that address is
+
+Decoding `/sbin/init`'s a.out header: text 114688, data 4096, bss 8016,
+entry `0x1020`. For QMAGIC that lays out as
+
+| region | range |
+|---|---|
+| text | `0x1000` - `0x1d000` |
+| data | `0x1d000` - `0x1e000` |
+| bss | `0x1e000` - `0x1ff50` |
+| **fault** | **`0x776a0`** |
+| stack | `0xbfffe000` |
+
+The fault is **well past the end of the image** and far below the
+stack. That is heap space -- `sbrk`/`malloc` territory. So libc obtained
+memory and then touched something that is not actually mapped.
+
+### CORRECTION: it is a protection failure, and the arguments are swapped
+
+The reading above -- unmapped heap -- is **wrong**, and the same trace
+shows why. LITES's own converter treats `code` as the kern_return:
+
+```c
+case EXC_BAD_ACCESS:
+    if (code == KERN_INVALID_ADDRESS)  *ux_signal = SIGSEGV;
+    else                               *ux_signal = SIGBUS;
+```
+
+We saw `code = 489120`, which is not a kern_return at all, so this fell
+through to SIGBUS by default. Meanwhile `subcode = 2` **is** a valid
+kern_return: `KERN_PROTECTION_FAILURE`.
+
+So the two arrive the other way round from what LITES expects:
+
+| argument | LITES expects | what arrived |
+|---|---|---|
+| `code` | kern_return | **address `0x776a0`** |
+| `subcode` | address | **`2`, `KERN_PROTECTION_FAILURE`** |
+
+Two consequences.
+
+**The fault is a protection failure on a mapped page**, not an access to
+unmapped memory. Something wrote to a page it was not allowed to write,
+or read one it could not read. The heap theory is out; the address is
+still `0x776a0`, still past the image, but the page exists.
+
+**And LITES's exception decoding is wrong against this kernel.** It
+would report `SIGSEGV` as `SIGBUS` for every genuine invalid-address
+fault, because the value it tests is never a kern_return. Here the
+signal happened to come out right, since a protection failure maps to
+SIGBUS anyway, but that is luck.
+
+### The kernel sends them in the order LITES expects
+
+Checked, and it does. `i386/trap.c:334`:
+
+```c
+i386_exception(EXC_BAD_ACCESS, kr, regs->cr2);
+```
+
+and `i386_exception` packs them:
+
+```c
+codes[0] = code;	/* the kern_return */
+codes[1] = subcode;	/* cr2, the faulting address */
+exception(exc, codes, 2);
+```
+
+So `codes[0]` is the kern_return and `codes[1]` the address, which is
+exactly what LITES's `catch_exception_raise(..., code, subcode)`
+expects.
+
+### But that is not what arrives
+
+Re-traced with one argument per `printf`, to rule out the variadic
+formatting being at fault:
+
+```
+exception: exc=1
+exception: code=776a0
+exception: subcode=2
+exception: signal=10
+```
+
+`code` holds an address and `subcode` holds `2`. A `kern_return_t`
+cannot be `0x776a0`, so the two really are swapped somewhere between
+`i386_exception()` and LITES.
+
+**The emulator is the likely place.** It holds its own exception port --
+that is how it delivers signals to the program it runs -- so a fault in
+the program goes to the emulator first, which may re-raise it to LITES
+with its own argument order. `emulator/i386/e_signal.c` is where to
+look.
+
+### What is solid regardless
+
+Whichever field is which by convention, the two values are **the
+faulting address `0x776a0`** and **`2`, `KERN_PROTECTION_FAILURE`**. So
+the page exists and was touched with the wrong permission, and the
+address is past the end of init's image (`0x1ff50`) and far below the
+stack (`0xbfffe000`).
+
+### Superseded: what the heap theory pointed at
+
+The initial break. If the a.out loader sets the break to the wrong
+place, libc's allocator believes it owns memory the kernel never mapped,
+and the first write into it faults exactly like this. The break should
+be the end of bss, `0x1ff50` rounded up.
+
+It also explains the missing syscalls: the fault happens inside libc's
+start-up before init reaches `getpid()`, and possibly before any
+allocation syscall is issued at all, if the break was simply wrong from
+the start rather than being moved.
+
+**Next step:** find where the break is set for a.out binaries -- in the
+emulator's exec path or LITES's `s_execve` -- and compare it with
+`0x1ff50`.
+
+### Superseded: print the exit reason in `proc_died()`, which currently
+panics on pid 1 without reporting a status and so throws away the one
+piece of information that would say whether this is a signal and which
+one. Raising `syscall_debug` at the same time would confirm no further
+calls are simply going untraced.
+
 # Current state: the bootstrap task runs and prints
 
 The kernel boots, runs user code at ring 3, and the bootstrap task now
