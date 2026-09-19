@@ -758,6 +758,47 @@ index 1097b5e..c33bf52 100644
  		    printf("done\n");
  		DELAY(10000);			/* wait for printf to finish */
  
+diff --git a/server/serv/serv_syscalls.c b/server/serv/serv_syscalls.c
+index a0798b7..6e9f6cf 100644
+--- a/server/serv/serv_syscalls.c
++++ b/server/serv/serv_syscalls.c
+@@ -540,14 +540,14 @@ boolean_t thread_signal(struct proc *p, thread_t thread, int sig, int code)
+ 	}
+ 
+ 	switch ((vm_offset_t)p->p_sigacts->ps_sigact[sig]) {
+-	    case SIG_IGN:
+-	    case SIG_HOLD:
++	    case (integer_t)SIG_IGN:
++	    case (integer_t)SIG_HOLD:
+ 		/*
+ 		 * Should not get here unless traced.
+ 		 */
+ 		break;
+ 
+-	    case SIG_DFL:
++	    case (integer_t)SIG_DFL:
+ 		sig_default(p, sig);
+ 		break;
+ 
+@@ -697,15 +697,15 @@ bsd_take_signal(
+ 	p->p_siglist &= ~sigmask(sig);
+ 	action = ps->ps_sigact[sig];
+ 	switch ((vm_offset_t)action) {
+-	    case SIG_IGN:
+-	    case SIG_HOLD:
++	    case (integer_t)SIG_IGN:
++	    case (integer_t)SIG_HOLD:
+ 		/*
+ 		 * Should not get here.
+ 		 */
+ 		sig = 0;
+ 		break;
+ 
+-	    case SIG_DFL:
++	    case (integer_t)SIG_DFL:
+ 		/*
+ 		 * take default action
+ 		 */
 diff --git a/server/serv/server_exec.c b/server/serv/server_exec.c
 index 0fedb29..46b259b 100644
 --- a/server/serv/server_exec.c
