@@ -336,7 +336,32 @@ an ELF as its own only when the entry is above `0x10000000`; ours are at
 bites the moment an i386 ELF first program is exec'd. xMach shows the
 shape of the fix.
 
-## Step 4 is done: a shell runs commands
+## Step 4 is done, and the root is read-write
+
+`/bin/sh` runs commands, and after `/sbin/mount -u -w /` it can write:
+files created under LITES reach the disk and the result passes
+`e2fsck` clean. Transcript and evidence at the head of
+`docs/current-blocker.md`.
+
+Item 1 below -- the read-write root -- turned out not to be the large
+piece of work it was recorded as. It was not an ext2 defect at all: the
+read-only mount is what 4.4BSD does, FFS does it identically in this
+same tree, and the remount path already existed. What was missing was
+`/dev/hd0c` and `/etc/fstab` in the root image, both now built by
+`mkroot-netbsd.sh`. The write path itself worked first time.
+
+**So the remaining work is userland assembly, in this order:**
+
+1. **`/etc` and the login chain.** Now the top item.
+   `mkroot-netbsd.sh` installs only `bin/` and `sbin/` binaries, so
+   `/etc` holds nothing but the `fstab` just added: no `rc`, no
+   `ttys`, no `getty`, no `login`, no password database. An `/etc/rc`
+   would also make the read-write remount automatic, as it is on a
+   real BSD. Multi-user init needs `ttys` to spawn anything at all.
+2. **`/dev/mem`, or a decision not to have one**, for `ps`.
+3. **The paging file**, replacing raw `hd1c`.
+
+## Superseded: step 4 is done: a shell runs commands
 
 `/bin/sh` executes commands typed at the console. The transcript is at
 the head of `docs/current-blocker.md`; `ls /` alone exercises fork,

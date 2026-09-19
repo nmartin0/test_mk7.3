@@ -1,3 +1,75 @@
+# MILESTONE: the root mounts read-write, and ext2 writes work
+
+`/bin/sh` can now create, copy, remove and read back files, and what
+LITES writes survives to disk and passes `e2fsck` clean. This is the
+first time ext2's write path has run in this project.
+
+```
+# /sbin/mount -u -w /
+# echo written-by-lites > /tmp/proof
+# cat /tmp/proof
+written-by-lites
+# mkdir /tmp/d
+# cp /etc/fstab /tmp/d/copy
+# ls -l /tmp/d
+total 2
+-rw-r--r--  1 0  0  23 Sep 18 01:15 copy
+# rm /tmp/proof
+# ls /tmp
+d
+# sync
+```
+
+and then, from the host, against the image the guest had been writing:
+
+```
+$ debugfs -R "cat /tmp/proof" /tmp/root.img
+written-by-lites
+$ e2fsck -fn /tmp/root.img
+/tmp/root.img: 62/16384 files (0.0% non-contiguous), 5157/65536 blocks
+```
+
+No errors from `e2fsck`. Inode allocation, block allocation, directory
+entries, data blocks, unlink and directory removal all produce a
+filesystem the reference implementation accepts.
+
+## The read-only root was never an ext2 problem
+
+It read like a defect and was not one. 4.4BSD mounts root read-only and
+`/etc/rc` remounts it; this tree does the same for **both**
+filesystems, on the same line -- `ffs_vfsops.c:109` sets `MNT_RDONLY`
+exactly as `ext2_vfsops.c:117` does. The remount path already existed
+at `ext2_vfsops.c:171-188` and had never been reachable, because the
+root image lacked the two things `mount(8)` needs:
+
+- `/dev/hd0c`, the root disk as a **block** node, major 0 (`bdevsw`
+  entry 0 is `hd`) minor 2 (partition c). `ext2_mount`'s update branch
+  `namei()`s the fspec, rejects anything not `VBLK`, and requires the
+  vnode to be the one the mount already holds.
+- `/etc/fstab`, or `mount(8)` says "unknown special file or file
+  system".
+
+Both are now created by `mkroot-netbsd.sh`. The fstab entry says type
+`ufs` deliberately: NetBSD 1.0's `mount(8)` has never heard of ext2fs,
+and on an update the kernel skips the type entirely and keeps the
+mount's existing `ext2fs_vfsops`. It is a remount-only entry.
+
+## What is still open
+
+**The remount is manual.** BSD does it from `/etc/rc`, and `/etc` in
+this root holds only the `fstab` just added. That is the next item:
+`mkroot-netbsd.sh` installs only `bin/` and `sbin/` binaries from the
+NetBSD sets, so there is no `rc`, no `ttys`, no `getty`, no `login` and
+no password database -- and multi-user init would find no `ttys` and
+spawn nothing.
+
+**`ps` still fails** with `/dev/mem: Device not configured`, which is a
+design question rather than a missing node: a 1994 BSD `ps` reads the
+proc table out of kernel memory, and under a microkernel that is not
+where it lives.
+
+---
+
 # MILESTONE: a shell, and commands that run
 
 NetBSD 1.0's `/bin/sh` is running under LITES on OSFMK 7.3 and
