@@ -23,7 +23,7 @@
 
 EXPINC_SUBDIRS		= mach_perf
 
-SUBDIRS			= mach_perf
+SUBDIRS			= mach_perf mach_init
 
 .if exists(${TARGET_MACHINE}/machdep.mk)
 .include "${TARGET_MACHINE}/machdep.mk"
