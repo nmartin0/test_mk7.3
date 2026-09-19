@@ -25,6 +25,7 @@ SETUP_SUBDIRS		= migcom
 EXPLIB_SUBDIRS		= libcthreads \
 			  libmach \
 			  libmach_maxonstack \
+			  libmach_sa \
 			  libsa_mach \
 			  libmachid \
 			  libnetmemory \

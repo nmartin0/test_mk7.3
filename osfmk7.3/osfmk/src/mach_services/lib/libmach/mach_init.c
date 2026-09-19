@@ -71,7 +71,38 @@ void (*_atfork_child_routine)(void);
 static void mach_atfork_child_routine(void);
 static boolean_t first = TRUE;
 static void (*previous_atfork_child_routine)(void);
-static int mach_init(void);
+
+/*
+ * AI-ONLY NOTE, 2026: mach_init is global in the standalone build.
+ *
+ * libmach_sa compiles these sources with -DSTANDALONE (its Makefile sets
+ * LOCAL_CFLAGS), and common.mk's MACH_INIT_OFILE hook exists to swap in
+ * mach_init_sa.c, whose only material difference is that its mach_init
+ * is global. But mach_init_sa.c defines neither _rpc_glue_vector nor
+ * _rpc_glue_vector_data, which this file's siblings ms_thread_switch.c
+ * and ms_thread_depress_abort.c reference, and it never calls
+ * mach_init_ports(). So an archive built from it cannot satisfy itself,
+ * and one built from this file cannot satisfy a consumer that calls
+ * mach_init by name. LITES needs both at once: its server pulls in
+ * ms_thread_switch.o, and its emulator calls mach_init() directly from
+ * child_init() (emulator/emul_init.c:298).
+ *
+ * Keying the linkage off STANDALONE resolves both from this one file and
+ * leaves the non-standalone libmach byte-identical -- verified by
+ * comparing the built libmach.a across the change.
+ *
+ * This does NOT merge mach_init_sa.c's behaviour in; that file stays
+ * unused and unmodified. The standalone mach_init is now the full one,
+ * which does more than mach_init_sa.c's did: mach_init_ports() and the
+ * glue-vector setup both run.
+ */
+#ifdef	STANDALONE
+#define	MACH_INIT_LINKAGE
+#else
+#define	MACH_INIT_LINKAGE	static
+#endif
+
+MACH_INIT_LINKAGE int mach_init(void);
 
 static void mach_atfork_child_routine(void)
 {
@@ -90,7 +121,7 @@ static void mach_atfork_child_routine(void)
 	mach_init();
 }
 
-static int		mach_init(void)
+MACH_INIT_LINKAGE int	mach_init(void)
 {
 	task_user_data_data_t	user_data;
 	mach_msg_type_number_t	user_data_count = TASK_USER_DATA_COUNT;
