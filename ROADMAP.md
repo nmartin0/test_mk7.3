@@ -355,7 +355,15 @@ independent things, none of which stops the system running:**
    list in `DEBUGGING.md` section 10a. The related family -- a
    `mach_error_t` returned where an errno belongs -- is not
    searchable that way and remains open.
-3. **`/dev/mem`**, or a decision not to have one, for `ps`.
+3. ~~`/dev/mem`, or a decision not to have one, for `ps`~~
+   **decided: not supportable, and nothing shipped.** `ps` reads the
+   proc table by layout through libkvm, and LITES's `struct proc`
+   carries Mach ports a NetBSD 1.0 binary cannot know about. With
+   every file it wanted supplied it got as far as
+   `proc size mismatch (4620 total, 644 chunks)`. The same applies to
+   `w`, `uptime`, `vmstat`, `netstat` and `pstat`. Full account, and
+   the two routes that would work, at the head of
+   `docs/current-blocker.md`.
 4. **The paging file**, replacing raw `hd1c`.
 5. **More userland.** The root carries a deliberately small subset of
    the NetBSD sets. `id` is already missing, and anything beyond the

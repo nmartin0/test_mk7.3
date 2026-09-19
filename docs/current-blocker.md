@@ -1,3 +1,87 @@
+# DECIDED: ps cannot work through libkvm, and /dev/mem is not the reason
+
+`ps` was on the roadmap as "`/dev/mem`, or a decision not to have one".
+This is the decision, and it is the second: the missing device was
+never the real obstacle.
+
+## How far it actually gets
+
+Each failure was a different missing piece, and fixing each one moved
+it along:
+
+| given | `ps` says |
+|---|---|
+| `/dev/mem` as `c 2 0` | `/dev/mem: Device not configured` |
+| `/dev/mem` pointed at kmem | `/dev/drum: No such file or directory` |
+| `/dev/drum` as `c 4 0` | `/dev/drum: Operation not supported by device` |
+| `ps -W /dev/null` | **`proc size mismatch (4620 total, 644 chunks)`** |
+
+The last one is the answer. libkvm opened the namelist, found the
+symbols, read the proc table, and rejected what it read.
+
+## Why the last one cannot be fixed by adding files
+
+LITES's `struct proc` is not NetBSD's. It carries, among others:
+
+```c
+	mach_port_t p_sigport;	/* signal notification port for process */
+	mach_port_t p_task;
+	mach_port_t p_req_port;	/* for reverse mapping (ie. p -> port) */
+	mach_port_t p_fork_req_port; /* original proc port. Used by wait. */
+	mach_port_t p_thread;
+	queue_head_t p_servers;
+	int p_servers_count;
+```
+
+`ps` does not ask the system for process information; it reads the
+proc table out of kernel memory **by layout**, through libkvm. A 1994
+NetBSD binary therefore requires a proc table with 1994 NetBSD's
+layout, and a BSD server on Mach cannot have one -- the extra fields
+are what make it a server rather than a kernel.
+
+So this is not a missing device, a missing symbol table or a missing
+swap device. Everything `ps` needs to *find* the table is present and
+working; what it finds is a different structure.
+
+## What did work, and is worth knowing
+
+- **`/dev/kmem` reads the server's own address space.** `mmrw()` in
+  `server/serv/device_misc.c` handles minor 1 by `uiomove` straight
+  from the offset. On a microkernel that is exactly right: the
+  "kernel" whose memory `ps` wants is the LITES server.
+- **The server's symbols resolve.** Installing the unstripped
+  `startup` binary as `/netbsd` is enough for libkvm's `nlist` to
+  work, which is why it got as far as reading the table at all.
+- LITES implements only minor 1 (`M_KMEM`), 2 (`M_NULL`) and 12
+  (`M_ZERO`). There is no `M_MEM`, so `/dev/mem` at minor 0 is a node
+  with nothing behind it, and char major 4 (`drum`) is wired to
+  `no_ops`.
+
+## The decision
+
+**Nothing is shipped for this.** `/dev/mem` stays as `c 2 0`, which is
+the honest BSD convention even though LITES has no physical-memory
+device; `/dev/drum` is not created, because a node whose driver is
+`no_ops` only changes the error message; and `/netbsd` is not
+installed, because a namelist that leads to an uninterpretable table
+helps nobody.
+
+Everything that reads the kernel through libkvm is in the same
+position: `w`, `uptime`, `vmstat`, `netstat`, `pstat`.
+
+Two routes exist if this is ever wanted, and both are real work rather
+than configuration:
+
+1. **A LITES-aware `ps`**, built against the server's own headers, so
+   the layout matches by construction. The comp set has the sources.
+2. **`kernfs`**, which this tree already compiles
+   (`kernfs_vfsops.c`, `kernfs_vnops.c`) but does not mount. It would
+   expose process information as files rather than as a memory image,
+   which is the structurally right answer on a microkernel -- but
+   NetBSD 1.0's `ps` does not read it, so it needs a client that does.
+
+---
+
 # An unmappable error now fails the call, and the sweep came back empty
 
 Two pieces of the "mach_error_t where an errno belongs" family, which
