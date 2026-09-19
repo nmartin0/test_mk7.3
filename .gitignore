@@ -1,0 +1,15 @@
+Build output lives outside the tree (see build/mksandbox.sh, MK_BUILD).
+The entries below are symlinks or generated files created by
+build/mksandbox.sh. The build writes through them, so nothing lands
+inside the repository and git diff against the vendor import stays
+empty.
+/osfmk7.3/osfmk/obj
+/osfmk7.3/osfmk/export/at386
+/osfmk7.3/osfmk/src/makedefs/sys.mk
+/osfmk7.3/osfmk/src/makedefs/osf.man.mk
+/osfmk7.3/osfmk/src/makedefs/osf.doc.mk
+/osfmk7.3/osfmk/rc_files/osc/Buildconf.local
+/obj/
+/export/
+*.o
+*.pp
