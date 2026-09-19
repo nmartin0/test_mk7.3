@@ -49,15 +49,60 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 K="$MK_BUILD/obj/at386/mach_kernel/PRODUCTION/mach_kernel.PRODUCTION"
 BOOTSTRAP="$MK_BUILD/obj/at386/bootstrap/bootstrap"
 PAGER="$MK_BUILD/obj/at386/default_pager/default_pager"
-LITES="$HOME/lites-build/obj/server/startup.Lites.1.1.u3.STD+WS+osfmach3+ext2fs"
-EMULATOR="$HOME/lites-build/obj/emulator/emulator.Lites.1.1.u3"
+# LITES_BUILD is the build directory given to build-lites.sh. It was
+# hard-coded to ~/lites-build, which is only right if you passed exactly
+# that, and the failure when you did not was a missing-file message that
+# said nothing about which build produced the file.
+LITES_BUILD="${LITES_BUILD:-$HOME/lites-build}"
+LITES="$LITES_BUILD/obj/server/startup.Lites.1.1.u3.STD+WS+osfmach3+ext2fs"
+EMULATOR="$LITES_BUILD/obj/emulator/emulator.Lites.1.1.u3"
 
 SERVERS=/tmp/servers.img
 ROOT=/tmp/root.img
 SWAP=/tmp/swap.img
 
-for f in "$K" "$BOOTSTRAP" "$PAGER" "$LITES" "$EMULATOR"; do
-	[ -r "$f" ] || { echo "missing: $f"; exit 1; }
+# Say what builds a thing, not just that it is absent. Each of these is
+# the output of one command, and the message names it.
+missing() {
+	echo "missing: $1" >&2
+	echo "  produced by: $2" >&2
+	exit 1
+}
+
+ODE_CMD="sh build/ode.sh -here"
+[ -r "$K" ] || missing "$K" \
+	"$ODE_CMD mach_kernel MACH_KERNEL_CONFIG=PRODUCTION"
+[ -r "$BOOTSTRAP" ] || missing "$BOOTSTRAP" "$ODE_CMD bootstrap"
+[ -r "$PAGER" ] || missing "$PAGER" "$ODE_CMD default_pager"
+
+# The emulator and the server come from the same build, so if one is
+# present and the other is not, that build FAILED PART WAY rather than
+# never having run -- and there is one cause common enough to name.
+#
+# The emulator is the only thing that calls mach_init by name. When
+# $MK_BUILD holds a libmach_sa.a built before the mach_init linkage fix,
+# the server links and the emulator does not:
+#
+#   ld: emul_init.o: in function `child_init':
+#       undefined reference to `mach_init'
+#
+# leaving exactly this state. ODE will not rebuild the library while its
+# object directory looks current, so the obj directory has to go.
+for f in "$LITES" "$EMULATOR"; do
+	[ -r "$f" ] && continue
+	echo "missing: $f" >&2
+	echo "  produced by: sh tools/lites/build-lites.sh \\" >&2
+	echo "                 <lites-src> $LITES_BUILD" >&2
+	if [ -r "$LITES" ] || [ -r "$EMULATOR" ]; then
+		echo >&2
+		echo "  One of the two is present, so that build failed part" >&2
+		echo "  way. If it ended in an undefined reference to" >&2
+		echo "  mach_init, libmach_sa is stale:" >&2
+		echo >&2
+		echo "    rm -rf \$MK_BUILD/obj/at386/mach_services/lib/libmach_sa" >&2
+		echo "    sh build/ode.sh -here mach_services/lib/libmach_sa" >&2
+	fi
+	exit 1
 done
 
 # Both filesystems are ext2 now, so find the tools once. They live in
