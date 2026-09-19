@@ -391,6 +391,66 @@ index 14575d7..d2964c3 100644
  	/* exception handler */
  	exception_port = ux_handler_setup();
  #if OSFMACH3
+diff --git a/server/kern/kern_exit.c b/server/kern/kern_exit.c
+index 8ef5031..3114371 100644
+--- a/server/kern/kern_exit.c
++++ b/server/kern/kern_exit.c
+@@ -375,6 +375,45 @@ struct wait_args {
+ 	struct	rusage *rusage;
+ };
+ 
++/*
++ * AI-ONLY NOTE, 2026: is mach_init the program LITES actually started?
++ *
++ * The pid-2 block in wait4() below hides pid 2 from pid 1. That is
++ * right only when pid 2 really is mach_init, which happens because
++ * mach_init runs as the first program, forks, and the PARENT execs
++ * /sbin/init -- leaving BSD init at pid 1 and mach_init, the service
++ * server, at pid 2. See mach_services/cmds/mach_init/main.c, where the
++ * fork's parent branch calls execve("/sbin/init") and the child stays
++ * behind for init_process() and serv_init().
++ *
++ * With -i naming a BSD init directly, no mach_init exists anywhere and
++ * pid 2 is an ordinary child -- the first shell init forks. Hiding it
++ * makes wait() return ECHILD for a live child, so init concludes the
++ * shell died and forks another, which is then refused the console
++ * (correctly) because the first still holds it. That respawn loop is
++ * what docs/current-blocker.md records.
++ *
++ * init_program_path is what server_init.c resolved and what s_execve()
++ * was handed, so its basename is the program that actually ran rather
++ * than an assumption about it.
++ *
++ * This does NOT change the mach_init configuration: when mach_init is
++ * the first program the test is true and the block behaves as before.
++ */
++static boolean_t
++first_program_is_mach_init()
++{
++	extern char init_program_path[];
++	register char *cp, *base;
++
++	base = init_program_path;
++	for (cp = init_program_path; *cp != '\0'; cp++)
++		if (*cp == '/')
++			base = cp + 1;
++
++	return (strcmp(base, "mach_init") == 0);
++}
++
+ int wait4(q, uap, retval)
+ 	register struct proc *q;
+ 	register struct wait_args *uap;
+@@ -495,7 +534,8 @@ loop:
+ 		 * XXX mach_init does an init_process system call.  It
+ 		 * should cause this effect among other things.
+ 		 */
+-		if (q->p_pid == 1 && p->p_pid == 2) {
++		if (q->p_pid == 1 && p->p_pid == 2 &&
++		    first_program_is_mach_init()) {
+ 			nfound--;
+ 			continue;
+ 		}
 diff --git a/server/kern/kern_resource.c b/server/kern/kern_resource.c
 index 002c1b8..5945a8b 100644
 --- a/server/kern/kern_resource.c
