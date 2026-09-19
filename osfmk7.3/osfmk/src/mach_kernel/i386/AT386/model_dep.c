@@ -254,7 +254,22 @@ int		loadpt;
 
 vm_size_t	mem_size = 0; 
 vm_offset_t	first_addr = 0;	/* set by start.s - keep out of bss */
-vm_offset_t	first_avail = 0;/* first after page tables */
+/*
+ * AI-ONLY NOTE: section attribute required. start.S:487 stores the first
+ * physical address after the page tables here before any C runs, so it
+ * must survive the BSS clear in machine_startup(). Measured: start.S
+ * stores 0x503000, the clear makes it 0, and i386_init then computes
+ * hole_end = round_page(first_avail) = 0 against hole_start = 0x9f000.
+ * With the hole inverted nothing is skipped, so pmap_bootstrap allocated
+ * page tables from avail_start upward straight through 0x100000 and
+ * overwrote the kernel's own text.
+ *
+ * first_addr just below carries the same historical comment but is NOT
+ * written by start.S in this version (grep confirms zero stores); it is
+ * assigned in i386_init after the clear, so it needs no attribute.
+ */
+vm_offset_t	first_avail __attribute__((section(".data"))) = 0;
+				/* first after page tables */
 vm_offset_t	last_addr;
 
 vm_offset_t	avail_start, avail_end;
@@ -265,12 +280,23 @@ unsigned int	avail_remaining;
 
 /* parameters passed from GRUB */
 int mb_info_size = sizeof(struct multiboot_info);
-struct multiboot_info mb_info = { 0 };
+/*
+ * AI-ONLY NOTE: the section attribute is required, not decorative.
+ * start.S fills mb_info from %ebx before any C code runs, so it must
+ * survive the BSS clear below. Under GCC 2.7 an explicitly
+ * zero-initialized global went to .data and did; GCC 3.x onward puts
+ * it in .bss (-fzero-initialized-in-bss, on by default), where the
+ * clear wipes it. See the matching note on the bzero in
+ * machine_startup().
+ */
+struct multiboot_info mb_info __attribute__((section(".data"))) = { 0 };
 extern vm_offset_t boot_start;
 extern vm_size_t boot_size;
 extern vm_offset_t exec_start;
 extern vm_size_t exec_size;
 extern pt_entry_t *kpde;
+
+int		use_old_bootstrap = 0;	/* -o: use bootstrap_create_old() */
 
 int		cnvmem = 0;		/* must be in .data section */
 int		extmem = 0;
@@ -303,6 +329,27 @@ int		boottype = 0;
 void
 machine_startup(void)
 {
+	/*
+	 * Zero the BSS.
+	 *
+	 * AI-ONLY NOTE: this was in i386_init(), which runs after
+	 * parse_multiboot() below, so the clear wiped everything
+	 * parse_multiboot() had just written -- cnvmem, extmem,
+	 * mb_module, boot_start/size, exec_start/size and
+	 * kern_args_start/size, nine variables in all. i386_init() then
+	 * read cnvmem and extmem as zero and computed
+	 * "Available physical space from 0x101000 to 0x100000", an empty
+	 * range, leaving no memory to bootstrap with.
+	 *
+	 * Clearing first is what GNU Mach does: its boothdr.S zeroes BSS
+	 * in assembly and only then passes the boot data into C, so boot
+	 * data is never stashed in BSS ahead of the clear. machine_startup
+	 * is the first C function called (start.S), so this is the
+	 * earliest equivalent point without moving the loop into
+	 * assembly.
+	 */
+	bzero((char *)&edata,(unsigned)(&end - &edata));
+
 	/*
 	 * Prepare multiboot information
 	 */
@@ -371,6 +418,10 @@ struct multiboot_module *mb_module = 0;
 void
 parse_multiboot(void)
 {
+	extern char		env_buf[256];
+	extern vm_offset_t	env_start;
+	extern vm_size_t	env_size;
+
 	/* Get memory info */
 	cnvmem = mb_info.mem_lower;
 	extmem = mb_info.mem_upper;
@@ -378,17 +429,113 @@ parse_multiboot(void)
 	/* 
          * Get information about the bootstrap. Currently we only
 	 * support loading one module.
+	 *
+	 * AI-ONLY NOTE: the mods_count guards are required.
+	 *
+	 * The module array was read unconditionally, and mods_addr is
+	 * only meaningful when MULTIBOOT_MODS is set in flags. Booted
+	 * with no modules, qemu leaves mods_count at 0 and mods_addr
+	 * pointing at the same address as cmdline, so mb_module[0] was
+	 * the kernel command line read as a module table:
+	 *
+	 *   boot_start = 0x6863616d     ASCII "mach"
+	 *   boot_size  = 167905778      garbage, and crucially not 0
+	 *
+	 * bootstrap_create() guards itself with "if (boot_size == 0)
+	 * return", which is plainly meant to catch exactly this case.
+	 * It never fired, because boot_size was computed from the
+	 * command line rather than left at zero. bootstrap_create then
+	 * dereferenced boot_start and the kernel took 937335 page
+	 * faults, at which point the stack was unusable and unrelated
+	 * assertions started failing.
+	 *
+	 * mb_module[1] was read the same way. Even with one module
+	 * supplied it is past the end of the array: exec_size came back
+	 * as -1094452224. mods_count is authoritative per the multiboot
+	 * specification, so both reads are now bounded by it.
+	 *
+	 * boot_start, boot_size, exec_start and exec_size are zero
+	 * initialized globals and the BSS clear now runs before this
+	 * function, so leaving them untouched is what makes OSF's own
+	 * guard work as written.
 	 */
-	mb_module = (struct multiboot_module *) mb_info.mods_addr;
- 	boot_start = mb_module[0].mod_start;
- 	boot_size = mb_module[0].mod_end - mb_module[0].mod_start;
- 
- 	exec_start = mb_module[1].mod_start;
- 	exec_size = mb_module[1].mod_end - mb_module[1].mod_start;
+	if (mb_info.flags & MULTIBOOT_MODS) {
+		mb_module = (struct multiboot_module *) mb_info.mods_addr;
+
+		if (mb_info.mods_count >= 1) {
+			boot_start = mb_module[0].mod_start;
+			boot_size = mb_module[0].mod_end - mb_module[0].mod_start;
+		}
+
+		if (mb_info.mods_count >= 2) {
+			exec_start = mb_module[1].mod_start;
+			exec_size = mb_module[1].mod_end - mb_module[1].mod_start;
+		}
+	}
 
 
 	kern_args_start = mb_info.cmdline;
 	kern_args_size = strlen((char *) kern_args_start);
+
+	/*
+	 * AI-ONLY NOTE: populate the environment from the command line.
+	 *
+	 * getenv() below walks env_start for NUL separated KEY=VALUE
+	 * strings, and OSF documented BOOTDEV and BOOTUNIT as the way to
+	 * select the boot device. But nothing ever filled that buffer:
+	 * the code that did so lives in do_bootstrap_compat() in
+	 * kern/bootstrap.c behind an #if 0, so env_start and env_size
+	 * stayed 0 and getenv() always returned NULL. bootdev_name was
+	 * therefore always its compiled-in default, "hd0s1", an IDE
+	 * partition this configuration has no driver for.
+	 *
+	 * Re-enabling that block in place would not help. It runs in
+	 * do_bootstrap_compat(), long after the device configuration at
+	 * the end of machine_init() that calls getenv("BOOTDEV").
+	 * Filling the buffer here is early enough: parse_multiboot() runs
+	 * from machine_init() well before probeio() and the
+	 * dev_name_lookup() that consumes the result.
+	 *
+	 * The source is the multiboot command line, which is already in
+	 * hand. Any whitespace delimited token containing '=' is copied
+	 * in as an environment entry, so
+	 *
+	 *   qemu-system-i386 ... -append "BOOTDEV=fd -o"
+	 *
+	 * selects the floppy with no source change, which is what OSF
+	 * documented. Tokens without '=' are left alone; parse_arguments()
+	 * reads those separately from kern_args_start for its -h, -r, -m,
+	 * -k and -o flags.
+	 */
+	{
+	    register char	*src = (char *) kern_args_start;
+	    register char	*end = src + kern_args_size;
+	    register char	*dst = env_buf;
+	    char		*limit = env_buf + sizeof(env_buf) - 1;
+	    char		*tok;
+	    boolean_t		has_eq;
+
+	    while (src < end) {
+		while (src < end && (*src == ' ' || *src == '\t'))
+		    src++;
+		tok = src;
+		has_eq = FALSE;
+		while (src < end && *src != ' ' && *src != '\t') {
+		    if (*src == '=')
+			has_eq = TRUE;
+		    src++;
+		}
+		if (has_eq && (dst + (src - tok) + 1) <= limit) {
+		    while (tok < src)
+			*dst++ = *tok++;
+		    *dst++ = '\0';
+		}
+	    }
+	    if (dst != env_buf) {
+		env_start = (vm_offset_t) env_buf;
+		env_size = dst - env_buf;
+	    }
+	}
 
  	//boot_args_start = mb_module->cmdline;
  	//boot_args_size = strlen(boot_args_start);
@@ -418,6 +565,17 @@ parse_arguments(void)
 		    break;
 		case 'r':
 		    cons_is_com1 = 1;
+		    break;
+		case 'o':	/* -o: OSF's original bootstrap path */
+		    /*
+		     * AI-ONLY NOTE: selects bootstrap_create_old() over
+		     * bootstrap_create(). The latter is hardcoded to
+		     * start the GNU Hurd servers ext2fs.static and
+		     * exec.static; the former starts the bootstrap task
+		     * this tree builds in src/bootstrap. Default is
+		     * unchanged.
+		     */
+		    use_old_bootstrap = 1;
 		    break;
 		case 'm':	/* -m??:  memory size Mbytes*/
 		    mem_size = atoi_term(p, &p)*1024*1024;
@@ -475,6 +633,7 @@ machine_boot_info(char *buf, vm_size_t size)
 	return buf;
 }
 
+extern char env_buf[256];
 extern vm_offset_t env_start;
 extern vm_size_t env_size;
 
@@ -620,11 +779,6 @@ i386_init(void)
 {
 	int i,j;			/* Standard index vars. */
 	vm_size_t	bios_hole_size;	
-
-	/*
-	 * Zero the BSS.
-	 */
-	bzero((char *)&edata,(unsigned)(&end - &edata));
 
 	boot_string = &boot_string_store[0];
 
