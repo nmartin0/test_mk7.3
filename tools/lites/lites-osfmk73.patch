@@ -581,6 +581,85 @@ index 7a680a9..ad11d2c 100644
  		sub (/^[ \t]*/, "", s);
  		sub (/[ \t]*$/, "", s);
  		return s;
+diff --git a/server/serv/misc.c b/server/serv/misc.c
+index 1097b5e..c33bf52 100644
+--- a/server/serv/misc.c
++++ b/server/serv/misc.c
+@@ -228,6 +228,7 @@ void boot(
+ 	register struct buf *bp;
+ 	int	iter, nbusy, obusy;
+ 	struct proc *p;
++	int	ndirty;
+ 
+ #if 0 /* Does not work if ETHER_AS_SYSCALL */
+ 	(void) splnet();
+@@ -250,6 +251,7 @@ void boot(
+ 		printf("syncing disks... ");
+ 
+ 		sync(get_proc(), 0, 0);
++
+ 		obusy = 0;
+ 
+ 		for (iter = 0; iter < 20; iter++) {
+@@ -267,9 +269,55 @@ void boot(
+ 
+ 			DELAY(40000 * iter);
+ 		}
+-		if (nbusy)
+-		    printf("giving up\n");
+-		else
++		/*
++		 * AI-ONLY NOTE, 2026: say whether anything was actually
++		 * LOST, because "giving up" on its own reads like data loss
++		 * and here it is not.
++		 *
++		 * This loop counts buffers with B_BUSY set, which is right
++		 * for waiting out I/O in flight but also counts buffers that
++		 * are merely HELD. ext2 holds three for the life of a mount
++		 * -- the group-descriptor block, the inode bitmap and the
++		 * block bitmap (bread into fs->s_group_desc, s_inode_bitmap
++		 * and s_block_bitmap, released only by ext2_unmount) -- so on
++		 * this system the count can never reach zero and halt always
++		 * printed
++		 *
++		 *   syncing disks... 3 3 3 ... giving up
++		 *
++		 * with nothing wrong. Measured: 8 groups is one descriptor
++		 * block plus the two cached bitmaps, which is exactly three,
++		 * and a file written immediately before a halt is on disk
++		 * afterwards with e2fsck reporting no errors.
++		 *
++		 * B_DELWRI is the flag that means "written by someone, not
++		 * yet on the disk", so counting those separately tells the
++		 * operator what the old message could not.
++		 *
++		 * UNMOUNTING INSTEAD WAS TRIED AND DOES NOT WORK HERE.
++		 * ext2_unmount() refuses MNT_FORCE on the root filesystem by
++		 * its own explicit check and returns EINVAL, and without
++		 * FORCE ext2_flushfiles() cannot close out the root vnode.
++		 * Worse, had it succeeded, dounmount() would have
++		 * dereferenced mp->mnt_vnodecovered, which is NULLVP for the
++		 * root. So the root stays mounted, and the filesystem stays
++		 * marked "not clean" -- which is cosmetic here because
++		 * nothing fscks at boot, and is recorded in
++		 * docs/current-blocker.md rather than papered over.
++		 */
++		ndirty = 0;
++		for (bp = &buf[nbuf]; --bp >= buf; )
++		    if ((bp->b_flags & (B_DELWRI | B_INVAL)) == B_DELWRI)
++			ndirty++;
++
++		if (nbusy && ndirty) {
++		    printf("giving up, unwritten buffers: ");
++		    printf("%d\n", ndirty);
++		} else if (nbusy) {
++		    printf("done (");
++		    printf("%d", nbusy);
++		    printf(" held, none unwritten)\n");
++		} else
+ 		    printf("done\n");
+ 		DELAY(10000);			/* wait for printf to finish */
+ 
 diff --git a/server/serv/server_exec.c b/server/serv/server_exec.c
 index 0fedb29..46b259b 100644
 --- a/server/serv/server_exec.c
