@@ -18,9 +18,15 @@
 # One long-running attach; any number of short sends from elsewhere.
 #
 #   python3 tools/console.py --attach &          # once, after booting
-#   python3 tools/console.py --send ''           # bare RETURN
-#   python3 tools/console.py --send 'echo hi'
+#   python3 tools/console.py --wait-for 'RETURN for sh:' --send ''
+#   python3 tools/console.py --wait-for '# ' --send 'echo hi'
 #   tail /tmp/console.log
+#
+# --wait-for blocks until the guest has printed that text. Under TCG the
+# single-user prompt is about five minutes after the boot starts, so a
+# bare --send on the next line types into a kernel that is still
+# loading; and waiting for what the guest SAYS beats sleeping a guessed
+# number of seconds.
 #
 # WHY A FIFO RATHER THAN A SECOND SOCKET CONNECTION
 #
@@ -96,15 +102,25 @@ def do_send(args):
         data += b"\n" if args.lf else b"\r"
     # O_WRONLY on a FIFO blocks until a reader exists, which would hang
     # forever if no attach is running. Fail with a usable message instead.
-    try:
-        fd = os.open(args.input, os.O_WRONLY | os.O_NONBLOCK)
-    except OSError as exc:
-        if exc.errno == errno.ENXIO:
-            sys.stderr.write(
-                "console.py: nothing is attached to %s -- start\n"
-                "  python3 tools/console.py --attach &\n" % args.input)
-            return 1
-        raise
+    # ENXIO means no reader yet. Wait for one rather than failing at
+    # once: an attach started moments earlier is the normal case, not an
+    # error, and failing instantly turned a race into a wrong diagnosis.
+    deadline = time.time() + args.timeout
+    fd = None
+    while True:
+        try:
+            fd = os.open(args.input, os.O_WRONLY | os.O_NONBLOCK)
+            break
+        except OSError as exc:
+            if exc.errno != errno.ENXIO:
+                raise
+            if time.time() >= deadline:
+                sys.stderr.write(
+                    "console.py: nothing attached to %s after %gs -- start\n"
+                    "  python3 tools/console.py --attach &\n"
+                    % (args.input, args.timeout))
+                return 1
+            time.sleep(0.2)
     with os.fdopen(fd, "wb", buffering=0) as fifo:
         fifo.write(data)
     return 0
@@ -112,6 +128,14 @@ def do_send(args):
 
 def do_attach(args):
     make_fifo(args.input)
+
+    # Open the FIFO BEFORE connecting to the socket. Done the other way
+    # round there is a window -- interpreter start plus the connect --
+    # in which the FIFO has no reader, and a --send issued in it fails
+    # with ENXIO. That is not hypothetical: the documented recipe puts
+    # --attach and --send in consecutive lines of a paste, so the send
+    # lands inside the window every time.
+    fifo = os.open(args.input, os.O_RDWR | os.O_NONBLOCK)
 
     deadline = time.time() + args.connect_timeout
     sock = None
@@ -125,13 +149,13 @@ def do_attach(args):
             sock = None
             time.sleep(0.25)
     if sock is None:
+        os.close(fifo)
         sys.stderr.write("console.py: could not connect to %s\n" % args.socket)
         return 1
 
-    # O_RDWR on the FIFO keeps it open when the last writer goes away.
-    # Opening it read-only would make select() report it readable forever
-    # after the first send finished, and the loop would spin.
-    fifo = os.open(args.input, os.O_RDWR | os.O_NONBLOCK)
+    # O_RDWR above keeps the FIFO open when the last writer goes away.
+    # Read-only would make select() report it readable forever after the
+    # first send finished, and the loop would spin.
     log = open(args.log, "ab", buffering=0)
 
     try:
@@ -158,6 +182,32 @@ def do_attach(args):
     return 0
 
 
+def do_wait(args):
+    """Block until TEXT appears in the log, so a send can be timed.
+
+    Under TCG the single-user prompt arrives roughly five minutes after
+    the boot starts. A recipe that attaches and sends in consecutive
+    lines therefore sends into a guest that is still loading the kernel,
+    and the operator is left looking at a console that never answered.
+    Waiting for the text the guest prints is the honest way to sequence
+    it -- sleep with a guessed number is the thing this project keeps
+    getting wrong.
+    """
+    want = unescape(args.wait_for)
+    deadline = time.time() + args.timeout
+    while time.time() < deadline:
+        try:
+            with open(args.log, "rb") as log:
+                if want in log.read():
+                    return 0
+        except IOError:
+            pass                      # not created until the attach runs
+        time.sleep(0.5)
+    sys.stderr.write("console.py: %r did not appear in %s within %gs\n"
+                     % (args.wait_for, args.log, args.timeout))
+    return 1
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--socket", default=DEFAULT_SOCK)
@@ -173,6 +223,11 @@ def main():
                     help="send TEXT with no line terminator at all")
     ap.add_argument("--echo", action="store_true",
                     help="with --attach, also copy the console to stdout")
+    ap.add_argument("--wait-for", metavar="TEXT",
+                    help="block until TEXT appears in --log, then exit")
+    ap.add_argument("--timeout", type=float, default=600.0,
+                    help="seconds for --wait-for, and for --send to find "
+                         "an attached console (default 600)")
     ap.add_argument("--connect-timeout", type=float, default=60.0)
     args = ap.parse_args()
 
@@ -180,9 +235,15 @@ def main():
         ap.error("--attach and --send are separate operations")
     if args.attach:
         return do_attach(args)
+    # --wait-for before --send, so the two compose in one call:
+    #   --wait-for 'RETURN for sh:' --send ''
+    if args.wait_for is not None:
+        rc = do_wait(args)
+        if rc != 0 or args.text is None:
+            return rc
     if args.text is not None:
         return do_send(args)
-    ap.error("one of --attach or --send is required")
+    ap.error("one of --attach, --send or --wait-for is required")
 
 
 if __name__ == "__main__":

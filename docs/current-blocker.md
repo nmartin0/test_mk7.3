@@ -63,13 +63,17 @@ and a carriage return terminates a line. No `stty` was needed.
 ```sh
 CONSOLE=socket STARTUP_ARGS='-s -i /init' sh tools/boot-ide.sh
 python3 tools/console.py --attach &
-python3 tools/console.py --send ''            # answer the prompt
-python3 tools/console.py --send 'echo hi'
+python3 tools/console.py --wait-for 'RETURN for sh:' --send ''
+python3 tools/console.py --wait-for '# ' --send 'echo hi'
 tail /tmp/console.log
 ```
 
-Under TCG the boot takes about five minutes before the prompt appears,
-and each command takes a few seconds to echo.
+`--wait-for` is not decoration. Under TCG the prompt arrives about five
+minutes after the boot starts, so a bare `--send` on the next line
+types into a guest that is still loading the kernel, and the console
+then looks like it never answered. Waiting for the text the guest
+prints is also better than sleeping a guessed number of seconds, which
+is the habit this project keeps having to correct.
 
 ---
 

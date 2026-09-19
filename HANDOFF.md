@@ -172,9 +172,12 @@ be answered instead of a file that can only be read.
 ```sh
 CONSOLE=socket STARTUP_ARGS='-s -i /init' sh tools/boot-ide.sh
 python3 tools/console.py --attach &
-python3 tools/console.py --send ''
-python3 tools/console.py --send 'echo hi'
+python3 tools/console.py --wait-for 'RETURN for sh:' --send ''
+python3 tools/console.py --wait-for '# ' --send 'echo hi'
 ```
+
+`--wait-for` blocks until the guest has printed that text, which under
+TCG is about five minutes after the boot starts.
 
 The next work is in `ROADMAP.md`, and the shell itself named it: the
 root is mounted read-only, so nothing can be written anywhere.
