@@ -1,3 +1,96 @@
+# OPEN: console input reorders a character under burst input
+
+Not cosmetic, and not the two-claimants explanation given earlier in
+this file. **That retraction was itself wrong**, or at least
+incomplete: a single writer, typing one line, is enough.
+
+## Reproduction
+
+Send the same 35-character line three times from `console.py`, which
+delivers it as one burst:
+
+```
+# echo FASTTEST-ABCDEFGHIJKLMNOPQRSTUVWXYZ
+FASTTEST-ABCDEFGHIJKLMNOPQRSTUVWXYZ
+# echo FASTTEST-ABCDEFGHIJKLMNOPQRSTUVWXYZ
+FASTTEST-ABCDEFGHIJKLMNOPQRSTUVWXYZ
+# echo FASTTEST-ABCDEFGHIJKLNOPQRSTUVWXYZ
+MFASTTEST-ABCDEFGHIJKLNOPQRSTUVWXYZ
+```
+
+The third has lost `M` from its place -- csh received the line without
+it, echoed it without it, and printed it without it -- and the `M`
+appears at the head of the next line instead. Roughly one burst in
+three.
+
+An earlier run corrupted the **command**, not just the display:
+
+```
+# sleep 60 & sleep 2; kill %1; sleep 3; echo KILL-DON
+E[2] 8
+...
+Esleep: Command not found.
+[3]  - Exit 1                 Esleep 60
+```
+
+The trailing `E` was delivered after the carriage return and became
+the first character of the next command line, so csh tried to run
+`Esleep`. A displaced character can therefore change what the shell
+executes.
+
+**Sent one character at a time, 0.4 s apart, the same line is always
+correct.** That is the control, and it is what makes this a
+burst-rate defect rather than a corruption.
+
+## Where to look
+
+`tty_read_reply()` in `server/serv/tty_io.c` is handed a buffer of
+characters, pushes each through the line discipline, and only then
+issues the next `device_read_request_inband()`:
+
+```c
+	if (!error && data_count > 0) {
+	    interrupt_enter(SPLTTY);
+	    for (i = 0; i < data_count; i++)
+		(*linesw[tp->t_line].l_rint)(data[i] & 0xff, tp);
+	    interrupt_exit(SPLTTY);
+	}
+	...
+	(void) device_read_request_inband(tp->t_device_port, ...);
+```
+
+Two things about that shape are worth testing, in this order:
+
+1. **Are replies processed by more than one thread?** Mach delivers
+   messages from one port in order, but if the server dispatches
+   replies from a pool, two buffers can be in `l_rint` at once and a
+   character from the later one can land first. That fits the symptom
+   exactly: one character, displaced, under load, never at slow speed.
+2. **The window with no outstanding read.** Between the loop and the
+   re-request the device has no request pending. Characters arriving
+   then sit in the kernel's `com` buffer; that explains a delay, but
+   not a reordering, so it is the second hypothesis rather than the
+   first.
+
+The measurement that would settle it: print the thread identity and
+`data_count` at entry to `tty_read_reply`, one value per `printf`, and
+send a burst.
+
+## What it affects
+
+- `getty`'s banner garbling, recorded earlier in this file as an
+  artifact of two processes sharing the console. The two-claimants
+  observation was real -- init-spawned getty was clean, hand-run getty
+  was not -- but this shows a single writer can do it too, so that
+  entry attributed the whole effect to the wrong cause.
+- Anything pasting into the console, including every `console.py
+  --send` of a long line. Short lines are reliable.
+
+It does **not** affect programs reading files or pipes; the shell,
+scripts and redirection in the acceptance run were all correct.
+
+---
+
 # ACCEPTANCE: what the running system actually does, measured
 
 Run against a root built from scratch by `mkroot-netbsd.sh`, booted

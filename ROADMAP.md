@@ -351,7 +351,17 @@ errors. The table is at the head of `docs/current-blocker.md`.
 **Everything remaining is optional and unsequenced.** None of it
 blocks the system running, and none of it is waiting on anything else:
 
-1. **Three buffers `halt` cannot flush** -- `syncing disks... giving
+0. **Console input reorders a character under burst input** -- one
+   line in three, and it can change what the shell runs. Reproduction,
+   control and the two hypotheses at the head of
+   `docs/current-blocker.md`. This is the one real defect left.
+1. ~~Three buffers `halt` cannot flush~~ **explained and reported
+   honestly**: they are ext2's pinned group-descriptor and bitmap
+   buffers, not unwritten data, and halt now says
+   `done (3 held, none unwritten)`. The root still cannot be
+   unmounted at shutdown, so the filesystem is left marked not clean;
+   the reason is recorded.
+2. **Three buffers `halt` cannot flush** -- `syncing disks... giving
    up`. Costs no data and no consistency, since an explicit `sync`
    reaches the disk and the filesystem checks clean afterwards. Worth
    finding, not urgent.
