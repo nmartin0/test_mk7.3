@@ -1,0 +1,407 @@
+#!/bin/sh
+#
+# boot-ide.sh -- build a minix server volume on an IDE disk and boot
+# from it, instead of from a floppy.
+#
+# Why: the boot spends almost all its wall time reading the ~1 MB server
+# through an emulated 1.44 MB floppy controller with realistic timing.
+# That is about 500 seconds per boot, and hardware acceleration does not
+# help because it is I/O bound rather than CPU bound. On IDE the same
+# read takes seconds. Over the number of boots a debugging session
+# needs, this is the single largest speedup available.
+#
+# How it works:
+#
+#   BOOTDEV/BOOTUNIT/BOOTPART in the kernel command line choose the
+#   device that becomes /dev/boot_device. model_dep.c concatenates
+#   BOOTDEV and BOOTUNIT into a name, looks it up, then adds BOOTPART:
+#
+#       dev_name_lookup("hd2") -> ops = hd, unit = 2 * d_subdev
+#       dev_set_indirection("boot_device", ops, unit + BOOTPART)
+#
+#   d_subdev is 16 for hd (i386/AT386/conf.c), so BOOTUNIT=2 BOOTPART=2
+#   gives minor 2*16 + 2 = 34, which is hd2c -- unit 2, partition c.
+#
+#   Partition c is the whole disk: getvtoc() reads sector 0 as a DOS
+#   partition table and, when that fails as it does on an unpartitioned
+#   image, falls back to making partition c the whole disk.
+#
+#   The minix reader is device-agnostic. Every access in
+#   file_systems/minixfs/minixfs.c goes through
+#   device_read(fp->f_dev.dev_port, ...) on whatever port the bootstrap
+#   task was handed, so nothing about it is floppy-specific.
+#
+# Disk layout this sets up:
+#
+#   hd0  ext2   LITES root filesystem
+#   hd1  raw    paging, given to default_pager as hd1c
+#   hd2  minix  /mach_servers, booted from
+#
+# Usage:
+#	sh tools/boot-ide.sh            build the volume and boot
+#	sh tools/boot-ide.sh -n         build the volume only
+#
+set -e
+
+: "${MK_BUILD:?set MK_BUILD first}"
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+K="$MK_BUILD/obj/at386/mach_kernel/PRODUCTION/mach_kernel.PRODUCTION"
+BOOTSTRAP="$MK_BUILD/obj/at386/bootstrap/bootstrap"
+PAGER="$MK_BUILD/obj/at386/default_pager/default_pager"
+# LITES_BUILD is the build directory given to build-lites.sh. It was
+# hard-coded to ~/lites-build, which is only right if you passed exactly
+# that, and the failure when you did not was a missing-file message that
+# said nothing about which build produced the file.
+LITES_BUILD="${LITES_BUILD:-$HOME/lites-build}"
+LITES="$LITES_BUILD/obj/server/startup.Lites.1.1.u3.STD+WS+osfmach3+ext2fs"
+EMULATOR="$LITES_BUILD/obj/emulator/emulator.Lites.1.1.u3"
+
+SERVERS=/tmp/servers.img
+ROOT=/tmp/root.img
+SWAP=/tmp/swap.img
+
+# Say what builds a thing, not just that it is absent. Each of these is
+# the output of one command, and the message names it.
+missing() {
+	echo "missing: $1" >&2
+	echo "  produced by: $2" >&2
+	exit 1
+}
+
+ODE_CMD="sh build/ode.sh -here"
+[ -r "$K" ] || missing "$K" \
+	"$ODE_CMD mach_kernel MACH_KERNEL_CONFIG=PRODUCTION"
+[ -r "$BOOTSTRAP" ] || missing "$BOOTSTRAP" "$ODE_CMD bootstrap"
+[ -r "$PAGER" ] || missing "$PAGER" "$ODE_CMD default_pager"
+
+# The emulator and the server come from the same build, so if one is
+# present and the other is not, that build FAILED PART WAY rather than
+# never having run -- and there is one cause common enough to name.
+#
+# The emulator is the only thing that calls mach_init by name. When
+# $MK_BUILD holds a libmach_sa.a built before the mach_init linkage fix,
+# the server links and the emulator does not:
+#
+#   ld: emul_init.o: in function `child_init':
+#       undefined reference to `mach_init'
+#
+# leaving exactly this state. ODE will not rebuild the library while its
+# object directory looks current, so the obj directory has to go.
+for f in "$LITES" "$EMULATOR"; do
+	[ -r "$f" ] && continue
+	echo "missing: $f" >&2
+	echo "  produced by: sh tools/lites/build-lites.sh \\" >&2
+	echo "                 <lites-src> $LITES_BUILD" >&2
+	if [ -r "$LITES" ] || [ -r "$EMULATOR" ]; then
+		echo >&2
+		echo "  One of the two is present, so that build failed part" >&2
+		echo "  way. If it ended in an undefined reference to" >&2
+		echo "  mach_init, libmach_sa is stale:" >&2
+		echo >&2
+		echo "    rm -rf \$MK_BUILD/obj/at386/mach_services/lib/libmach_sa" >&2
+		echo "    sh build/ode.sh -here mach_services/lib/libmach_sa" >&2
+	fi
+	exit 1
+done
+
+# Both filesystems are ext2 now, so find the tools once. They live in
+# /sbin on Debian, which is not on a normal user's PATH.
+if command -v mke2fs >/dev/null 2>&1; then MKE2FS=mke2fs
+elif [ -x /sbin/mke2fs ]; then MKE2FS=/sbin/mke2fs
+else echo "mke2fs not found; install e2fsprogs"; exit 1; fi
+
+if command -v debugfs >/dev/null 2>&1; then DEBUGFS=debugfs
+elif [ -x /sbin/debugfs ]; then DEBUGFS=/sbin/debugfs
+else echo "debugfs not found; install e2fsprogs"; exit 1; fi
+
+# The server volume, an ext2 filesystem.
+#
+# This was a minix volume built by tools/mkminix.py, for two reasons
+# that both turned out to be avoidable.
+#
+# The first was practical: mkfs.minix left Debian 13, and the kernel's
+# minix reader is particular about the magic number, so the image had to
+# be written by hand.
+#
+# The second is a licence problem. file_systems/minixfs contains three
+# GPL files -- minix_ffs_compat.c, minix_ffs_compat.h and minix_fs.h --
+# and minixfs/machdep.mk builds minix_ffs_compat.o into libsa_fs.a, so
+# the bootstrap task binary linked GPL code. file_systems/ext2fs is
+# entirely GPL-free.
+#
+# The i386 bootstrap task already builds all three readers and tries
+# them in order (file_systems/AT386/machdep.mk and fs_switch.c):
+#
+#	AT386_OFILES = ${UFS_OFILES} ${EXT2FS_OFILES} ${MINIXFS_OFILES}
+#	&ufs_ops, &ext2fs_ops, &minixfs_ops,
+#
+# so ext2 needs no kernel change at all. stock mke2fs and debugfs build
+# and populate it, the same tools the root filesystem already uses, and
+# all three disks are now one filesystem type.
+#
+# ^filetype and the rest: see the root filesystem below for why.
+echo "building $SERVERS"
+rm -f "$SERVERS"
+dd if=/dev/zero of="$SERVERS" bs=1M count=16 2>/dev/null
+"$MKE2FS" -q -F -b 1024 \
+	-O ^resize_inode,^dir_index,^ext_attr,^sparse_super,^filetype \
+	-I 128 "$SERVERS"
+
+"$DEBUGFS" -w -R "mkdir /mach_servers" "$SERVERS" >/dev/null 2>&1
+"$DEBUGFS" -w -R "write $PAGER /mach_servers/default_pager" \
+	"$SERVERS" >/dev/null 2>&1
+"$DEBUGFS" -w -R "write $LITES /mach_servers/startup" \
+	"$SERVERS" >/dev/null 2>&1
+
+# bootstrap.conf gives each server its arguments, and for LITES that is
+# the only way it gets a root device.
+#
+# get_config_info() has two paths. With argc == 0 it uses the
+# compiled-in argv_space table, whose third entry is the root device.
+# With any argument at all it takes the other path and calls
+# parse_arguments(argc, argv) instead, and argv_space is never read.
+#
+# A server always has at least one argument here, its own name, because
+# bootstrap.conf names it. So argc is 1, the argv_space path is dead,
+# and parse_arguments does:
+#
+#	pname = argv[0]; argv++, argc--;	/* argc becomes 0 */
+#	if (argc == 0) return;			/* returns at once */
+#
+# leaving rootdev at its uninitialised zero, which is major 0 minor 0 --
+# device "hd", unit 0, partition "a". LITES then asks the kernel for
+# hd0a, which does not exist on an unpartitioned disk, and the mount
+# fails with D_NO_SUCH_DEVICE (0x9c6).
+#
+# Naming the device here makes argc 2, so parse_arguments reaches the
+# end and sets rootdev from it. Editing argv_space has no effect,
+# because that path never runs.
+#
+# Full paths are used, as the recovered MkLinux bootstrap.conf does.
+#
+# STARTUP_ARGS goes between the server's path and its root device, which
+# is where LITES's own argument parsing expects flags. Default is empty,
+# which is the multi-user boot this script has always done. For the
+# single-user boot the tty work needs:
+#
+#	STARTUP_ARGS='-s -i /init' sh tools/boot-ide.sh
+#
+# The root device stays last either way: parse_arguments() takes the
+# final argument as the root device, so anything appended after it is
+# read as the device name instead.
+#
+# The server directory is named explicitly, as the fourth argument.
+# server_init.c's parse_arguments() reads the two positional arguments
+# after the flags as "Arg 2 (now 0) should be root name / Arg 3 (now 1)
+# should be server_dir_name (3.0 style)", so the order is
+# <root device> <server dir> and both are needed.
+#
+# Leaving the server directory off does not default to anything sane. It
+# takes the argc < 2 path, which builds the directory out of the root
+# name and the directory part of argv[0] -- and argv[0] is not what
+# bootstrap.conf says here, because the bootstrap task rewrites it to the
+# full path it loaded the server from. The two concatenate:
+#
+#	(lites): path(/dev/hd0c/dev/boot_device/mach_servers) derived from root
+#	(lites): init_program(/dev/boot_device/mach_servers/init)
+#	panic: first program (/dev/boot_device/mach_servers/init) exec failed
+#
+# so LITES looks for a literal /dev/boot_device/mach_servers directory on
+# the root filesystem, finds nothing, and panics with init died. Naming
+# the directory strips back to /mach_servers/init, which is where
+# mkroot-netbsd.sh puts things.
+BSCONF=$(mktemp)
+cat > "$BSCONF" <<EOT
+default_pager /mach_servers/default_pager hd1c
+startup /mach_servers/startup ${STARTUP_ARGS} hd0c /dev/hd0c/mach_servers
+EOT
+"$DEBUGFS" -w -R "write $BSCONF /mach_servers/bootstrap.conf" \
+	"$SERVERS" >/dev/null 2>&1
+rm -f "$BSCONF"
+
+# The root and paging disks, if they are not already there. Neither is
+# recreated by default: the root disk in particular may have contents
+# worth keeping.
+[ -f "$ROOT" ] || {
+	echo "creating $ROOT (20 MB, ext2)"
+	dd if=/dev/zero of="$ROOT" bs=1M count=20 2>/dev/null
+	# ^filetype is the one that matters, and it is not obvious.
+	#
+	# In ext2 revision 0 a directory entry's name_len is a 16-bit
+	# field. The filetype feature splits it into an 8-bit name_len
+	# and an 8-bit file_type, and mke2fs enables it by default.
+	# LITES's reader is from 1995 and expects the 16-bit form, so it
+	# reads the "." entry -- name_len 1, file_type 2 for a directory
+	# -- as name_len 0x0201, which is 513, and rejects the directory:
+	#
+	#   bad directory entry: reclen is too small for name_len
+	#   offset=0, inode=2, rec_len=12, name_len=513
+	#   /: bad dir ino 2 at offset 0: mangled entry
+	#
+	# The others are turned off for the same reason, being later
+	# additions the reader does not know. Do NOT also pass -r 0: that
+	# forces revision 0 and changes inode-size handling, after which
+	# the mount fails with EINVAL.
+	"$MKE2FS" -q -F -b 1024 \
+		-O ^resize_inode,^dir_index,^ext_attr,^sparse_super,^filetype \
+		-I 128 "$ROOT"
+}
+[ -f "$SWAP" ] || {
+	echo "creating $SWAP (32 MB, raw)"
+	dd if=/dev/zero of="$SWAP" bs=1M count=32 2>/dev/null
+}
+
+# /mach_servers ON THE ROOT FILESYSTEM, which is a different place from
+# the server volume above and is easy to confuse.
+#
+# LITES resolves emulator_path and init_program_path against the server
+# directory named in bootstrap.conf, strips the /dev/<root> prefix, and
+# opens what is left on the ROOT filesystem. So /mach_servers/emulator
+# and /mach_servers/init are read from hd0c, not from the hd2c volume
+# that the bootstrap task loaded startup itself from.
+#
+# Nothing used to put them there. mkroot-netbsd.sh creates the directory
+# and leaves it empty, so a fresh root booted straight into
+#
+#   panic: first program (/mach_servers/init) exec failed: xc002
+#          file or directory does not exist
+#
+# and the fix was a hand-typed debugfs incantation that lived only in a
+# console log. ROADMAP.md 4b asks for exactly this step.
+#
+# The emulator is unconditional: LITES needs it for every process.
+# The init program is NetBSD's own /sbin/init, copied rather than
+# pointed at, because -i names a path relative to the server directory
+# and cannot reach /sbin.
+populate_root_servers() {
+	"$DEBUGFS" -w -R "mkdir /mach_servers" "$ROOT" >/dev/null 2>&1
+
+	"$DEBUGFS" -w -R "rm /mach_servers/emulator" "$ROOT" >/dev/null 2>&1
+	"$DEBUGFS" -w -R "write $EMULATOR /mach_servers/emulator" \
+		"$ROOT" >/dev/null 2>&1
+
+	# debugfs's write leaves mode 0644, and exec wants an execute bit
+	# even for root. Its mknod does not resolve paths but its write
+	# does; see mkroot-netbsd.sh for the difference.
+	"$DEBUGFS" -w -R "sif /mach_servers/emulator mode 0100755" \
+		"$ROOT" >/dev/null 2>&1
+
+	if "$DEBUGFS" -R "stat /sbin/init" "$ROOT" 2>/dev/null |
+	    grep -q "Type: regular"; then
+		rm -f /tmp/.nbinit.$$
+		"$DEBUGFS" -w -R "dump /sbin/init /tmp/.nbinit.$$" \
+			"$ROOT" >/dev/null 2>&1
+		"$DEBUGFS" -w -R "rm /mach_servers/init" "$ROOT" >/dev/null 2>&1
+		"$DEBUGFS" -w -R "write /tmp/.nbinit.$$ /mach_servers/init" \
+			"$ROOT" >/dev/null 2>&1
+		"$DEBUGFS" -w -R "sif /mach_servers/init mode 0100755" \
+			"$ROOT" >/dev/null 2>&1
+		rm -f /tmp/.nbinit.$$
+	else
+		echo "  note: no /sbin/init in $ROOT, so /mach_servers/init"
+		echo "        was not installed -- run mkroot-netbsd.sh first"
+	fi
+
+	# Check rather than assume: every failure above is silent, because
+	# debugfs exits 0 whether or not it did anything.
+	for n in emulator init; do
+		"$DEBUGFS" -R "stat /mach_servers/$n" "$ROOT" 2>/dev/null |
+		    grep -q "Type: regular" ||
+			{ echo "boot-ide: /mach_servers/$n missing from $ROOT" >&2
+			  return 1; }
+	done
+	echo "  /mach_servers: emulator init"
+}
+
+populate_root_servers || exit 1
+
+[ "$1" = "-n" ] && { echo "built; not booting"; exit 0; }
+
+# Kill by the name the kernel actually stores, not by command line.
+# Linux truncates comm to 15 characters and "qemu-system-i386" is 16, so
+# `pkill -x qemu-system-i386` matches nothing; and `pkill -f` matches any
+# process whose command line merely CONTAINS the string -- including the
+# shell running this script, and including an agent's own tool call.
+# See DEBUGGING.md section 9.
+pkill -x "qemu-system-i38" 2>/dev/null || true
+sleep 2
+rm -f /tmp/console.log
+
+# CONSOLE=socket exports the serial line as a unix socket instead of
+# writing it to a file, so it can be answered as well as read. The file
+# is one-way, and NetBSD init's single-user prompt cannot be answered
+# with it -- which is why /bin/sh was never driven for so long. See
+# tools/console.py.
+#
+# The default stays `file`, because every existing recipe and every
+# console log quoted in the documentation came from it.
+case "${CONSOLE:-file}" in
+socket)
+	rm -f /tmp/serial.sock
+	SERIAL="-serial unix:/tmp/serial.sock,server,nowait"
+	echo "serial console on /tmp/serial.sock; attach with"
+	echo "  python3 tools/console.py --attach &"
+	;;
+file)
+	SERIAL="-serial file:/tmp/console.log"
+	;;
+*)
+	echo "CONSOLE must be file or socket" >&2; exit 1
+	;;
+esac
+
+echo "booting from hd2c ..."
+# KVM where it exists, TCG where it does not. -enable-kvm is fatal when
+# /dev/kvm is absent -- qemu exits before the guest starts -- and it is
+# absent inside a VM without nested virtualisation, which is where this
+# now gets run. TCG is slower per instruction but this boot is I/O bound
+# rather than CPU bound, which is the same reason the move from floppy to
+# IDE mattered and raw CPU speed did not.
+if [ -w /dev/kvm ]; then
+	ACCEL=-enable-kvm
+else
+	ACCEL=
+	echo "no /dev/kvm; falling back to TCG"
+fi
+
+qemu-system-i386 $ACCEL -kernel "$K" \
+	-append "-r BOOTDEV=hd BOOTUNIT=2 BOOTPART=2 -o" \
+	-initrd "$BOOTSTRAP" \
+	-drive file="$ROOT",format=raw,if=ide,index=0 \
+	-drive file="$SWAP",format=raw,if=ide,index=1 \
+	-drive file="$SERVERS",format=raw,if=ide,index=2 \
+	-m 128 -display none -no-reboot \
+	$SERIAL "$@" &
+
+# In socket mode nothing writes /tmp/console.log until console.py
+# attaches, so watching it here would report a stuck boot that is
+# running perfectly. Hand over instead.
+if [ "${CONSOLE:-file}" = socket ]; then
+	echo
+	echo "attach to it with:"
+	echo "  python3 tools/console.py --attach &"
+	echo "then answer the single-user prompt with:"
+	echo "  python3 tools/console.py --send ''"
+	exit 0
+fi
+
+# Report progress rather than sleeping blindly, so a stuck boot can be
+# told from a slow one by whether the log is growing.
+last=0
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+	sleep 10
+	now=$(wc -c < /tmp/console.log 2>/dev/null || echo 0)
+	echo "  ${i}0s: $now bytes"
+	if grep -q 'panic\|Copyright' /tmp/console.log 2>/dev/null; then
+		break
+	fi
+	if [ "$now" = "$last" ] && [ "$i" -gt 6 ]; then
+		echo "  (log has stopped growing)"
+		break
+	fi
+	last=$now
+done
+
+echo
+tail -25 /tmp/console.log
