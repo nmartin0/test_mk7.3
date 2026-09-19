@@ -84,7 +84,19 @@ EOT
 # -serial mon:stdio puts the guest's serial line on this terminal and
 # keeps QEMU's own Ctrl-A escapes working. No -display none here: that
 # suppresses output handling we want.
-exec qemu-system-i386 -enable-kvm -kernel "$K" \
+# KVM where it exists, TCG where it does not. -enable-kvm is fatal when
+# /dev/kvm is absent: qemu exits before the guest starts. boot-ide.sh
+# carries the same fallback; this one was missed when that was added,
+# and the failure looks like the script being broken rather than the
+# host lacking nested virtualisation.
+if [ -w /dev/kvm ]; then
+	ACCEL=-enable-kvm
+else
+	ACCEL=
+	echo "no /dev/kvm; falling back to TCG"
+fi
+
+exec qemu-system-i386 $ACCEL -kernel "$K" \
 	-append "-r BOOTDEV=hd BOOTUNIT=2 BOOTPART=2 -o" \
 	-initrd "$BOOTSTRAP" \
 	-drive file=/tmp/root.img,format=raw,if=ide,index=0 \
