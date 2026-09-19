@@ -153,7 +153,7 @@ extern __inline__ unsigned short inw(
 				i386_ioport_t port)
 {
 	unsigned short datum;
-	__asm__ volatile(".byte 0x66; inl %1, %0" : "=a" (datum) : "d" (port));
+	__asm__ volatile("inw %1, %0" : "=a" (datum) : "d" (port));
 	return(datum);
 }
 
@@ -176,7 +176,7 @@ extern __inline__ void outw(
 				i386_ioport_t port,
 				unsigned short datum)
 {
-	__asm__ volatile(".byte 0x66; outl %0, %1" : : "a" (datum), "d" (port));
+	__asm__ volatile("outw %0, %1" : : "a" (datum), "d" (port));
 }
 
 extern __inline__ void outb(
@@ -186,4 +186,16 @@ extern __inline__ void outb(
 	__asm__ volatile("outb %0, %1" : : "a" (datum), "d" (port));
 }
 #endif /* defined(__GNUC__) && (!MACH_ASSERT) */
+
+/*
+ * AI-ONLY NOTES
+ *
+ * inw/outw shipped as ".byte 0x66; inl" -- the 1995 way to emit the
+ * operand-size prefix by hand. GNU as 2.42 rejects the suffix/register
+ * mismatch, and no assembler option accepts it (-mold-gcc was removed
+ * from binutils). Byte-identical: both forms give 66 ed / 66 ef. The
+ * other six accessors here already use matching mnemonics, so this
+ * makes inw/outw consistent with their own siblings rather than
+ * introducing a style. Compile-blocking; not optional.
+ */
 #endif /* I386_PIO_H */

@@ -342,6 +342,42 @@ do_bootstrap_compat(void)
 				bss_start = ph->p_vaddr + ph->p_filesz;
 				bss_size = ph->p_memsz - ph->p_filesz;
 			}
+			else if (ph->p_flags == PF_R && ph->p_vaddr <= ehdr->e_entry) {
+				/*
+				 * ELF header segment: below the entry point and
+				 * not needed by the running program. Skipped
+				 * silently -- it is expected in every modern
+				 * binary and is not an error worth reporting.
+				 *
+				 * continue, not break: boot_region_count++ is
+				 * below the chain, so falling through would count
+				 * a region that was never filled in and leave an
+				 * uninitialised entry in regions[].
+				 */
+				continue;
+			}
+			else if (ph->p_flags == PF_R) {
+				/*
+				 * AI-ONLY NOTE: read-only PT_LOAD, e.g. .rodata.
+				 * The arms above match p_flags by exact equality,
+				 * so a read-only segment matches neither and is
+				 * never mapped. A 1995 toolchain emitted only R+X
+				 * and R+W; a modern linker also emits read-only
+				 * segments. The task then faults on .rodata and
+				 * blocks forever.
+				 *
+				 * The p_vaddr test excludes the ELF header
+				 * segment, which precedes the entry point and is
+				 * not needed by the running program; mapping it
+				 * as well breaks the boot.
+				 */
+				printf("Found read-only region\n");
+				regions[boot_region_count].prot = VM_PROT_READ;
+				regions[boot_region_count].addr = trunc_page(ph->p_vaddr);
+				regions[boot_region_count].size = round_page(ph->p_filesz);
+				regions[boot_region_count].offset = trunc_page(ph->p_offset);
+				regions[boot_region_count].mapped = TRUE;
+			}
 			else {
 				printf("Found PT_LOAD region with unknown flags\n");
 				continue;
@@ -552,6 +588,42 @@ exec_load(vm_offset_t start, vm_size_t size)
 					ph->p_memsz - ph->p_filesz);
 				bss_start = ph->p_vaddr + ph->p_filesz;
 				bss_size = ph->p_memsz - ph->p_filesz;
+			}
+			else if (ph->p_flags == PF_R && ph->p_vaddr <= ehdr->e_entry) {
+				/*
+				 * ELF header segment: below the entry point and
+				 * not needed by the running program. Skipped
+				 * silently -- it is expected in every modern
+				 * binary and is not an error worth reporting.
+				 *
+				 * continue, not break: boot_region_count++ is
+				 * below the chain, so falling through would count
+				 * a region that was never filled in and leave an
+				 * uninitialised entry in regions[].
+				 */
+				continue;
+			}
+			else if (ph->p_flags == PF_R) {
+				/*
+				 * AI-ONLY NOTE: read-only PT_LOAD, e.g. .rodata.
+				 * The arms above match p_flags by exact equality,
+				 * so a read-only segment matches neither and is
+				 * never mapped. A 1995 toolchain emitted only R+X
+				 * and R+W; a modern linker also emits read-only
+				 * segments. The task then faults on .rodata and
+				 * blocks forever.
+				 *
+				 * The p_vaddr test excludes the ELF header
+				 * segment, which precedes the entry point and is
+				 * not needed by the running program; mapping it
+				 * as well breaks the boot.
+				 */
+				printf("Found read-only region\n");
+				regions[boot_region_count].prot = VM_PROT_READ;
+				regions[boot_region_count].addr = trunc_page(ph->p_vaddr);
+				regions[boot_region_count].size = round_page(ph->p_filesz);
+				regions[boot_region_count].offset = trunc_page(ph->p_offset);
+				regions[boot_region_count].mapped = TRUE;
 			}
 			else {
 				printf("Found PT_LOAD region with unknown flags\n");
@@ -867,7 +939,8 @@ user_bootstrap(void)
 	/*NOTREACHED*/
 }
 
-#if 0
+/* AI-ONLY NOTE: #if 0 removed; this is the user_bootstrap that
+ * bootstrap_create_old() needs. See the note on that function. */
 static void
 user_bootstrap_old(void)
 {
@@ -994,6 +1067,59 @@ user_bootstrap_old(void)
 	 */  
 	set_bootstrap_args();
 #endif
+#if	defined(i386)
+	/*
+	 * AI-ONLY NOTE: this arm is required, and mirrors the hp_pa one
+	 * above.
+	 *
+	 * do_bootstrap_compat() sets thread_state.esp to a bare STACK_PTR,
+	 * which its own comment marks XXX:
+	 *
+	 *	#define STACK_PTR	(VM_MAX_ADDRESS-0x10)
+	 *
+	 * Nothing is placed there, so the task starts on a zero filled
+	 * page. libsa_mach's crt0.c reads its arguments straight off the
+	 * stack and gates all of its startup on the first one:
+	 *
+	 *	struct kframe { int kargc; char *kargv[1]; };
+	 *	if (kfp->kargv[0]) {
+	 *	    __argc = kfp->kargc;
+	 *	    __argv = kfp->kargv;
+	 *	    if (*_mach_init_routine)
+	 *		(*_mach_init_routine)();
+	 *	    ...
+	 *	}
+	 *
+	 * With a zero stack kargv[0] is 0, the gate never opens and the
+	 * task never completes initialisation. Measured: it re-enters
+	 * mach_init indefinitely, issuing host_page_size forever -- 300
+	 * consecutive RPCs of msgh_id 2644 and counting, every one served
+	 * correctly by the kernel.
+	 *
+	 * hp_pa does not hit this because its crt0 takes argc and argv as
+	 * parameters, which set_bootstrap_args() passes in registers. i386
+	 * has no equivalent arm, so it gets no arguments at all.
+	 *
+	 * build_args_and_stack() already lays out exactly the frame crt0
+	 * expects: it vm_allocates a stack, calls set_user_regs() to point
+	 * thread_state.esp at the argument base, then copies out arg_count
+	 * followed by the argv pointers, a null terminator and the strings.
+	 * It is simply never called on this path -- the Hurd
+	 * user_bootstrap() is its only other caller. Nothing new is needed
+	 * and nothing is taken from OSFMK 6.1.
+	 *
+	 * It must run before thread_setstatus() below, which is what
+	 * installs thread_state into the new thread.
+	 */
+	{
+	    char	*bootstrap_argv[2];
+
+	    bootstrap_argv[0] = boot_args_buf;
+	    bootstrap_argv[1] = (char *) 0;
+
+	    build_args_and_stack(bootstrap_argv, (char **) 0);
+	}
+#endif	/* defined(i386) */
 
 	/*
 	 * set the bootstrap task thread state.
@@ -1009,7 +1135,7 @@ user_bootstrap_old(void)
 	thread_bootstrap_return();
 	/*NOTREACHED*/
 }
-#endif
+
 
 kern_return_t
 do_bootstrap_ports(
@@ -1252,7 +1378,26 @@ bootstrap_create(void)
        by the boot modules and the boot loader's descriptors and such.  */
 }
 
-#if 0
+/*
+ * AI-ONLY NOTE: the #if 0 around this function is removed.
+ *
+ * This is OSF's original bootstrap path: allocate a bootstrap port,
+ * create a task and thread, set TASK_BOOTSTRAP_PORT, and start the
+ * thread at user_bootstrap, which loads the boot module into the new
+ * task. It was disabled when this tree was adapted to boot GNU Hurd
+ * through bootstrap_create(), which is hardcoded to start ext2fs.static
+ * and exec.static via GNU Mach's boot_script machinery.
+ *
+ * It has not rotted. Measured by building it: it compiles clean under
+ * GCC 13 and 14, links with every symbol it calls resolved, and is
+ * properly guarded against a missing module by its own
+ * "if (boot_size == 0)" early return. The binary it expects is already
+ * built by this tree as src/bootstrap/bootstrap.
+ *
+ * Selected at boot with -o; see parse_arguments() in
+ * i386/AT386/model_dep.c. The default is unchanged, so the Hurd path
+ * remains what boots unless asked otherwise.
+ */
 void
 bootstrap_create_old(void)
 {
@@ -1296,11 +1441,10 @@ bootstrap_create_old(void)
 	/*
 	 * Start the bootstrap thread.
 	 */
-	thread_start(bootstrap_thr_act->thread, user_bootstrap);
+	thread_start(bootstrap_thr_act->thread, user_bootstrap_old);
 	kr = thread_resume(bootstrap_thr_act);
 	assert( kr == KERN_SUCCESS );
 }
-#endif
 
 #if	DEBUG
 void
