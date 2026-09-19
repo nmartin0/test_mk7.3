@@ -7,6 +7,19 @@ The immediate goal is a booting microkernel with a serial console and a
 gdb stub. OS servers come after that, because in a microkernel they are
 ordinary user tasks and can be built and debugged at runtime.
 
+
+## Booting it
+
+```sh
+sh tools/mkroot-netbsd.sh          # the NetBSD root, once
+sh tools/mkiso.sh                  # a GRUB-bootable disc
+```
+
+then boot the disc with the disks it still needs -- `mkiso.sh` prints
+the exact command. Or, for development, `tools/boot-ide.sh` skips the
+bootloader and uses QEMU's `-kernel`. Either way you reach a login
+prompt; `root` has no password.
+
 ## Layout
 
 | path | what it is |

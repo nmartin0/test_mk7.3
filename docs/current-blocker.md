@@ -1,3 +1,68 @@
+# It boots from a disc
+
+`tools/mkiso.sh` builds an ISO that GRUB boots. No `-kernel`, no
+`-initrd`: the bootloader reads the disc, multiboot-loads the kernel
+and passes `bootstrap` as a module, exactly as it would on hardware.
+
+```
+GRUB -> Mach 3.0 VERSION(PMK1.1) ... mach_kernel/PRODUCTION
+rc: remounting / read-write
+Lites/i386 (Amnesiac) (console)
+login: root
+# echo BOOTED-FROM-ISO; cat /kern/hz; pwd
+BOOTED-FROM-ISO
+1000
+/
+```
+
+No shim was needed: the kernel is genuinely multiboot, magic
+`0x1BADB002` at offset 4488 with flags `0x2` and a checksum summing to
+zero. That was checked first, because if it had been absent this would
+have been a much larger job.
+
+## What it is not: self-contained
+
+The root still arrives as a disk. LITES can mount **ext2 and kernfs
+and nothing else** -- `cd9660` is slot 14 of the filesystem table and
+is not built (`obj/server` has `cd9660.h` and no objects), and MFS,
+which would give a ramdisk root, is in the same position.
+
+So a single disc that boots the whole system needs one of:
+
+1. **Build cd9660** and mount the ISO as root. Read-only, so
+   `/etc/rc`'s remount has to go and nothing can be written --
+   including `/tmp`, which the shell uses.
+2. **Build MFS** and put a ramdisk root on the disc. Writable, lost at
+   reboot, and the closest thing to a live CD.
+3. **Both**: cd9660 for the real root, MFS for `/tmp` and `/var`.
+
+Option 2 is the one that matches how a live CD actually behaves.
+Neither filesystem is in `conf/files`'s built set, so this starts with
+a build change rather than a mount.
+
+## Two traps, both paid for
+
+**`-cdrom` is IDE index 2**, which is the servers volume. QEMU refuses
+the collision outright:
+
+```
+qemu-system-i386: -drive file=/tmp/servers.img,...,index=2:
+drive with bus=1, unit=0 (index=2) exists
+```
+
+Attach the CD at index 3 explicitly and leave the disks at 0, 1, 2, so
+`hd2` still means what `BOOTUNIT=2` says.
+
+**Never run two `console.py --attach` at once.** Both read the same
+FIFO, so `--send` bytes are split between them and only one holds the
+socket -- input silently vanishes, and a half-delivered username made
+`login` prompt for a password that root does not have. Diagnosed as a
+login failure before the second attach was noticed. `ps -eo pid,args |
+awk '$2=="python3" && /console.py/'` is the check; plain `grep` matches
+the shell running it.
+
+---
+
 # kernfs mounts; and a correction about what it is for
 
 `/kern` is mounted at boot by `/etc/rc`, giving a second filesystem
