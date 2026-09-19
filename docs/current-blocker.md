@@ -1,3 +1,75 @@
+# ACCEPTANCE: what the running system actually does, measured
+
+Run against a root built from scratch by `mkroot-netbsd.sh`, booted
+multi-user, logged in as root. Every line below is from that session.
+
+| exercised | result |
+|---|---|
+| pipes | `echo hello \| cat` -> `hello`, `PIPE-OK` |
+| redirection and copy | `cp /etc/motd /tmp/m; cat /tmp/m > /tmp/m2` -> both 42 bytes |
+| ownership resolution | `ls -l` shows `root  wheel`, so the passwd and group databases resolve |
+| shell scripts | `echo "echo SCRIPT-RAN" > /tmp/s; sh /tmp/s` -> `SCRIPT-RAN` |
+| background jobs | `sleep 3 &` -> `[1] 13` ... `[1]  + Done` |
+| signals and job control | `kill %1` -> `[1]  + Terminated             sleep 60` |
+| durability | write, `/bin/sync` (returns 0), `halt`, then read the file back **from the host**: `DURABILITY-TEST` |
+| filesystem integrity | `e2fsck -fn` after a clean halt: **no errors**, 81 files |
+
+That is fork, exec, pipes, signals, job control, a writable filesystem
+and a clean shutdown -- a working Unix, not a demo.
+
+## The two blemishes, neither fatal
+
+**`halt` gives up on three buffers.**
+
+```
+syncing disks... 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 giving up
+In tight loop: hit ctl-alt-del to reboot
+```
+
+Twenty attempts, three buffers still dirty. It does **not** cost data
+or consistency: the file written and `sync`ed before the halt was on
+disk afterwards, and `e2fsck` was clean. So this is three buffers that
+never drain rather than a flush that fails -- worth finding, not worth
+fearing. An explicit `sync(2)` returns 0 and does reach the disk.
+
+**Console output interleaves between writers.** `KILL-DONE` came out
+as `K` on one line and `ILL-DONE` on the next, split around csh's job
+notice. No characters were lost; two writers were interleaved. Same
+family as the open question about two claimants on the console.
+
+## A workflow hazard worth more than either
+
+Editing `root.img` with `debugfs` after killing a guest that had it
+mounted **corrupts the image**, and quietly.
+
+Found by accident: `/tmp/mu` and `/netbsd` ended up sharing inode 81,
+with `e2fsck` reporting `Inode 81 ref count is 1, should be 2`. The
+guest had allocated inode 81 for a file it created; the guest was then
+killed rather than halted, so its inode-bitmap update never reached the
+image; `debugfs` read the stale bitmap, saw 81 free, and handed it out
+again.
+
+So: **halt the guest before touching the image from the host.** `pkill`
+is fine for abandoning a boot whose image you are about to rebuild, and
+not fine before a `debugfs -w`. Nothing in the tooling enforces this.
+
+## What is left, honestly
+
+Nothing here blocks the system from running, and none of it is
+sequenced behind anything else:
+
+- the three buffers `halt` cannot flush;
+- console interleaving between two writers;
+- userland breadth -- the `NEED` list in `mkroot-netbsd.sh` is
+  deliberately small, and `id`, `wc`, `grep` and the rest of a normal
+  system are simply not installed;
+- `kernfs`, compiled and never mounted, which is the structurally
+  right way to expose process information here and would give a
+  microkernel-appropriate answer to the `ps` question that libkvm
+  cannot.
+
+---
+
 # DECIDED: OSFMK 7.3 has no paging file, and hd1c is not a workaround
 
 The roadmap carried "the paging file, replacing raw `hd1c`", on the

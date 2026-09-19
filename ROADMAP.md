@@ -341,7 +341,31 @@ an ELF as its own only when the entry is above `0x10000000`; ours are at
 bites the moment an i386 ELF first program is exec'd. xMach shows the
 shape of the fix.
 
-## Multi-user boot works: init, rc, getty, login, csh
+## It runs: acceptance measured, and what is left is optional
+
+A root built from scratch boots multi-user, logs in, and does the
+things a Unix is supposed to do -- pipes, scripts, background jobs,
+signals, a writable filesystem, a clean halt leaving `e2fsck` with no
+errors. The table is at the head of `docs/current-blocker.md`.
+
+**Everything remaining is optional and unsequenced.** None of it
+blocks the system running, and none of it is waiting on anything else:
+
+1. **Three buffers `halt` cannot flush** -- `syncing disks... giving
+   up`. Costs no data and no consistency, since an explicit `sync`
+   reaches the disk and the filesystem checks clean afterwards. Worth
+   finding, not urgent.
+2. **Console output interleaves** between two writers. Same family as
+   the two-claimants question.
+3. **Userland breadth.** The `NEED` list in `mkroot-netbsd.sh` is
+   deliberately small; `id`, `wc`, `grep` and most of a normal system
+   are simply not installed. Adding them is mechanical.
+4. **`kernfs`**, compiled by this tree and never mounted. The
+   structurally right way to expose process information on a
+   microkernel, and the answer to the `ps` question that libkvm cannot
+   give.
+
+## Superseded: multi-user boot works: init, rc, getty, login, csh
 
 A cold boot reaches a login prompt unaided, and logging in gives a
 working shell on a writable root. Evidence at the head of

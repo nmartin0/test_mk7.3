@@ -157,7 +157,29 @@ can quietly answer a different question than the one you asked. Chapter
 7 catalogues the ones that produced wrong conclusions here; chapter 9 is
 twenty lines.
 
-## State: it boots multi-user to a login prompt
+## State: it runs
+
+OSFMK 7.3 boots, LITES mounts an ext2 root, NetBSD 1.0's init runs
+`/etc/rc`, spawns getty, and login gives a csh session. Measured in
+that session: pipes, redirection, shell scripts, background jobs,
+signals and job control, a writable filesystem, and a clean halt after
+which `e2fsck` reports no errors and synced data is on disk. The
+acceptance table is at the head of `docs/current-blocker.md`.
+
+```sh
+CONSOLE=socket STARTUP_ARGS='-i /init' sh tools/boot-ide.sh
+python3 tools/console.py --attach &
+python3 tools/console.py --wait-for 'login:' --send 'root'
+```
+
+**Halt the guest before editing `root.img` from the host.** A guest
+killed with `pkill` has not written its inode bitmap, and `debugfs`
+will then reallocate inodes the filesystem still uses. That corrupted
+an image here, silently, and nothing in the tooling prevents it.
+
+`ROADMAP.md` has what is left. None of it blocks the system running.
+
+## Superseded: it boots multi-user to a login prompt
 
 OSFMK 7.3 boots, LITES mounts an ext2 root read-write, NetBSD 1.0's
 init runs `/etc/rc`, spawns getty, and login gives a csh session. The
