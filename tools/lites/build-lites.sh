@@ -23,10 +23,42 @@ for f in "$EXPORT/include" "$EXPORT/lib" "$HB/mig" "$HB/migcom"; do
 done
 
 # --- LITES patches (idempotent) -------------------------------------
-if ! grep -q 'function bail' "$LITES/server/kern/vnode_if.sh" 2>/dev/null; then
-    patch -p1 -d "$LITES" < "$HERE/lites-osfmk73.patch"
+#
+# This used to test one marker from one hunk -- `function bail` in
+# vnode_if.sh -- and skip the whole patch if it was present. That is
+# wrong whenever the patch has GROWN since the tree was patched: the
+# marker is there, the new hunks are not, and the build silently
+# produces a LITES without them. It happened with the pid-2 fix in
+# kern_exit.c, where the symptom was a respawn loop that the commit
+# claimed to have fixed.
+#
+# Ask the real question instead: does the patch reverse cleanly? If it
+# does, every hunk is already in the tree. If it does not, apply with
+# --forward, which puts in what is missing and skips what is present.
+PATCHFILE="$HERE/lites-osfmk73.patch"
+
+if patch -p1 -R --dry-run -s -f -d "$LITES" < "$PATCHFILE" >/dev/null 2>&1; then
+    echo "LITES already patched (all hunks present), skipping"
 else
-    echo "LITES already patched, skipping"
+    echo "patching LITES"
+    # --forward exits non-zero when it skips an already-applied hunk,
+    # which is not an error here, so the check is whether the tree is
+    # fully patched afterwards rather than what patch returned.
+    # -r - discards reject files and --no-backup-if-mismatch suppresses
+    # .orig copies: an already-applied hunk is skipped here by design,
+    # so its "reject" is noise, and 22 .rej files in a source tree look
+    # like a failed patch to whoever finds them next.
+    patch -p1 --forward -r - --no-backup-if-mismatch \
+        -d "$LITES" < "$PATCHFILE" || true
+    if patch -p1 -R --dry-run -s -f -d "$LITES" < "$PATCHFILE" >/dev/null 2>&1; then
+        echo "LITES patched"
+    else
+        echo "build-lites: $LITES is not fully patched and could not be" >&2
+        echo "  brought up to date. Check for .rej files, or start from" >&2
+        echo "  a pristine clone:" >&2
+        echo "    cd $LITES && git checkout -- ." >&2
+        exit 1
+    fi
 fi
 
 # --- MACH_RELEASE_DIR ------------------------------------------------
