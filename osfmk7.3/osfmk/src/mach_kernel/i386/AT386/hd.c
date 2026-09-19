@@ -1151,12 +1151,41 @@ set_controller(
 	hdisk_t	*parm;
 	
 	waitcontroller(ctrl);
+	/*
+	 * AI-ONLY NOTE: run this polled command with device interrupts
+	 * disabled.
+	 *
+	 * CMD_SETPARAMETERS is a non-data command that asserts INTRQ on
+	 * completion. This routine polls for completion instead of
+	 * waiting for the interrupt, and it is called from hdstart()
+	 * *before* controller_busy is set. Reading the status register
+	 * in waitcontroller() clears INTRQ at the drive, but by then the
+	 * PIC has already latched IRQ 14, so the interrupt is still
+	 * delivered -- a moment later, once controller_busy has been set
+	 * and the real read has been issued.
+	 *
+	 * hdintr() then treats it as the read's completion: it runs the
+	 * data path with no data ready, calls iodone() on the buffer,
+	 * clears controller_busy and calls hdstart(). The read's own
+	 * interrupt arrives afterwards to an idle controller and is
+	 * reported as "HD: false interrupt". That is exactly the pair of
+	 * messages seen on this boot, one at probe and one at the first
+	 * read, with the read never delivering data.
+	 *
+	 * Bit 1 of the device control register is nIEN; setting it stops
+	 * the drive asserting INTRQ at all, which is the ATA way to
+	 * issue a polled command from an interrupt-driven driver. The
+	 * driver already writes this register elsewhere, using 4 for
+	 * SRST and 0 for normal operation.
+	 */
+	outb(FIXED_DISK_REG(ctrl), 2);			/* nIEN */
 	outb(PORT_DRIVE_HEADREGISTER(addr),
 	     (hd_drive[unit]->label.d_ntracks - 1) |
 	     ((unit&1) << 4) | FIXEDBITS);
 	outb(PORT_NSECTOR(addr), hd_drive[unit]->label.d_nsectors);
 	outb(PORT_COMMAND(addr), CMD_SETPARAMETERS);
 	waitcontroller(ctrl);
+	outb(FIXED_DISK_REG(ctrl), 0);			/* interrupts back on */
 }
 
 void
@@ -1328,10 +1357,39 @@ getvtoc(
 	} else {
 		/* make partition 'c' the whole disk in case of failure */
 		label->d_partitions[PART_DISK].p_offset = 0;
+		/*
+		 * AI-ONLY NOTE: size this from the label, not cmos_parm.
+		 *
+		 * cmos_parm is the BIOS fixed-disk parameter table, found
+		 * by reading the INT 41h vector at dev->address (0x104 for
+		 * unit 0, per autoconf.c). A -kernel direct boot never
+		 * populates that vector, so cmos_parm reads back all zeros
+		 * and this computed a zero-size partition. hdopen then
+		 * rejects it:
+		 *
+		 *	if (part_p->p_size <= 0)
+		 *		return(D_NO_SUCH_DEVICE);
+		 *
+		 * which makes the whole disk unopenable even though the
+		 * drive answered IDENTIFY correctly -- observed as
+		 * "hd0: 0 Meg, C:0 H:0 S:0 - QEMU HARDDISK", where the
+		 * model string proves the IDE transaction worked. Passing
+		 * cyls/heads/secs to QEMU does not help, because nothing
+		 * writes the BIOS table on this boot path.
+		 *
+		 * The label geometry comes from the IDENTIFY response just
+		 * above, and is what the I/O path itself uses: hd_ssend
+		 * computes sector, head and cylinder from
+		 * label->d_nsectors and label->d_ntracks. Sizing the
+		 * partition from the same source makes the two agree,
+		 * which is what they should have done all along -- a
+		 * partition should describe the disk the driver actually
+		 * addresses.
+		 */
 		label->d_partitions[PART_DISK].p_size =
-		  	drive->cmos_parm.ncyl *
-			drive->cmos_parm.nheads * 
-			drive->cmos_parm.nsec;
+			label->d_ncylinders *
+			label->d_ntracks *
+			label->d_nsectors;
 	}
 	return(TRUE);
 }
@@ -1380,6 +1438,14 @@ void hd_read_id (
 	hdisk_t		parm;
 
 	waitcontroller(ctrl);
+	/*
+	 * AI-ONLY NOTE: IDENTIFY is polled here too, so disable device
+	 * interrupts for it for the same reason as in set_controller().
+	 * Without this the completion interrupt is latched by the PIC
+	 * and delivered to an idle controller, which hdintr() reports as
+	 * "HD: false interrupt" -- the first of the two seen at boot.
+	 */
+	outb(FIXED_DISK_REG(ctrl), 2);			/* nIEN */
 	/* XXX This hangs with qemu, disable it for now */
 	/* ctrl_p->state.restore_request = 1; */
 	ctrl_p->state.restore_request = 0;
@@ -1401,11 +1467,32 @@ void hd_read_id (
 	parm.nsec   = *(unsigned char  *)(tbl+14);
 
 	parm.precomp= *(unsigned short *)(tbl+5);
+	outb(FIXED_DISK_REG(ctrl), 0);			/* interrupts back on */
 	hd_drive[unit]->cmos_parm = parm;
-	if (id.val_cur_values & 1) {
+	if ((id.val_cur_values & 1) && id.cur_secs && id.cur_heads &&
+	    id.cur_cyls) {
 		hd_drive[unit]->label.d_nsectors = id.cur_secs;
 		hd_drive[unit]->label.d_ntracks = id.cur_heads;
 		hd_drive[unit]->label.d_ncylinders = id.cur_cyls;
+	} else if (id.spt && id.heads && id.cyls) {
+		/*
+		 * AI-ONLY NOTE: fall back to IDENTIFY's default geometry.
+		 *
+		 * The "current" words 54-56 are only meaningful after the
+		 * host has issued INITIALIZE DEVICE PARAMETERS, so a drive
+		 * that has never been told a geometry may set the validity
+		 * bit and still report zeros. The default words 1, 3 and 6
+		 * are always present, and are what a modern emulated drive
+		 * fills in.
+		 *
+		 * Without this the next arm is taken, and parm comes from
+		 * the BIOS fixed-disk parameter table, which a -kernel
+		 * direct boot never populates -- leaving the geometry at
+		 * zero and making the disk unopenable.
+		 */
+		hd_drive[unit]->label.d_nsectors = id.spt;
+		hd_drive[unit]->label.d_ntracks = id.heads;
+		hd_drive[unit]->label.d_ncylinders = id.cyls;
 	} else {
 		hd_drive[unit]->label.d_nsectors = parm.nsec;
 		hd_drive[unit]->label.d_ntracks = parm.nheads;
@@ -1413,13 +1500,21 @@ void hd_read_id (
 	}
 	printf(", stat = %x, spl = %d, pic = %d\n",
 		dev->address, dev->sysdep, dev->sysdep1);
+	/*
+	 * AI-ONLY NOTE: report the label, not parm. parm is the BIOS
+	 * table, which is empty on a -kernel boot, so this line used to
+	 * print "0 Meg, C:0 H:0 S:0" for a perfectly good disk and said
+	 * nothing about the geometry the driver would actually use.
+	 */
 	if (unit < 2 || (id.val_cur_values & 1))
 		printf(" hd%d: %d Meg, C:%d H:%d S:%d - ",
 		       unit,
-		       parm.ncyl*parm.nheads*parm.nsec * 512/1000000,
-		       parm.ncyl,
-		       parm.nheads,
-		       parm.nsec);
+		       hd_drive[unit]->label.d_ncylinders *
+		       hd_drive[unit]->label.d_ntracks *
+		       hd_drive[unit]->label.d_nsectors * 512/1000000,
+		       hd_drive[unit]->label.d_ncylinders,
+		       hd_drive[unit]->label.d_ntracks,
+		       hd_drive[unit]->label.d_nsectors);
 	else
 		printf("hd%d:   Capacity not available through bios\n",unit);
 
