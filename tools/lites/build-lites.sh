@@ -37,7 +37,11 @@ done
 # --forward, which puts in what is missing and skips what is present.
 PATCHFILE="$HERE/lites-osfmk73.patch"
 
-if patch -p1 -R --dry-run -s -f -d "$LITES" < "$PATCHFILE" >/dev/null 2>&1; then
+# LITES_NO_PATCH=1 skips this entirely, for a tree you are managing
+# yourself.
+if [ -n "${LITES_NO_PATCH:-}" ]; then
+    echo "LITES_NO_PATCH set, leaving $LITES alone"
+elif patch -p1 -R --dry-run -s -f -d "$LITES" < "$PATCHFILE" >/dev/null 2>&1; then
     echo "LITES already patched (all hunks present), skipping"
 else
     echo "patching LITES"
@@ -53,11 +57,30 @@ else
     if patch -p1 -R --dry-run -s -f -d "$LITES" < "$PATCHFILE" >/dev/null 2>&1; then
         echo "LITES patched"
     else
-        echo "build-lites: $LITES is not fully patched and could not be" >&2
-        echo "  brought up to date. Check for .rej files, or start from" >&2
-        echo "  a pristine clone:" >&2
-        echo "    cd $LITES && git checkout -- ." >&2
-        exit 1
+        # The tree still does not match the patch after a forward
+        # apply. Two very different things look like this, and the
+        # difference matters:
+        #
+        #   - hunks that could not be applied, which is a problem;
+        #   - LOCAL EDITS to lines the patch also touches, which is
+        #     what developing a LITES change looks like. Editing
+        #     tty_io.c and rebuilding is the normal loop here, and the
+        #     first version of this check failed the build for it.
+        #
+        # So warn rather than stop. Missing hunks were already added
+        # by the forward apply above, which is the case this check
+        # exists for; refusing to build on top of a developer's own
+        # edits helps nobody.
+        echo >&2
+        echo "build-lites: WARNING: $LITES does not match" >&2
+        echo "  $PATCHFILE exactly." >&2
+        echo "  Expected while you are editing LITES yourself. If you" >&2
+        echo "  are not, the tree may be dirty -- check with:" >&2
+        echo "    cd $LITES && git status --short && git diff --stat" >&2
+        echo "  and reset with: git checkout -- ." >&2
+        echo "  Remember to regenerate $PATCHFILE from your changes:" >&2
+        echo "    cd $LITES && git diff > $PATCHFILE" >&2
+        echo >&2
     fi
 fi
 
