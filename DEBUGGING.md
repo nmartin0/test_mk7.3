@@ -635,6 +635,54 @@ does not mention the real cause.
 
 ---
 
+## 10a. Sweeping for a class of bug once you have found one
+
+`set_task_priority()` had no return statement, so `donice()` returned
+an uninitialised register as `setpriority(2)`'s errno. Once a bug has
+a shape, ask the compiler for the others rather than reading.
+
+The build's warning flags do not include `-Wreturn-type`, so add it and
+run a syntax-only pass over every server source with the real compile
+line -- which `build-lites.sh`'s output already contains:
+
+```sh
+grep -m1 "gcc -pipe -c" build.log | sed 's/ [^ ]*\.c$//' > /tmp/cflags
+CMD=$(cat /tmp/cflags)
+cd $LITES_BUILD/obj/server
+for f in $LITES/server/kern/*.c $LITES/server/serv/*.c; do
+	$CMD -Wreturn-type -fsyntax-only $f 2>&1 |
+	    grep -i "control reaches end\|return.*non-void"
+done
+```
+
+**The result matters as much as the method.** Sixteen sites in fourteen
+functions, and **none is a live instance**: `acct_process`,
+`logwakeup`, `dprintf`, `dget_string`, `sofree`, `sbappend`,
+`sbappendrecord`, `sbinsertoob`, `unp_disconnect`, `unp_gc`,
+`unp_mark`, `cache_enter`, `cache_purge`, `insmntque`. Every one is
+logically void and declared without a type, so K&R implicit `int` makes
+a bare `return;` a warning. Checked rather than assumed -- no caller
+anywhere in `server/`, `liblites/` or `emulator/` consumes any of
+their values:
+
+```sh
+grep -rn "=\s*$n(\|if\s*(\s*$n(\|return\s\+$n(" \
+    server/ liblites/ emulator/ --include=*.c
+```
+
+So the sweep's answer is negative, and a negative answer from a check
+that would have found the bug is worth recording -- it is the
+difference between "there are no others" and "nobody looked".
+
+The related sweep, for a `mach_error_t` returned where an errno
+belongs, cannot be done this way: the tree declares most syscalls
+`mach_error_t` by convention, so the type is not the signal. What to
+look for is a `return` whose value comes straight from a Mach call --
+`task_*`, `thread_*`, `vm_*`, `device_*`, `mach_port_*` -- inside a
+function on a syscall path.
+
+---
+
 ## 11. What good evidence looks like
 
 A claim is ready to act on when it has a measurement attached:

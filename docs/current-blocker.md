@@ -1,3 +1,63 @@
+# An unmappable error now fails the call, and the sweep came back empty
+
+Two pieces of the "mach_error_t where an errno belongs" family, which
+accounted for three bugs in the previous sessions.
+
+## The emulator no longer kills the process
+
+`e_mach_error_to_errno()` ended in `e_bad_mach_error()`, which prints
+the code and calls `task_terminate()`. Any value that was neither a
+recognised Mach error nor an encapsulated errno destroyed the program.
+It now fails the syscall with EINVAL and keeps the diagnostic:
+
+```
+emulator [5] libemul: unmappable error code x80aad3b:
+"(server/?) unknown subsystem error". Failing the call with EINVAL.
+...
+Welcome to NetBSD!
+# echo control-survived; pwd
+control-survived
+/
+```
+
+That transcript is from a **control**: `set_task_priority()` was made
+to return the exact junk the original bug produced, 0x80aad3b, and the
+system rebuilt and booted. The same value on the same path previously
+left no login at all. The control was then removed and the normal
+build re-verified.
+
+This is a survivability change, not a correctness one. A value arriving
+there is still a server bug, which is why the message is unchanged in
+volume; what changes is that one such bug now costs a failed syscall
+instead of a dead process, far from its cause.
+
+## The sweep for others: sixteen sites, no live instance
+
+`-Wreturn-type` is not in the build's flags. Added and run over every
+server source (the exact commands are in `DEBUGGING.md` section 10a),
+it reports sixteen sites in fourteen functions: `acct_process`,
+`logwakeup`, `dprintf`, `dget_string`, `sofree`, `sbappend`,
+`sbappendrecord`, `sbinsertoob`, `unp_disconnect`, `unp_gc`,
+`unp_mark`, `cache_enter`, `cache_purge`, `insmntque`.
+
+**All benign.** Every one is logically void and declared without a
+type, so K&R implicit `int` turns a bare `return;` into a warning.
+Checked rather than assumed: no caller in `server/`, `liblites/` or
+`emulator/` consumes any of their return values.
+
+`set_task_priority()` does not appear in that list, because it is
+fixed. Running the sweep before the fix is what would have found it.
+
+So there is no fourth instance of this bug that a return-type check can
+see. That is a negative result from a check that would have caught the
+original, which is worth more than not having looked -- but it does not
+clear the related family, a `mach_error_t` returned where an errno
+belongs, which the type system cannot help with here because most
+syscalls in this tree are declared `mach_error_t` by convention.
+`DEBUGGING.md` says what to grep for instead.
+
+---
+
 # MILESTONE: multi-user boot, unprompted login
 
 A cold boot with no `-s` now reaches a login prompt by itself, and a

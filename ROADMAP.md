@@ -346,13 +346,15 @@ step 4, and then some: the original goal was "a shell prompt".
 **What is left is no longer a chain of blockers but a list of
 independent things, none of which stops the system running:**
 
-1. **The emulator terminates on an unmappable error**
-   (`emulator/error_codes.c:49`) rather than returning one. That
-   turned a missing return statement into a dead process, far from
-   its cause. The cheapest robustness win available.
-2. **Look for the fourth `mach_error_t` returned as an errno.** Three
-   were found in one session; the table in `docs/current-blocker.md`
-   says what the shape looks like.
+1. ~~The emulator terminates on an unmappable error~~ **done**: it
+   fails the call with EINVAL and keeps the diagnostic, verified by a
+   control that put the original junk value back.
+2. ~~Look for the fourth missing return~~ **done, and empty**: a
+   `-Wreturn-type` sweep finds sixteen sites in fourteen functions,
+   all logically void with no caller consuming their value. Method and
+   list in `DEBUGGING.md` section 10a. The related family -- a
+   `mach_error_t` returned where an errno belongs -- is not
+   searchable that way and remains open.
 3. **`/dev/mem`**, or a decision not to have one, for `ps`.
 4. **The paging file**, replacing raw `hd1c`.
 5. **More userland.** The root carries a deliberately small subset of
