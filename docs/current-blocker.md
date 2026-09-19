@@ -1,3 +1,79 @@
+# No compiler-supplied file is used any more
+
+The build used two things from gcc and should have used neither: its
+include directory, added with `-isystem`, and its runtime, `libgcc.a`.
+Both are gone, and a full rebuild from an empty build directory
+contains **zero** occurrences of `/usr/lib/gcc`.
+
+The kernel was always clean -- no gcc include path, no libgcc, checked
+across the kernel, FIRST-pass and library logs. This was only ever the
+LITES side.
+
+## What libgcc was for: four symbols
+
+Measured by removing it and forcing a real relink:
+
+| symbol | references |
+|---|---|
+| `__udivdi3` | 8 |
+| `__moddi3` | 4 |
+| `__divdi3` | 4 |
+| `__umoddi3` | 2 |
+
+The 64-bit division runtime, called from `ext2_balloc.c`,
+`ext2_lookup.c` and `ext2_vfsops.c`, which divide 64-bit offsets to
+reach block numbers.
+
+**Most of the replacement was already here.** `libkern/qdivrem.c` is
+the Berkeley/LBL long division that does the work, shipped with LITES,
+absent from `conf/files` and never built -- because nothing referenced
+it. What LITES never shipped are the four thin wrappers that call it;
+4.4BSD keeps them as `sys/libkern/{div,mod,udiv,umod}di3.c`, and they
+are in neither this tree nor any LITES copy in the reference
+collection. `libkern/quaddiv.c` is those four, written against
+`quad.h`'s declaration of `__qdivrem`.
+
+## Why that got tested before it was trusted
+
+An error in division here does not announce itself. It addresses the
+wrong block, and the damage looks like a filesystem bug.
+
+- **Host test, 200,000 random cases**, `qdivrem.c` and `quaddiv.c`
+  compiled `-m32`: `q*b + r == a`, remainder takes the sign of the
+  dividend, and every result compared against the compiler's own
+  64-bit division. All pass.
+- **In the guest**, a 357,959-byte copy -- large enough to need
+  indirect blocks -- extracted from the image afterwards and compared:
+  **byte-identical**, `e2fsck` clean.
+
+The first attempt at the host test failed 386,827 of 200,000 checks,
+and the code was fine: `qdivrem.c` needs a 32-bit `long` for its
+`union uu`, and it had been compiled `-m64`. The second failure was
+one case with a zero divisor, which the harness created by masking the
+divisor after checking it. Both were the instrument, again.
+
+## What gcc's include directory was for: `<stdarg.h>`
+
+Reached through OSFMK's own `mach.h`. OSFMK ships one at
+`export/include/sa_mach/stdarg.h`, so `build-lites.sh` generates a
+one-line forwarding header and puts that directory on the path.
+
+It forwards rather than adding `sa_mach` to the include path because
+`sa_mach` also carries `i386/`, `sys/` and `string.h`, which would
+shadow LITES's own versions. One forwarding header exposes exactly one
+name. `sa_mach/stdarg.h` then wants `machine/va_list.h` and
+`machine/stdarg.h` from its own machine directory, forwarded the same
+way.
+
+Two small source changes go with it: `quad.h` included `<limits.h>`,
+which resolved to gcc's and is needed only for `CHAR_BIT`, so it uses
+`machine/limits.h` -- the header `sys/param.h` already uses; and
+`qdivrem.c`'s `#include "quad.h"` cannot resolve under `-I-`, so it
+uses `<libkern/quad.h>`, the form `scanc.c` uses in the same
+directory.
+
+---
+
 # It boots from a disc
 
 `tools/mkiso.sh` builds an ISO that GRUB boots. No `-kernel`, no
