@@ -88,6 +88,54 @@ elf_load(struct file *fp, objfmt_t ofmt, void *hdr)
 		    (vm_size_t) ph->p_vaddr + ph->p_filesz - lp->data_start;
 		lp->bss_size = ph->p_memsz - ph->p_filesz;
 		lp->data_offset = trunc_page(ph->p_offset);
+	    } else if (ph->p_flags == PF_R) {
+		/*
+		 * AI-ONLY NOTE: fold a read-only segment into text.
+		 *
+		 * The arms above match p_flags by exact equality, so a
+		 * read-only PT_LOAD matched neither and only produced the
+		 * "Unknown program header flags" message below -- the
+		 * segment was never mapped and the load then failed with
+		 * "unloadable file format".
+		 *
+		 * A 1995 toolchain emitted two loadable segments, R+X and
+		 * R+W. A modern linker also emits read-only segments for
+		 * the ELF headers and for .rodata. name_server has four:
+		 *
+		 *   0x08048000 0x00118 R     headers
+		 *   0x08049000 0x100f8 R E   text
+		 *   0x0805a000 0x0a1b4 R     rodata
+		 *   0x08065000 0x00fb0 R W   data and bss
+		 *
+		 * struct loader_info models only two regions, text and
+		 * data, so a third cannot be represented. It does not need
+		 * to be: text and .rodata are contiguous in both virtual
+		 * address and file offset once page rounded, so extending
+		 * the text region to cover .rodata maps both with one
+		 * mapping and no change to the structure.
+		 *
+		 * The p_vaddr test against the entry point excludes the ELF
+		 * header segment, which precedes the entry and is not
+		 * needed by the running program. Mapping it too would move
+		 * text_start backwards and break the offset arithmetic in
+		 * load.c.
+		 *
+		 * The same defect and the same exclusion apply to the
+		 * kernel's own loaders; see the AI-ONLY NOTE in
+		 * kern/bootstrap.c.
+		 */
+		vm_offset_t ro_end = (vm_offset_t) ph->p_vaddr + ph->p_filesz;
+
+		/*
+		 * Only a read-only segment above the entry point is real
+		 * content to map. One below it is the ELF header segment,
+		 * which the running program does not need; it is skipped
+		 * silently rather than reported, since it is expected in
+		 * every modern binary and is not an error.
+		 */
+		if ((vm_offset_t) ph->p_vaddr > lp->entry_1 &&
+		    ro_end > lp->text_start + lp->text_size)
+		    lp->text_size = ro_end - lp->text_start;
 	    } else {
 #ifndef ppc
 		    /* mklinux/ppc has a read-only section which is ignored */
