@@ -15,6 +15,14 @@ servers on top of it.
 `osfmk7.3/` is a verbatim vendor import. `build/` is the only code we
 write.
 
+## Start here
+
+`RULES.md` is the distilled rule set -- every generic rule this project
+works under, in one place, with no Mach-specific detail. Read it first.
+This file, `PRINCIPLES.md`, `WORKFLOW.md`, `DEBUGGING.md`,
+`docs/GIT-HYGIENE.md` and `docs/METHODOLOGY.md` keep the worked
+examples and the reasoning behind each rule.
+
 ## The prime directive: minimal deviation
 
 `git diff <vendor-import>..HEAD -- osfmk7.3/` is the complete record of
