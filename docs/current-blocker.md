@@ -1,3 +1,42 @@
+# RESOLVED: the pid-2 hack is now conditioned on mach_init
+
+The blocker below is fixed, by option 2 of the three listed there.
+`wait4()`'s hard-coded `p->p_pid == 2` test now also asks whether
+mach_init is the program LITES actually started, via the basename of
+`init_program_path`. Shipped in `tools/lites/lites-osfmk73.patch`.
+
+Boot after the change, single user, otherwise identical:
+
+| marker                    | before | after |
+|---------------------------|--------|-------|
+| `No child processes`      | repeating | **0** |
+| `can't get /dev/console`  | repeating | **0** |
+| `Enter pathname of shell` | repeating | **1** |
+
+The log then stops and stays stopped while QEMU is alive and running:
+init blocked reading the console at its single-user prompt.
+
+**The mach_init path is untested and cannot be tested yet**, because no
+mach_init exists for i386 (ROADMAP 4a). The evidence for it is that the
+predicate was checked on the host against seven inputs, including the
+near misses `mach_init2`, `my_mach_init` and `/mach_init/init`, and
+that the code path is unchanged when the predicate is true. That is
+weaker than a boot, and is recorded as weaker.
+
+This is an interim, not a verdict. Porting mach_init makes the hack
+correct on its own terms and remains the faithful fix; option 3,
+deleting the hack, stays wrong for the same reason it always was.
+
+**What is now open is different**: init prints its prompt and waits for
+input, and nothing has ever answered it. `boot-ide.sh` writes the
+serial console to a file, which cannot take keystrokes, so `/bin/sh`
+has never been driven and no command has ever run to completion under
+LITES. `tools/boot-debug.sh` is the one with an interactive console and
+is untried for this. That is the next thing to establish, and it is
+what would let step 4 be called finished.
+
+---
+
 # ROOT CAUSE: init's ECHILD is LITES's own mach_init pid-2 hack
 
 Measured, then controlled. Found by reading `server/kern/kern_exit.c`,
