@@ -49,6 +49,123 @@ index 840cb30..fa0a63d 100644
    sed <$copyright -e '/^#/d' -e 's;[ 	]*$;;' -e '/^$/d' -e 's;$;\\n\\;' -e 's/"/\\"/g';
    echo "\";";
  ) > vers.c
+diff --git a/emulator/emul_exec.c b/emulator/emul_exec.c
+index 3875119..1956eed 100644
+--- a/emulator/emul_exec.c
++++ b/emulator/emul_exec.c
+@@ -234,7 +234,12 @@ errno_t emul_exec_load(
+ 	vm_offset_t		*heap_end,	/* OUT */
+ 	mach_port_t		image_port)
+ {
+-#define NSECTIONS 6		/* generous: 4 is needed for known binaries */
++/*
++ * One more than MAX_PHDRS: parse_exec_file() writes an EXEC_M_STOP
++ * entry after the last segment. Was 6, which was one too few for a
++ * six-header binary.
++ */
++#define NSECTIONS (MAX_PHDRS + 1)
+ 	mach_error_t kr;
+ 	struct exec_section secs[NSECTIONS];
+ 	int i;
+diff --git a/include/sys/elf.h b/include/sys/elf.h
+index 0d6257f..7c11ee6 100644
+--- a/include/sys/elf.h
++++ b/include/sys/elf.h
+@@ -80,7 +80,23 @@ typedef struct {
+ 
+    Also places a ceiling on the number of program headers.  */
+ 
+-#define MAX_PHDRS 4
++/*
++ * Raised from 4.
++ *
++ * Four was enough for the ELF a 1995 linker produced. Modern GNU ld
++ * emits GNU_STACK and GNU_RELRO as well, so the emulator alone has six
++ * program headers, and parse_exec_file() loops to e_phnum over this
++ * array. Reading past it fed garbage into the loader: the real data and
++ * bss segment set li->zero_start correctly and an out-of-bounds header
++ * that happened to look like a writable PT_LOAD then overwrote it, so
++ * the emulator's crt0 cleared the wrong page and left its BSS holding
++ * whatever was there.
++ *
++ * parse_exec_file() also bounds its loop by this value now, so a binary
++ * with more headers than this loses segments rather than reading past
++ * the end of the struct. Sixteen is generous for the linkers in use.
++ */
++#define MAX_PHDRS 16
+ typedef struct {
+   Elf32_Ehdr ehdr;
+   Elf32_Phdr phdrs[MAX_PHDRS];
+diff --git a/include/sys/exec_file.h b/include/sys/exec_file.h
+index 464f3ee..6659637 100644
+--- a/include/sys/exec_file.h
++++ b/include/sys/exec_file.h
+@@ -45,13 +45,23 @@ typedef enum binary_type {
+     } binary_type_t;
+ 
+ /* Names for the above (for @bin expansion) */
++/*
++ * The ## operator pastes preprocessing tokens, and two string literals
++ * cannot be pasted into one -- modern compilers reject it with
++ * "pasting \"i386_\" and \"bad\" does not give a valid preprocessing
++ * token". Older preprocessors tolerated it.
++ *
++ * None is needed: adjacent string literals are concatenated by the
++ * compiler, so m "bad" with m as "i386_" yields "i386_bad" exactly as
++ * intended.
++ */
+ #define ATSYS_NAMES(m) \
+-    m ## "bad", m ## "lites", m ## "lites", m ## "lites", m ## "lites", \
+-    m ## "lites", \
+-    m ## "bnr", m ## "netbsd", m ## "freebsd", m ## "ux", \
+-    "script", m ## "isc4", m ## "linux", m ## "linux", m ## "linux", \
+-    m ## "ultrix", m ## "riscos", m ## "hpbsd", m ## "hpux", m ## "hpkludge", \
+-    m ## "hpelf", m ## "osf1"
++    m "bad", m "lites", m "lites", m "lites", m "lites", \
++    m "lites", \
++    m "bnr", m "netbsd", m "freebsd", m "ux", \
++    "script", m "isc4", m "linux", m "linux", m "linux", \
++    m "ultrix", m "riscos", m "hpbsd", m "hpux", m "hpkludge", \
++    m "hpelf", m "osf1"
+ 
+ union exec_data {
+ 	unsigned short	short_magic;
+diff --git a/liblites/exec_file.c b/liblites/exec_file.c
+index b30c671..b422edc 100644
+--- a/liblites/exec_file.c
++++ b/liblites/exec_file.c
+@@ -582,14 +582,29 @@ mach_error_t elf_parse_exec_file(
+ {
+ 	unsigned int phdr;
+ 
+-	if (nsecs < elf->ehdr.e_phnum)
++	/*
++	 * The loop writes secs[phdr+1].how = EXEC_M_STOP after the last
++	 * segment, so the array needs one entry more than the number of
++	 * headers processed, not the same number. The old test was
++	 * "nsecs < e_phnum", which let a 6-header binary into a 6-entry
++	 * array and wrote one past the end.
++	 */
++	if (nsecs <= elf->ehdr.e_phnum && nsecs <= MAX_PHDRS)
+ 		return LITES_EFBIG;
+ 
+ 	exec_load_info_clear(li);
+ 
+ 
+ 	/* Now iterate over them filling in info as needed.  */
+-	for (phdr = 0; phdr < elf->ehdr.e_phnum; phdr++) {
++	/*
++	 * Bounded by MAX_PHDRS as well as e_phnum: elf->phdrs is a
++	 * fixed-size array overlaid on the file, and looping to e_phnum
++	 * alone reads past it for any binary with more headers. See
++	 * include/sys/elf.h.
++	 */
++	for (phdr = 0;
++	     phdr < elf->ehdr.e_phnum && phdr < MAX_PHDRS;
++	     phdr++) {
+ 		vm_size_t off;
+ 
+ 		/* Skip zero sized segments and those which are not part
 diff --git a/server/kern/vnode_if.sh b/server/kern/vnode_if.sh
 index 7a680a9..ad11d2c 100644
 --- a/server/kern/vnode_if.sh
@@ -67,3 +184,21 @@ index 7a680a9..ad11d2c 100644
  		sub (/^[ \t]*/, "", s);
  		sub (/[ \t]*$/, "", s);
  		return s;
+diff --git a/server/serv/server_exec.c b/server/serv/server_exec.c
+index 0fedb29..46b259b 100644
+--- a/server/serv/server_exec.c
++++ b/server/serv/server_exec.c
+@@ -870,7 +870,12 @@ static mach_error_t server_exec_load(
+ 	union exec_data		*hdr,
+ 	struct exec_load_info	*li)	/* OUT (space allocated by caller) */
+ {
+-#define NSECTIONS 6		/* generous: 4 is needed for known binaries */
++/*
++ * One more than MAX_PHDRS: parse_exec_file() writes an EXEC_M_STOP
++ * entry after the last segment. Was 6, which was one too few for a
++ * six-header binary such as the emulator.
++ */
++#define NSECTIONS (MAX_PHDRS + 1)
+ 	mach_error_t kr;
+ 	struct exec_section secs[NSECTIONS];
+ 	int i;
