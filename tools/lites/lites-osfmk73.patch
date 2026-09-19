@@ -719,7 +719,7 @@ index 25907d4..3ad6e20 100644
  
  void get_config_info(
 diff --git a/server/serv/tty_io.c b/server/serv/tty_io.c
-index 025aaaa..455c133 100644
+index 025aaaa..128d9a8 100644
 --- a/server/serv/tty_io.c
 +++ b/server/serv/tty_io.c
 @@ -257,6 +257,32 @@ mach_error_t tty_open(dev_t dev, int flag, int devtype, struct proc *p)
@@ -750,10 +750,59 @@ index 025aaaa..455c133 100644
 +	       * that is refused the same way: the speeds and flags simply do
 +	       * not apply to this device.
 +	       */
-+	      if (rc == D_INVALID_OPERATION)
-+		  rc = D_SUCCESS;
++	      /* tty_param() now tolerates a device without TTY_STATUS
++	       * itself, for every caller rather than only this one. */
  	      if (rc != D_SUCCESS)
  		return(rc);
+ 
+@@ -446,6 +472,48 @@ static mach_error_t tty_param(struct tty *tp, struct termios *t)
+ 				  TTY_STATUS,
+ 				  (int *)&ttstat,
+ 				  ttstat_count);
++
++	/*
++	 * AI-ONLY NOTE, 2026: a device without TTY_STATUS is not an error,
++	 * and this is the right place to say so.
++	 *
++	 * OSFMK's i386 console is the kd driver, which does not implement
++	 * TTY_STATUS, so the device_set_status() above answers
++	 * D_INVALID_OPERATION (2505, x9c9). That is a Mach error, not an
++	 * errno, and any caller returning it to user space has it turned
++	 * into ENOTTY by e_mach_error_to_errno() -- "Inappropriate ioctl
++	 * for device", from a call that was not necessarily an ioctl.
++	 *
++	 * This function already assumes the interface may be absent: the
++	 * matching device_get_status() above is discarded with a (void)
++	 * cast, and tty_open() sets TS_CARR_ON by hand with the comment
++	 * "should get from TTY_STATUS". Only the set path treated absence
++	 * as fatal.
++	 *
++	 * It was first fixed at the tty_open() call site, which unblocked
++	 * opening the console and left every OTHER caller broken. The one
++	 * that mattered is ttioctl()'s TIOCSETA, which does
++	 *
++	 *   if (tp->t_param && (error = (*tp->t_param)(tp, t)))
++	 *           return (error);
++	 *
++	 * so getty, which does TIOCGETA and then TIOCSETA, read the
++	 * termios successfully and failed to set it:
++	 *
++	 *   getty: /dev/console: Inappropriate ioctl for device
++	 *
++	 * Fixing it here covers TIOCSETA, TIOCSETAW, TIOCSETAF and any
++	 * future caller, and is what the first fix should have done.
++	 *
++	 * What this does NOT do: it does not make the settings take
++	 * effect. The speeds and flags are simply not applied on a device
++	 * with no TTY_STATUS, exactly as the get path already assumed.
++	 * Nothing here can change a line discipline the driver does not
++	 * expose.
++	 */
++	if (error == D_INVALID_OPERATION)
++		error = D_SUCCESS;
++
+ 	return (error);
+ }
  
 diff --git a/server/serv/user_copy.c b/server/serv/user_copy.c
 index b23cb19..327e9f0 100644
