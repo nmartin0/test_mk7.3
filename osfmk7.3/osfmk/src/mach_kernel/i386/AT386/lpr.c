@@ -218,7 +218,30 @@ char *lpr_debug_mes[] = {
     "close"
 };
 
-extern spl_t curr_ipl[];
+/*
+ * AI-ONLY NOTE: declared int, not spl_t.
+ *
+ * curr_ipl is defined and maintained entirely by hand-written assembly,
+ * which accesses it with movl -- 4 bytes per element. The linked image
+ * confirms it: readelf reports size 4 with NCPUS 1.
+ *
+ * spl_t is "unsigned char" (i386/spl.h:35), so the original declaration
+ * described a byte array. On little-endian hardware curr_ipl[0] happens
+ * to read the correct low byte while IPL values stay under 256, which
+ * is why this has never been noticed; curr_ipl[n] for any n > 0 would
+ * read the wrong object entirely.
+ *
+ * i386/AT386/mp/mp_v1_1.c already declares it correctly as
+ * "extern int curr_ipl[NCPUS]", so the tree contradicted itself. This
+ * makes the two agree, and agree with the assembly.
+ *
+ * NOT tested at runtime: lpr.o is not built in this configuration and
+ * the only use is inside the lpr_tr debug macro, which additionally
+ * requires lpr_trace. The change is a type correction verified by
+ * inspection against the assembly and the linked image, not by
+ * execution.
+ */
+extern int curr_ipl[];
 
 #define lpr_tr(code, x) \
     if (lpr_trace) { \
