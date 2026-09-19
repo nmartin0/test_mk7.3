@@ -1,3 +1,86 @@
+# MILESTONE: a complete BSD login
+
+getty prompts, login authenticates root against the shipped password
+database, and csh runs as the login shell.
+
+```
+# /usr/bin/login root
+No home directory /root!
+Logging in with home = "/".
+Copyright (c) 1980,1983,1986,1988,1990,1991 The Regents of the
+University of California.  All rights reserved.
+
+NetBSD ?.? (UNKNOWN)
+
+Welcome to NetBSD!
+
+# set x=yes; echo logged-in-$x; pwd
+logged-in-yes
+/
+```
+
+The shell is csh, not the sh we started from -- confirmed by its own
+diagnostics (`Undefined variable.`, `No file for $0.`) before a csh
+variable was set and expanded.
+
+## The bug was a missing return statement
+
+`set_task_priority()`'s `OSFMACH3` branch computed a `kern_return_t`,
+asserted on it, and **fell off the end of the function**. Its declared
+type is `mach_error_t`, and `donice()` ends with
+
+```c
+	return set_task_priority(chgp->p_task, prio);
+```
+
+so whatever sat in the return register became `setpriority(2)`'s
+error. The emulator could not map it and terminated the process.
+
+**`x80aad3b` was never an error code.** It decodes as system 2
+(`err_server`), subsystem 42, code 11579 -- not a LITES errno, which
+would carry `LITES_ERRNO_BASE` (`3<<14`). The previous entry in this
+file read it as a real Mach error and concluded `task_set_policy` was
+failing. That was wrong: with the return supplied, `kr` is
+`KERN_SUCCESS`. The Mach call had always worked.
+
+`ASSERTIONS` is 0 in this build (`obj/server/assertions.h`), so the
+`assert(kr == KERN_SUCCESS)` compiles to nothing and a genuine failure
+would have been equally silent.
+
+## Three of the same bug in one session
+
+Worth naming, because a fourth is likely somewhere:
+
+| where | what escaped | as what |
+|---|---|---|
+| `tty_param()` | `D_INVALID_OPERATION` from a device with no `TTY_STATUS` | ENOTTY from `open()`, then from `TIOCSETA` |
+| `set_task_priority()` | nothing at all -- an uninitialised register | an undecodable error that killed the process |
+| `donice()` | whichever of the above it was handed | `setpriority(2)`'s errno |
+
+The shape is the same every time: **a `mach_error_t` returned where an
+errno belongs.** The emulator's `e_mach_error_to_errno()` will turn a
+real Mach error into something plausible and misleading, and will
+terminate the process outright if it cannot. Grep for functions
+declared `mach_error_t` whose value reaches a syscall return.
+
+## Still open
+
+**The console drops characters** once getty reconfigures the line --
+`login:` arrives as `loi:`. Unchanged and unmeasured. It matters:
+login read `root` correctly here, but a password prompt has less
+tolerance for dropped input than a username does.
+
+**The emulator terminates on an unmappable error**
+(`emulator/error_codes.c:49`) rather than returning something like
+EINVAL. That turned a missing return into a dead process, far from the
+cause. Worth reconsidering on its own.
+
+**`/etc/ttys` still has the console line off**, so a multi-user boot
+spawns nothing. That is now the last piece between here and a login
+prompt appearing without being asked for.
+
+---
+
 # getty prompts; login dies in setpriority
 
 `/usr/libexec/getty` runs, sets the console's terminal attributes and

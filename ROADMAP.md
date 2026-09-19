@@ -336,7 +336,29 @@ an ELF as its own only when the entry is above `0x10000000`; ours are at
 bites the moment an i386 ELF first program is exec'd. xMach shows the
 shape of the fix.
 
-## The login chain: getty prompts, login does not run
+## The login chain works: getty, login, csh
+
+A complete BSD login runs under LITES. Evidence at the head of
+`docs/current-blocker.md`. The blocker was `set_task_priority()`
+having no return statement, so `donice()` returned an uninitialised
+register as `setpriority(2)`'s error.
+
+**Next, in order:**
+
+1. **`/etc/ttys`: turn the console line on.** It is installed
+   unmodified, with `console` off and `ttyv0` on, so multi-user init
+   spawns nothing. This is the last piece before a login prompt
+   appears without being asked for -- and the first real test of
+   multi-user boot.
+2. **The console drops characters** once getty reconfigures the line.
+   A password prompt tolerates dropped input far less than a username
+   does.
+3. **The emulator terminates on an unmappable error** rather than
+   returning one. That turned a missing return into a dead process.
+4. **`/dev/mem`**, or a decision not to have one, for `ps`.
+5. **The paging file**, replacing raw `hd1c`.
+
+## Superseded: the login chain: getty prompts, login does not run
 
 `/etc` is populated and the login chain installed by
 `mkroot-netbsd.sh`. getty runs, sets the terminal and prompts; login
