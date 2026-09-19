@@ -1,3 +1,76 @@
+# MILESTONE: multi-user boot, unprompted login
+
+A cold boot with no `-s` now reaches a login prompt by itself, and a
+login gives a working shell on a writable filesystem.
+
+```
+rc: remounting / read-write
+rc: done
+init: kernel security level changed from 0 to 1
+getty: /dev/ttyv0: No such file or directory
+
+Lites/i386 (Amnesiac) (console)
+
+login: root
+Copyright (c) 1980,1983,1986,1988,1990,1991 The Regents of the
+University of California.  All rights reserved.
+
+NetBSD ?.? (UNKNOWN)
+
+Welcome to NetBSD!
+
+# echo multiuser-write > /tmp/mu; cat /tmp/mu; pwd
+multiuser-write
+/
+```
+
+init runs `/etc/rc`, raises the security level, spawns getty from
+`/etc/ttys`, getty prompts, login authenticates root against the
+shipped password database, and csh runs. Nothing here was typed except
+`root` and the test command.
+
+```sh
+CONSOLE=socket STARTUP_ARGS='-i /init' sh tools/boot-ide.sh
+python3 tools/console.py --attach &
+python3 tools/console.py --wait-for 'login:' --send 'root'
+```
+
+`getty: /dev/ttyv0: No such file or directory` is expected and
+harmless: the shipped `ttys` lists the PC's virtual consoles, which
+LITES does not provide, and init skips them.
+
+# CORRECTION: the console does not drop characters
+
+The previous entry recorded, as an open bug, that console output loses
+characters once getty reconfigures the line -- `login:` arriving as
+`loi:`. **That was an artifact of how I was testing it**, not a fault
+in the console.
+
+Controlled on one boot of one build, minutes apart:
+
+| how getty was started | output |
+|---|---|
+| by init, from `/etc/ttys` | `Lites/i386 (Amnesiac) (console)` / `login:` -- clean |
+| by hand, from the shell prompt | `itei36(Aeic(coole` / `loi:` -- garbled |
+
+So the garbling appears only when getty is run from an interactive
+shell that still has the console open, with two processes on the same
+tty. Started the way it is meant to be started, by init on a line it
+owns, output is intact.
+
+What this does NOT establish is exactly what the contention is --
+whether it is the two readers, or getty's termios changes landing
+under a shell that also has the line configured. It is no longer on
+the critical path, since nothing runs getty by hand, but the
+underlying question of what the console does with two claimants is
+unanswered.
+
+The lesson is the older one in this file: the instrument was the
+problem, and the way it was caught was running the same binary both
+ways on the same build rather than reasoning about the first result.
+
+---
+
 # MILESTONE: a complete BSD login
 
 getty prompts, login authenticates root against the shipped password

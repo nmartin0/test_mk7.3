@@ -336,7 +336,32 @@ an ELF as its own only when the entry is above `0x10000000`; ours are at
 bites the moment an i386 ELF first program is exec'd. xMach shows the
 shape of the fix.
 
-## The login chain works: getty, login, csh
+## Multi-user boot works: init, rc, getty, login, csh
+
+A cold boot reaches a login prompt unaided, and logging in gives a
+working shell on a writable root. Evidence at the head of
+`docs/current-blocker.md`. That completes what this roadmap called
+step 4, and then some: the original goal was "a shell prompt".
+
+**What is left is no longer a chain of blockers but a list of
+independent things, none of which stops the system running:**
+
+1. **The emulator terminates on an unmappable error**
+   (`emulator/error_codes.c:49`) rather than returning one. That
+   turned a missing return statement into a dead process, far from
+   its cause. The cheapest robustness win available.
+2. **Look for the fourth `mach_error_t` returned as an errno.** Three
+   were found in one session; the table in `docs/current-blocker.md`
+   says what the shape looks like.
+3. **`/dev/mem`**, or a decision not to have one, for `ps`.
+4. **The paging file**, replacing raw `hd1c`.
+5. **More userland.** The root carries a deliberately small subset of
+   the NetBSD sets. `id` is already missing, and anything beyond the
+   `NEED` list in `mkroot-netbsd.sh` will be too.
+6. **What the console does with two claimants** -- see the correction
+   in `docs/current-blocker.md`. Not on the critical path.
+
+## Superseded: the login chain works: getty, login, csh
 
 A complete BSD login runs under LITES. Evidence at the head of
 `docs/current-blocker.md`. The blocker was `set_task_priority()`

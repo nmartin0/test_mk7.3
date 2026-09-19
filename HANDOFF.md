@@ -157,7 +157,21 @@ can quietly answer a different question than the one you asked. Chapter
 7 catalogues the ones that produced wrong conclusions here; chapter 9 is
 twenty lines.
 
-## State: a shell runs commands
+## State: it boots multi-user to a login prompt
+
+OSFMK 7.3 boots, LITES mounts an ext2 root read-write, NetBSD 1.0's
+init runs `/etc/rc`, spawns getty, and login gives a csh session. The
+transcript is at the head of `docs/current-blocker.md`.
+
+```sh
+CONSOLE=socket STARTUP_ARGS='-i /init' sh tools/boot-ide.sh
+python3 tools/console.py --attach &
+python3 tools/console.py --wait-for 'login:' --send 'root'
+```
+
+`ROADMAP.md` has what is left. None of it blocks the system running.
+
+## Superseded: a shell runs commands
 
 `/bin/sh` from NetBSD 1.0 executes commands typed at the console under
 LITES on OSFMK 7.3. `echo`, `pwd`, `ls`, `date` all work; the
