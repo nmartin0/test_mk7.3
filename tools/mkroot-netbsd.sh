@@ -265,6 +265,56 @@ rm -f "$FSTAB"
 	echo "mkroot: /etc/fstab was not created" >&2; exit 1; }
 echo "  /etc/fstab: remount with  /sbin/mount -u -w /"
 
+# The login chain: getty, login, the password database and the shared
+# libraries they need.
+#
+# These are the first DYNAMICALLY LINKED binaries this project runs.
+# /bin and /sbin are static, but /usr/libexec/getty and /usr/bin/login
+# are not, so they exercise /usr/libexec/ld.so and the shared libc.
+# That works: getty reaches its login prompt and ld.so resolves and
+# reports missing libraries by name, which is how the list below was
+# arrived at rather than guessed -- ld.so said
+#
+#   ld.so: login: libskey.so.0.0: No such file or directory
+#
+# libskey is S/Key one-time passwords, which login is linked against
+# whether or not it is used.
+#
+# root has an EMPTY password in the shipped master.passwd, and its
+# shell is /bin/csh, so csh is installed too. pwd.db and spwd.db ship
+# built in the etc set, so pwd_mkdb does not need to run here.
+LOGIN_FILES="usr/libexec/getty usr/bin/login bin/csh
+             usr/lib/libskey.so.0.0 usr/lib/libcrypt.so.0.0
+             usr/lib/libutil.so.3.1 usr/lib/libtermcap.so.0.0
+             usr/lib/libcurses.so.2.1"
+
+# /etc, which was empty apart from the fstab above. ttys is what
+# multi-user init reads to decide what to spawn; gettytab is getty's
+# own configuration; the rest is what login wants.
+ETC_FILES="etc/master.passwd etc/passwd etc/pwd.db etc/spwd.db
+           etc/group etc/shells etc/motd etc/gettytab etc/ttys
+           etc/csh.cshrc etc/csh.login"
+
+for f in $LOGIN_FILES $ETC_FILES; do
+	[ -f "$WORK/tree/$f" ] || { echo "  not in the sets: $f"; continue; }
+	d=$(dirname "/$f")
+	[ "$d" = "/" ] || "$DEBUGFS" -w -R "mkdir $d" "$ROOT" >/dev/null 2>&1
+	"$DEBUGFS" -w -R "rm /$f" "$ROOT" >/dev/null 2>&1
+	"$DEBUGFS" -w -R "write $WORK/tree/$f /$f" "$ROOT" >/dev/null 2>&1
+	case "$f" in
+	etc/*)	mode=0100644 ;;
+	*)	mode=0100755 ;;
+	esac
+	"$DEBUGFS" -w -R "sif /$f mode $mode" "$ROOT" >/dev/null 2>&1
+done
+
+for f in usr/libexec/getty usr/bin/login etc/master.passwd etc/ttys; do
+	"$DEBUGFS" -R "stat /$f" "$ROOT" 2>/dev/null |
+	    grep -q "Type: regular" || {
+		echo "mkroot: /$f was not installed" >&2; exit 1; }
+done
+echo "  login chain: getty login csh + /etc password database"
+
 echo
 echo "$ROOT:"
 "$DEBUGFS" -R "ls -l /" "$ROOT" 2>/dev/null | sed 's|^|  |'
