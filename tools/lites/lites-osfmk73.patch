@@ -245,6 +245,33 @@ index 3aa467d..8ab6921 100644
  				/* 256 Kbytes */
  
  /*
+diff --git a/include/i386/stdarg.h b/include/i386/stdarg.h
+index 1110b66..cfea669 100644
+--- a/include/i386/stdarg.h
++++ b/include/i386/stdarg.h
+@@ -36,6 +36,7 @@
+ #ifndef _STDARG_H_
+ #define	_STDARG_H_
+ 
++/* CONTROL: the ORIGINAL 1994 definitions, no compiler builtins. */
+ typedef char *va_list;
+ 
+ #define	__va_promote(type) \
+@@ -44,14 +45,8 @@ typedef char *va_list;
+ #define	va_start(ap, last) \
+ 	(ap = ((char *)&(last) + __va_promote(last)))
+ 
+-#ifdef KERNEL
+ #define	va_arg(ap, type) \
+ 	((type *)(ap += sizeof(type)))[-1]
+-#else
+-#define	va_arg(ap, type) \
+-	((type *)(ap += sizeof(type) < sizeof(int) ? \
+-		(abort(), 0) : sizeof(type)))[-1]
+-#endif
+ 
+ #define	va_end(ap)
+ 
 diff --git a/include/sys/elf.h b/include/sys/elf.h
 index 0d6257f..7c11ee6 100644
 --- a/include/sys/elf.h
@@ -563,6 +590,43 @@ index 002c1b8..5945a8b 100644
  }
  
  #else /* OSFMACH3 */
+diff --git a/server/kern/kern_sig.c b/server/kern/kern_sig.c
+index f131504..057d880 100644
+--- a/server/kern/kern_sig.c
++++ b/server/kern/kern_sig.c
+@@ -1064,11 +1064,11 @@ run:
+ 		 */
+ 		SD(printf("%8x[%d]: psignalDIRECT %x[%d] %x\n",curproc,curproc->p_pid, p,p->p_pid, signum));
+ 		switch ((integer_t)p->p_sigacts->ps_sigact[signum]) {
+-		      case SIG_IGN:
+-		      case SIG_HOLD:
++		      case (integer_t)SIG_IGN:
++		      case (integer_t)SIG_HOLD:
+ 			break;
+ 
+-		      case SIG_DFL:
++		      case (integer_t)SIG_DFL:
+ 			sig_default(p, signum);
+ 			break;
+ 
+@@ -1167,7 +1167,7 @@ int issignal(p)
+ 		 */
+ 		switch ((integer_t)p->p_sigacts->ps_sigact[signum]) {
+ 
+-		case SIG_DFL:
++		case (integer_t)SIG_DFL:
+ 			/*
+ 			 * Don't take default actions on system processes.
+ 			 */
+@@ -1212,7 +1212,7 @@ int issignal(p)
+ 				return (signum);
+ 			/*NOTREACHED*/
+ 
+-		case SIG_IGN:
++		case (integer_t)SIG_IGN:
+ 			/*
+ 			 * Masking above should prevent us ever trying
+ 			 * to take action on an ignored signal other
 diff --git a/server/kern/vnode_if.sh b/server/kern/vnode_if.sh
 index 7a680a9..ad11d2c 100644
 --- a/server/kern/vnode_if.sh
@@ -830,3 +894,270 @@ index 025aaaa..128d9a8 100644
  	return (error);
  }
  
+diff --git a/server/serv/user_copy.c b/server/serv/user_copy.c
+index b23cb19..327e9f0 100644
+--- a/server/serv/user_copy.c
++++ b/server/serv/user_copy.c
+@@ -211,8 +211,19 @@ copyinstr(from, to, max_len, len_copied)
+ 	    cp = data + ((vm_offset_t)from - start);
+ 	    while (count < cur_max) {
+ 		count++;
+-		if ((*((char *)to)++ = *cp++) == 0) {
+-		    goto done;
++		/*
++		 * Was: if ((*((char *)to)++ = *cp++) == 0)
++		 * A cast is not an lvalue in modern C, so the
++		 * post-increment is spelled out. Semantics unchanged:
++		 * copy one byte, advance both pointers, stop at NUL.
++		 */
++		{
++		    char _c = *cp++;
++
++		    *(char *)to = _c;
++		    to = (char *)to + 1;
++		    if (_c == 0)
++			goto done;
+ 		}
+ 	    }
+ 	    (void) vm_deallocate(mach_task_self(),
+diff --git a/server/serv/vn_pager_misc.c b/server/serv/vn_pager_misc.c
+index 30d9f2c..7c1a9d0 100644
+--- a/server/serv/vn_pager_misc.c
++++ b/server/serv/vn_pager_misc.c
+@@ -393,7 +393,13 @@ void vnode_pager_uncache(struct vnode *vn)
+ 	behavior.copy_strategy = pager->copy_strategy;
+ 	behavior.temporary = FALSE;
+ 	behavior.invalidate = FALSE;
+-	behavior.write_completions = FALSE;
++	/*
++	 * OSFMK 7.3 replaced write_completions in
++	 * struct memory_object_behave_info with silent_overwrite
++	 * and advisory_pageout. Set what exists.
++	 */
++	behavior.silent_overwrite = FALSE;
++	behavior.advisory_pageout = FALSE;
+ 	kr = memory_object_change_attributes(pager->control_port,
+ 					     MEMORY_OBJECT_BEHAVIOR_INFO,
+ 					     (memory_object_info_t) &behavior,
+diff --git a/server/serv/xmm_interface.c b/server/serv/xmm_interface.c
+index 4f92d09..55ab08b 100644
+--- a/server/serv/xmm_interface.c
++++ b/server/serv/xmm_interface.c
+@@ -106,27 +106,106 @@ kern_return_t seqnos_memory_object_notify (
+ 	/* move port from waiting set to ux server set */
+ 	ux_server_add_port(memory_object);
+ 
+-	attributes.object_ready  = TRUE;
+-	attributes.copy_strategy = pager->copy_strategy;
+-	attributes.may_cache     = pager->may_cache;
+-
+-	kr = memory_object_establish(host_name,
+-				     memory_object,
+-#if OSF_LEDGERS
+-				     MACH_PORT_NULL,
+-#endif /* OSF_LEDGERS */
+-				     memory_control,
+-				     memory_object,
+-				     VM_PROT_ALL,
+-				     security_id,
+-				     MEMORY_OBJECT_ATTRIBUTE_INFO,
+-				     (memory_object_info_t) &attributes,
+-				     MEMORY_OBJECT_ATTR_INFO_COUNT);
++	/*
++	 * OSFMK 7.3's struct memory_object_attr_info is
++	 * copy_strategy, cluster_size, may_cache_object, temporary.
++	 * object_ready has no counterpart; may_cache was renamed.
++	 */
++	attributes.copy_strategy    = pager->copy_strategy;
++	attributes.may_cache_object = pager->may_cache;
++
++	/*
++	 * memory_object_establish was a NORMA routine and OSFMK 7.3
++	 * removed it (mach.defs:247 keeps the id as a skip). This
++	 * handler belongs to the NORMA notify protocol, which this
++	 * kernel never initiates -- Smem_svr does not reference
++	 * seqnos_memory_object_notify at all -- so the call is
++	 * unreachable here. The attribute setting that establish used
++	 * to carry now happens in seqnos_memory_object_init above, via
++	 * memory_object_change_attributes.
++	 */
++	panic("seqnos_memory_object_notify: NORMA protocol not supported");
++	kr = KERN_FAILURE;
+ 	assert(kr == KERN_SUCCESS);
+ 	DEBUG_PRINT(("seqnos_memory_object_notify(x%x) end\n", memory_object));
+ 	XMM_END_SERVER();
+ }
+ 
++/*
++ * OSFMK 7.3 has neither memory_object_establish (a NORMA routine; see
++ * mach.defs:247, "skip; was memory_object_establish") nor
++ * memory_object_ready (mach.defs:864, "was skip; memory_object_ready").
++ * Both were folded into memory_object_change_attributes, where setting
++ * the attributes is itself what declares the object ready.
++ *
++ * This follows MkLinux's inode_object_init in
++ * mklinux/src/osfmach3/server/inode_pager.c, which is written against
++ * this same kernel -- our osfmk is a copy of MkLinux's -- and whose
++ * comment on the call reads "tell the micro-kernel that the memory
++ * object is ready on our side".
++ */
++kern_return_t seqnos_memory_object_init (
++	mach_port_t memory_object,
++	mach_port_seqno_t seqno,
++	mach_port_t memory_control,
++	mach_port_t memory_object_name,
++	vm_size_t memory_object_page_size)
++{
++	struct vnode *vn;
++	vn_pager_t pager;
++	kern_return_t kr;
++	memory_object_attr_info_data_t attributes;
++
++	XMM_START_SERVER();
++	DEBUG_PRINT(("seqnos_memory_object_init(x%x) start\n", memory_object));
++	vn = port_to_vnode_lookup(memory_object, seqno);
++	if (!vn)
++	    panic("seqnos_memory_object_init no vn");
++	unix_master();		/* XXX */
++	pager = vn->v_vmdata;
++	if (!pager)
++	    panic("seqnos_memory_object_init no pager");
++	vref(vn);		/* the mapping is one reference */
++	assert(pager->control_port == MACH_PORT_NULL);
++	pager->control_port = memory_control;
++	pager->name_port = memory_object_name;
++	pager->page_size = memory_object_page_size;
++
++	/* move port from waiting set to ux server set */
++	ux_server_add_port(memory_object);
++
++	attributes.copy_strategy    = pager->copy_strategy;
++	attributes.cluster_size     = 0;	/* default cluster size */
++	attributes.may_cache_object = pager->may_cache;
++	attributes.temporary        = FALSE;
++	kr = memory_object_change_attributes(memory_control,
++					     MEMORY_OBJECT_ATTRIBUTE_INFO,
++					     (memory_object_info_t) &attributes,
++					     MEMORY_OBJECT_ATTR_INFO_COUNT,
++					     MACH_PORT_NULL);
++	assert(kr == KERN_SUCCESS);
++	DEBUG_PRINT(("seqnos_memory_object_init(x%x) end\n", memory_object));
++	XMM_END_SERVER();
++}
++
++/*
++ * Part of the NORMA discard protocol, which this kernel never
++ * initiates -- it has no norma/ directory at all. Smem_svr references
++ * the handler only because the message id is still reserved in the
++ * .defs. MkLinux's inode_object_discard_request is likewise a panic.
++ */
++kern_return_t seqnos_memory_object_discard_request (
++	mach_port_t memory_object,
++	mach_port_seqno_t seqno,
++	mach_port_t memory_control,
++	vm_offset_t offset,
++	vm_size_t length,
++	mach_port_t reply_to)
++{
++	panic("seqnos_memory_object_discard_request");
++	return KERN_FAILURE;
++}
++
+ #else /* OSFMACH3 */
+ 
+ kern_return_t seqnos_memory_object_init (
+diff --git a/server/ufs/ext2fs/i386-bitops.h b/server/ufs/ext2fs/i386-bitops.h
+index a66679e..8f10802 100644
+--- a/server/ufs/ext2fs/i386-bitops.h
++++ b/server/ufs/ext2fs/i386-bitops.h
+@@ -75,24 +75,46 @@ extern __inline__ int test_bit(int nr, void * addr)
+ extern inline int find_first_zero_bit(void * addr, unsigned size)
+ {
+ 	int res;
++	/*
++	 * d0, d1, d2 exist only to declare ECX, EDI and EAX as
++	 * read-write operands; see the constraint note below.
++	 */
++	int d0, d1, d2;
+ 
+ 	if (!size)
+ 		return 0;
+-	__asm__("
+-		cld
+-		movl $-1,%%eax
+-		xorl %%edx,%%edx
+-		repe; scasl
+-		je 1f
+-		xorl -4(%%edi),%%eax
+-		subl $4,%%edi
+-		bsfl %%eax,%%edx
+-1:		subl %%ebx,%%edi
+-		shll $3,%%edi
++	__asm__("\n\
++		cld\n\
++		movl $-1,%%eax\n\
++		xorl %%edx,%%edx\n\
++		repe; scasl\n\
++		je 1f\n\
++		xorl -4(%%edi),%%eax\n\
++		subl $4,%%edi\n\
++		bsfl %%eax,%%edx\n\
++1:		subl %%ebx,%%edi\n\
++		shll $3,%%edi\n\
+ 		addl %%edi,%%edx"
+-		:"=d" (res)
+-		:"c" ((size + 31) >> 5), "D" (addr), "b" (addr)
+-		:"ax", "cx", "di");
++		/*
++		 * The original constraints named ECX and EDI as inputs
++		 * ("c" and "D") *and* as clobbers ("cx", "di"). That is
++		 * invalid: a register cannot be clobbered when the
++		 * compiler must also set it up as an input, because the
++		 * value has to survive until the asm reads it. The block
++		 * really does modify both -- repe decrements ECX and
++		 * scasl advances EDI -- so they are read-write operands,
++		 * spelled as early-clobber outputs tied to matching
++		 * inputs. EAX is written by the movl and so is an output
++		 * too, rather than a clobber.
++		 *
++		 * Older GCC tolerated the original form. Modern GCC
++		 * rejects it at -O2 with "asm operand has impossible
++		 * constraints or there are not enough registers", while
++		 * accepting it at -O0, which is the signature of a
++		 * constraint bug rather than genuine register pressure.
++		 */
++		:"=d" (res), "=&c" (d0), "=&D" (d1), "=&a" (d2)
++		:"1" ((size + 31) >> 5), "2" (addr), "b" (addr));
+ 	return res;
+ }
+ 
+@@ -105,10 +127,10 @@ extern inline int find_next_zero_bit (void * addr, int size, int offset)
+ 		/*
+ 		 * Look for zero in first byte
+ 		 */
+-		__asm__("
+-			bsfl %1,%0
+-			jne 1f
+-			movl $32, %0
++		__asm__("\n\
++			bsfl %1,%0\n\
++			jne 1f\n\
++			movl $32, %0\n\
+ 1:			"
+ 			: "=r" (set)
+ 			: "r" (~(*p >> bit)));
+@@ -146,10 +168,10 @@ extern inline char * memscan(void * addr, unsigned char c, int size)
+ {
+         if (!size)
+                 return addr;
+-        __asm__("cld
+-                repnz; scasb
+-                jnz 1f
+-                dec %%edi
++        __asm__("cld\n\
++                repnz; scasb\n\
++                jnz 1f\n\
++                dec %%edi\n\
+ 1:              "
+                 : "=D" (addr), "=c" (size)
+                 : "0" (addr), "1" (size), "a" (c));
