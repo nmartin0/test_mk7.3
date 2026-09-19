@@ -283,7 +283,14 @@ echo "  /etc/fstab: remount with  /sbin/mount -u -w /"
 # root has an EMPTY password in the shipped master.passwd, and its
 # shell is /bin/csh, so csh is installed too. pwd.db and spwd.db ship
 # built in the etc set, so pwd_mkdb does not need to run here.
-LOGIN_FILES="usr/libexec/getty usr/bin/login bin/csh
+# mount_kernfs mounts /kern, the one other filesystem this server can
+# mount. NetBSD's mount(8) handles ufs itself and execs mount_<type>
+# for everything else, so the helper has to be present.
+#
+# The type numbers line up by luck rather than design and it is worth
+# checking if this ever breaks: server/kern/vfs_conf.c puts KERNFS at
+# slot 11, which is where 4.4BSD-derived userland expects it.
+LOGIN_FILES="usr/libexec/getty usr/bin/login bin/csh sbin/mount_kernfs
              usr/lib/libskey.so.0.0 usr/lib/libcrypt.so.0.0
              usr/lib/libutil.so.3.1 usr/lib/libtermcap.so.0.0
              usr/lib/libcurses.so.2.1"
@@ -367,12 +374,27 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin; export PATH
 echo "rc: remounting / read-write"
 /sbin/mount -u -w / || echo "rc: remount failed, / stays read-only"
 
+#	/kern is kernfs: boottime, hostname, hz, loadavg, pagesize,
+#	physmem, rootdev, and host_basic_info, which is Mach's own
+#	host_info(HOST_BASIC_INFO) rather than anything BSD has.
+#
+#	Note the argument order: mount_kernfs takes a dummy "special"
+#	argument before the mount point, and says so in its usage.
+#
+#	No `[ -d /kern ]` guard: "[" is a separate binary in NetBSD 1.0
+#	and is not installed, so the test printed "[: not found" and the
+#	mount never ran. mkroot-netbsd.sh always creates /kern, and a
+#	failed mount says so on its own.
+/sbin/mount_kernfs kernfs /kern || echo "rc: kernfs mount failed"
+
 echo "rc: done"
 RCEOF
 "$DEBUGFS" -w -R "rm /etc/rc" "$ROOT" >/dev/null 2>&1
 "$DEBUGFS" -w -R "write $RC /etc/rc" "$ROOT" >/dev/null 2>&1
 "$DEBUGFS" -w -R "sif /etc/rc mode 0100644" "$ROOT" >/dev/null 2>&1
 rm -f "$RC"
+
+"$DEBUGFS" -w -R "mkdir /kern" "$ROOT" >/dev/null 2>&1
 
 for f in etc/ttys etc/rc; do
 	"$DEBUGFS" -R "stat /$f" "$ROOT" 2>/dev/null |
