@@ -205,6 +205,8 @@ done
 	sif /dev/null mode 020666
 	sif /dev/mem mode 020640
 	sif /dev/kmem mode 020640
+	mknod hd0c b 0 2
+	sif /dev/hd0c mode 060640
 EOF
 
 # A device node that did not get linked is the failure this whole block
@@ -214,7 +216,54 @@ for n in console tty null mem kmem; do
 	    grep -q "Type: character special" || {
 		echo "mkroot: /dev/$n was not created" >&2; exit 1; }
 done
-echo "  /dev: console tty null mem kmem"
+
+# hd0c is the root disk itself, block major 0 (server/i386/conf.c entry
+# 0 is "hd") minor 2 (partition c), which is what rootdev is. It is
+# checked separately because it must be BLOCK special, and because the
+# mode matters in a way that is easy to get wrong: 060640 is a block
+# device, 0100640 is a regular file. debugfs's sif takes the whole mode
+# word including the type bits, so writing the permission bits alone
+# silently turns the node into an empty regular file -- which happened
+# here, and which `ls` does not make obvious.
+"$DEBUGFS" -R "stat /dev/hd0c" "$ROOT" 2>/dev/null |
+    grep -q "Type: block special" || {
+	echo "mkroot: /dev/hd0c is missing or is not a block device" >&2
+	exit 1; }
+echo "  /dev: console tty null mem kmem hd0c"
+
+# /etc/fstab, which exists so the root can be remounted read-write.
+#
+# The root mounts READ-ONLY, and that is not an ext2 limitation: 4.4BSD
+# mounts root read-only and /etc/rc remounts it, and this tree's FFS
+# does the same thing on the same line (ffs_vfsops.c:109 against
+# ext2_vfsops.c:117). Without a remount nothing can be written anywhere,
+# including /tmp.
+#
+#   /sbin/mount -u -w /
+#
+# mount(8) finds the entry for / in fstab, so the entry has to exist.
+#
+# THE TYPE SAYS ufs AND THE FILESYSTEM IS ext2, deliberately. NetBSD
+# 1.0's mount(8) has never heard of ext2fs -- it handles ufs internally
+# and execs mount_<type> for anything else, and no mount_ext2fs exists.
+# It does not matter: on an update the kernel skips the type entirely
+# (vfs_syscalls.c, the MNT_UPDATE branch goes straight to `update:`)
+# and keeps the mount's existing ext2fs_vfsops. The type in this file is
+# only how mount(8) decides which helper to run, and ufs is the one that
+# needs no helper.
+#
+# This is therefore a remount-only entry. A fresh `mount -t ufs` of this
+# device would be wrong, and would fail on the superblock.
+FSTAB=$(mktemp)
+printf '/dev/hd0c\t/\tufs\trw\t1\t1\n' > "$FSTAB"
+"$DEBUGFS" -w -R "rm /etc/fstab" "$ROOT" >/dev/null 2>&1
+"$DEBUGFS" -w -R "write $FSTAB /etc/fstab" "$ROOT" >/dev/null 2>&1
+"$DEBUGFS" -w -R "sif /etc/fstab mode 0100644" "$ROOT" >/dev/null 2>&1
+rm -f "$FSTAB"
+"$DEBUGFS" -R "stat /etc/fstab" "$ROOT" 2>/dev/null |
+    grep -q "Type: regular" || {
+	echo "mkroot: /etc/fstab was not created" >&2; exit 1; }
+echo "  /etc/fstab: remount with  /sbin/mount -u -w /"
 
 echo
 echo "$ROOT:"
