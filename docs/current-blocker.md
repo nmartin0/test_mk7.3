@@ -1,3 +1,87 @@
+# AUDIT: cross-tree header leakage, and the end of the builtins
+
+Prompted by a fair objection: LITES's patched `stdarg.h` was
+satisfying an include inside an OSFMK header. Two questions followed --
+where else does that happen, and why is the tree taking anything from
+the compiler at all.
+
+## Does Mach get compiled with LITES headers?
+
+**The kernel: no.** The kernel build contains zero references to the
+LITES tree, uses `-nostdinc`, and its include path is OSFMK only.
+Nothing LITES has ever influenced a kernel object.
+
+**OSFMK headers compiled inside LITES: yes, and it predates this
+work.** Preprocessing `<mach.h>` with the real compile line pulls in 59
+headers, four of them from the LITES tree:
+
+```
+/root/lites-1.1.u3/include/string.h
+/root/lites-1.1.u3/include/sys/cdefs.h
+/root/lites-build/obj/include/machine/ansi.h
+/root/lites-build/obj/include/machine/stdarg.h
+```
+
+Three of those four were already happening; only `machine/stdarg.h`
+was reached through a forwarding header added here. This is a property
+of the LITES build's include order -- LITES's own include directory
+comes before the exported Mach one -- and separating the two trees
+properly means reordering that path for the whole build, which is a
+larger change than any made here and is **not** done.
+
+Forwarding to OSFMK's own `sa_mach/stdarg.h` was tried and does not
+help: `sa_mach/stdarg.h` itself includes `<machine/stdarg.h>`, which
+the Makerules path resolves to `obj/include` before anything added
+later. Two extra forwarding headers were removed once that was
+measured rather than assumed.
+
+## The whole-build shadowing audit
+
+Every header visible from more than one include directory, computed
+across the real include path: **five**.
+
+| header | trees |
+|---|---|
+| `i386/endian.h` | LITES, OSFMK export |
+| `i386/exec.h` | LITES, OSFMK export |
+| `i386/trap.h` | LITES, OSFMK export |
+| `mig_errors.h` | OSFMK export, twice (its own `mach/` subdir) |
+| `msg_type.h` | OSFMK export, twice |
+
+The three `i386/` ones differ substantially between trees, so this
+looked like the same bug repeated. It is not: **no OSFMK header
+includes any of them.** Only LITES sources do, and they correctly get
+LITES's. The last two are one tree reachable by two paths.
+
+## The builtins are gone from the i386 path
+
+The objection was that a real system should take nothing from the
+compiler. The vendor code does not agree with that in general --
+LITES's own `include/parisc/stdarg.h` uses `__builtin_saveregs`,
+`include/alpha/va-alpha.h` uses `__builtin_va_alist`, and OSFMK's ppc
+`pmap_internals.h` uses `__builtin_return_address` -- but none of that
+is on the i386 path, and the i386 path had exactly one such
+dependency, added here rather than inherited.
+
+It has been removed, and `include/i386/stdarg.h` is vendor-pristine
+again. The patch had been justified by a real symptom -- printf
+rendering a string pointer as the bytes of a function prologue -- which
+**is not reproducible on the current tree**. With the original
+definitions restored, varargs printf is correct through a full boot
+(`timer: 4 timeouts adjusted by 0.060000 seconds`), login, a
+byte-identical 357,959-byte copy, a clean `e2fsck` and a clean halt.
+
+`grep -rhoE '__builtin_[a-z_]+'` over the compiled i386 LITES paths now
+returns nothing.
+
+What is not proven is that the original definitions are correct for
+every optimisation level and calling convention gcc might choose --
+only that they are correct for everything a full boot exercises. If
+variadic output turns to garbage again, that commit is the first to
+reverse.
+
+---
+
 # CORRECTION: the stdarg forwarding pointed at the wrong header
 
 The gcc-free build is right, but one part of how it was done was not,
