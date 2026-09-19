@@ -283,6 +283,29 @@ pkill -x "qemu-system-i38" 2>/dev/null || true
 sleep 2
 rm -f /tmp/console.log
 
+# CONSOLE=socket exports the serial line as a unix socket instead of
+# writing it to a file, so it can be answered as well as read. The file
+# is one-way, and NetBSD init's single-user prompt cannot be answered
+# with it -- which is why /bin/sh was never driven for so long. See
+# tools/console.py.
+#
+# The default stays `file`, because every existing recipe and every
+# console log quoted in the documentation came from it.
+case "${CONSOLE:-file}" in
+socket)
+	rm -f /tmp/serial.sock
+	SERIAL="-serial unix:/tmp/serial.sock,server,nowait"
+	echo "serial console on /tmp/serial.sock; attach with"
+	echo "  python3 tools/console.py --attach &"
+	;;
+file)
+	SERIAL="-serial file:/tmp/console.log"
+	;;
+*)
+	echo "CONSOLE must be file or socket" >&2; exit 1
+	;;
+esac
+
 echo "booting from hd2c ..."
 # KVM where it exists, TCG where it does not. -enable-kvm is fatal when
 # /dev/kvm is absent -- qemu exits before the guest starts -- and it is
@@ -304,7 +327,19 @@ qemu-system-i386 $ACCEL -kernel "$K" \
 	-drive file="$SWAP",format=raw,if=ide,index=1 \
 	-drive file="$SERVERS",format=raw,if=ide,index=2 \
 	-m 128 -display none -no-reboot \
-	-serial file:/tmp/console.log "$@" &
+	$SERIAL "$@" &
+
+# In socket mode nothing writes /tmp/console.log until console.py
+# attaches, so watching it here would report a stuck boot that is
+# running perfectly. Hand over instead.
+if [ "${CONSOLE:-file}" = socket ]; then
+	echo
+	echo "attach to it with:"
+	echo "  python3 tools/console.py --attach &"
+	echo "then answer the single-user prompt with:"
+	echo "  python3 tools/console.py --send ''"
+	exit 0
+fi
 
 # Report progress rather than sleeping blindly, so a stuck boot can be
 # told from a slow one by whether the log is growing.
