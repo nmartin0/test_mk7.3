@@ -1,3 +1,61 @@
+# The canonical answer: append sa_mach, do not reorder
+
+I proposed reordering the LITES include path so Mach headers precede
+LITES's own. **That would have been wrong**, and the tree says so
+itself.
+
+`conf/Makerules` builds the include path as
+
+```make
+INCDIRS += $(SRCDIR)/include $(OBJDIR)/include $(INSTALL_INCDIR) \
+INCDIRS += $(MACH_RELEASE_DIR)/include $(MACH_RELEASE_DIR)/include/mach
+```
+
+LITES's own headers first, Mach release directories appended after.
+That ordering is upstream's and it is correct: the thing being built
+is a BSD server, so its `string.h`, `sys/` and `i386/` must be BSD's.
+Reordering would have made Mach's copies shadow them -- a much worse
+bug than the one being fixed.
+
+`-nostdinc` is upstream's too, on the line below. Upstream never
+intended a compiler header to be used.
+
+## So where was `<stdarg.h>` meant to come from?
+
+From the Mach release directory -- but OSFMK keeps it only under
+`sa_mach`, its standalone include set. There is no top-level
+`stdarg.h` in the export tree here, nor in any OSFMK or DR3 copy in
+the reference collection: the whole lineage puts it under `sa_mach`,
+which is the environment for programs that link `libmach_sa` -- which
+the LITES server and emulator do.
+
+So the canonical fix is to append `sa_mach` to the include path, in
+exactly the way `Makerules` appends the other Mach directories. No
+reordering, no generated header.
+
+**Because it is last, it shadows nothing.** That was the objection
+when putting sa_mach on the path was first considered, and it was
+wrong -- the concern was real for a directory placed *first*.
+Verified with the preprocessor on the real compile line: `<string.h>`
+still resolves to LITES's, `<i386/endian.h>` still to LITES's, and
+`<stdarg.h>` now to `sa_mach/stdarg.h`.
+
+## What remains, and why it is left
+
+`sa_mach/stdarg.h` itself includes `<machine/stdarg.h>`, which still
+resolves to LITES's copy, because LITES's `machine` directory must
+come first for LITES's own code. That is inherent to building a BSD
+server against a Mach include set with one flat include path, and it
+is harmless in content: both are the original `char *va_list`
+definitions now that the builtin patch is gone. Eliminating it would
+need per-file include paths, which is not worth the complexity.
+
+The other three LITES headers that `<mach.h>` pulls in -- `string.h`,
+`sys/cdefs.h`, `machine/ansi.h` -- are the same situation and predate
+all of this work.
+
+---
+
 # AUDIT: cross-tree header leakage, and the end of the builtins
 
 Prompted by a fair objection: LITES's patched `stdarg.h` was
