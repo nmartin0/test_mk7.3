@@ -1,3 +1,55 @@
+# CORRECTION: the aliasing flag is insurance, not a proven fix
+
+Both builds now pass `-fno-strict-aliasing` and LITES also passes
+`-fno-pic`. The two are here for different strengths of reason, and an
+earlier note in this file overstated the first.
+
+## -fno-pic closes a gap
+
+Not a precaution. `build/mksandbox.sh` gave the kernel this flag with
+`nm` evidence; LITES was missed. Measured: **143 server objects and 25
+emulator objects** carried `_GLOBAL_OFFSET_TABLE_` references. The
+server is loaded at a fixed address and has no dynamic linker.
+Removing them takes 61,844 bytes off it.
+
+## -fno-strict-aliasing is insurance
+
+The earlier note called it REQUIRED on the strength of one test: five
+LITES objects and `kern/ipc_kobject.c` generate different code with
+and without it. That result is real, and it proves the **optimiser is
+making** aliasing assumptions -- not that the code **violates** them.
+
+The test that would show a violation was run afterwards, and came back
+clean: compiled at `-O2` with `-Wstrict-aliasing=2`, five LITES kernel
+sources report **zero** warnings. The instrument was checked -- on a
+deliberate violation it fires -- so that zero is a real zero.
+
+So: **no demonstrated miscompilation, and no symptom either setting
+reproduces.** Both configurations build and boot identically.
+
+It is on anyway, for two reasons stated plainly rather than dressed up:
+
+1. `-Wstrict-aliasing` has known blind spots. It cannot see violations
+   that cross translation units or arrive through pointer parameters,
+   which is where 1990s C usually puts them.
+2. FreeBSD's `sys/conf/kern.pre.mk` appends the flag automatically
+   whenever `COPTFLAGS` holds `-O[23s]` and it is missing, and Linux
+   has carried it since 2.4. Two kernels that have lived with code of
+   this vintage for decades both concluded it is not optional.
+
+The flag is cheap and the failure it guards against is silent. That is
+the whole argument, and it is weaker than "required".
+
+## Why this was found now
+
+Nothing new broke. The flags were audited for the first time before
+rebuilding the history, because the maintainer asked for an audit
+before starting. Both files had been read many times without their
+flag lists being questioned -- the same failure as the gcc includes,
+and for the same reason: they were read to be used, not to be checked.
+
+---
+
 # The canonical answer: append sa_mach, do not reorder
 
 I proposed reordering the LITES include path so Mach headers precede

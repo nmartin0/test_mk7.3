@@ -189,7 +189,26 @@ MAKEARGS="AWK=nawk \
 
 # The first pass can fail on bsd_server.c: make resolves it through VPATH
 # only once the MIG outputs exist. A second pass always succeeds.
-CC_FLAGS="-m32 -std=gnu89 -Ulinux -fno-builtin -fgnu89-inline -fcommon -fno-stack-protector -I$MR/include/sa_mach -include $HERE/lites-compat.h"
+# -fno-pic:           CLOSES A GAP, not a precaution. Modern distro gcc
+#                     defaults to -fPIE. Without this, 143 of the
+#                     server's objects and 25 of the emulator's carry
+#                     _GLOBAL_OFFSET_TABLE_ references; the server is
+#                     loaded at a fixed address and has no dynamic
+#                     linker. Removing them takes 61,844 bytes off the
+#                     server. build/mksandbox.sh gave the kernel this
+#                     flag for exactly this reason, with nm evidence;
+#                     LITES was simply missed.
+# -fno-strict-aliasing: INSURANCE, on the same reasoning as the kernel
+#                     -- see the note in build/mksandbox.sh. Measured:
+#                     vfs_subr, uipc_mbuf, tty, subr_prf and kern_exit
+#                     all generate different code with and without it,
+#                     so the assumption is live; but -Wstrict-aliasing=2
+#                     at -O2 reports zero violations in those same
+#                     files, so nothing here demonstrates a
+#                     miscompilation. FreeBSD and Linux both treat the
+#                     flag as mandatory for code of this age, and that
+#                     precedent is the reason it is on.
+CC_FLAGS="-m32 -std=gnu89 -Ulinux -fno-builtin -fgnu89-inline -fcommon -fno-stack-protector -fno-strict-aliasing -fno-pic -I$MR/include/sa_mach -include $HERE/lites-compat.h"
 LIB_LIST="-llites -lthreads -lmach_sa -lsa_mach -lmach_sa"
 
 # The server and the emulator need different entry-point handling, so

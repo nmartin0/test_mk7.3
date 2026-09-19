@@ -115,7 +115,29 @@ replace setenv SOURCEDIR \${source_base}
 # that reason, preferring targeted -fno-builtin-* flags. -fno-builtin
 # plus the kernel's own mem/str routines is the standard arrangement
 # and is what OSF chose; leave their choice alone.
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -Wno-error"
+#
+# -fno-strict-aliasing: added 2026, as INSURANCE, and the distinction
+# matters. At -O2 gcc assumes accesses through different types do not
+# alias. FreeBSD's sys/conf/kern.pre.mk appends this flag automatically
+# whenever COPTFLAGS holds -O[23s] and it is missing, and Linux has
+# carried it in kernel CFLAGS since 2.4 -- both conclusions drawn from
+# long experience with code of exactly this vintage.
+#
+# What was measured here, and what was not. kern/ipc_kobject.c
+# generates different code with and without the flag, so the optimiser
+# IS making aliasing assumptions in this tree. That is not the same as
+# the code violating them: compiled at -O2 with -Wstrict-aliasing=2,
+# five LITES kernel sources produce zero warnings, and the warning was
+# confirmed to fire on a deliberate violation, so the zero is real.
+#
+# So there is no demonstrated miscompilation, and no symptom either
+# setting reproduces. The flag is here because -Wstrict-aliasing has
+# known blind spots -- it cannot see violations that cross translation
+# units or arrive through pointer parameters, which is where 1990s C
+# usually puts them -- and because two kernels that have lived with
+# this problem for decades both decided the flag is not optional. It
+# is cheap, and the failure it guards against is silent.
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -Wno-error"
 #
 # The genassym rule in conf/AT386/template.mk calls the compiler
 # directly and does NOT include the standard CFLAGS, so nothing from
