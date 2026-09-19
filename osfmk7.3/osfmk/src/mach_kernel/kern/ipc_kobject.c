@@ -247,15 +247,56 @@ mig_init(void)
     register unsigned int i, n = sizeof(mig_e)/sizeof(rpc_subsystem_t);
     register unsigned int howmany;
     register mach_msg_id_t j, pos, nentry, range;
+    /*
+     * AI-ONLY NOTE: rd is required. It is not a tidy-up.
+     *
+     * struct rpc_subsystem (mach/rpc.h) declares
+     *
+     *	struct routine_descriptor	routine[1];
+     *	struct routine_arg_descriptor	arg_descriptor[1];
+     *
+     * The [1] is the pre-C99 flexible array idiom -- its own comment
+     * says "Actually, (start-end+1)" -- and the MIG generated tables
+     * declare their own struct with the real count. But routine[] is
+     * NOT the last member here, so the compiler cannot treat it as a
+     * flexible array: routine[1] would overlap arg_descriptor. It is
+     * therefore entitled to prove j < 1 and collapse this loop to a
+     * single j == 0 iteration, and GCC does.
+     *
+     * Measured before this change: mig_buckets held 8 entries out of
+     * 1024, and those eight were exactly the start field of each of the
+     * eight subsystems whose routine[0] is non-null. One entry per
+     * subsystem, which is j == 0 only. Every other message id was
+     * undispatchable and ipc_kobject_server returned MIG_BAD_ID for it.
+     *
+     * That disabled all kernel IPC. The bootstrap task's first call,
+     * host_page_size, returned -303, mach_init discarded it with a
+     * (void) cast, vm_page_size stayed 0, probe_stack then computed
+     * every size as 0, cthread_stack_size stayed 0, and alloc_stack
+     * chained its free list from base 0 and wrote to address 0. Both
+     * bootstrap paths died at that same instruction.
+     *
+     * Reading through a pointer defeats the bound at the access site
+     * without changing any layout. struct rpc_subsystem is shared with
+     * the MIG generated tables, so moving routine[] to be the last
+     * member would be an ABI change for a cosmetic reason; this is not.
+     *
+     * Verified two ways: a reduced case with a trailing member
+     * reproduces the collapse and the pointer form fixes it, and the
+     * bucket count below rises from 8 to the full set after this
+     * change.
+     */
+    register struct routine_descriptor *rd;
 	
     for (i = 0; i < n; i++) {
 	range = mig_e[i]->end - mig_e[i]->start;
 	if (!mig_e[i]->start || range < 0)
 	    panic("the msgh_ids in mig_e[] aren't valid!");
 	mig_reply_size = max(mig_reply_size, mig_e[i]->maxsize);
+	rd = mig_e[i]->routine;
 
 	for  (j = 0; j < range; j++) {
-	  if (mig_e[i]->routine[j].stub_routine) { 
+	  if (rd[j].stub_routine) { 
 	    /* Only put real entries in the table */
 	    nentry = j + mig_e[i]->start;	
 	    for (pos = MIG_HASH(nentry) % MAX_MIG_ENTRIES, howmany = 1;
@@ -268,9 +309,9 @@ mig_init(void)
 	    }
 		
 	    mig_buckets[pos].num = nentry;
-	    mig_buckets[pos].routine = mig_e[i]->routine[j].stub_routine;
-	    if (mig_e[i]->routine[j].max_reply_msg)
-		    mig_buckets[pos].size = mig_e[i]->routine[j].max_reply_msg;
+	    mig_buckets[pos].routine = rd[j].stub_routine;
+	    if (rd[j].max_reply_msg)
+		    mig_buckets[pos].size = rd[j].max_reply_msg;
 	    else
 		    mig_buckets[pos].size = mig_e[i]->maxsize;
 
