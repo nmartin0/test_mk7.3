@@ -1,3 +1,54 @@
+# kernfs mounts; and a correction about what it is for
+
+`/kern` is mounted at boot by `/etc/rc`, giving a second filesystem
+type alongside the ext2 root:
+
+```
+# ls /kern
+boottime        hostname        pagesize        time
+copyright       hz              physmem         version
+host_basic_info loadavg         rootdev
+# cat /kern/hz /kern/physmem
+1000
+32639
+```
+
+`host_basic_info` is Mach's own `host_info(HOST_BASIC_INFO)`, which no
+BSD has: `1 1 133689344 19 1` -- one CPU, one available, 133,689,344
+bytes, then cpu type and subtype. A Mach-shaped view of the machine
+rather than a BSD one.
+
+## The correction
+
+An earlier entry called kernfs "the structurally right way to expose
+process information here" and "the answer to the `ps` question that
+libkvm cannot give". **That was wrong.** kernfs is system variables --
+the list above is all of it, and there is nothing per-process in it.
+
+The process filesystem is **procfs**, type 12 in the same table in
+`server/kern/vfs_conf.c`, and it is **not built**: `obj/server` holds
+`procfs.h` and no `procfs` objects. So the `ps` question remains open
+with a different answer from the one recorded -- building procfs, not
+mounting kernfs.
+
+The claim was made from the type's name and its presence in the build,
+without reading `kern_targets[]` in `kernfs_vnops.c`, which lists
+exactly what it serves. Reading it takes a minute.
+
+## Two things worth knowing if you touch this
+
+`mount_kernfs` takes a dummy "special" argument before the mount
+point. `mount_kernfs /kern` prints its usage and silently does
+nothing; `mount_kernfs kernfs /kern` works.
+
+The type numbers line up by luck. NetBSD's `mount(8)` handles ufs
+itself and execs `mount_<type>` for anything else, and
+`vfs_conf.c` happens to put KERNFS at slot 11 -- where 4.4BSD-derived
+userland expects it. The same coincidence is why the ext2 root can be
+remounted with an fstab entry that says `ufs`.
+
+---
+
 # OPEN: console input reorders a character under burst input
 
 Not cosmetic, and not the two-claimants explanation given earlier in

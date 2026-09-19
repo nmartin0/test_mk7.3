@@ -370,10 +370,13 @@ blocks the system running, and none of it is waiting on anything else:
 3. **Userland breadth.** The `NEED` list in `mkroot-netbsd.sh` is
    deliberately small; `id`, `wc`, `grep` and most of a normal system
    are simply not installed. Adding them is mechanical.
-4. **`kernfs`**, compiled by this tree and never mounted. The
-   structurally right way to expose process information on a
-   microkernel, and the answer to the `ps` question that libkvm cannot
-   give.
+4. ~~`kernfs`, compiled and never mounted~~ **done**: `/kern` is
+   mounted at boot and serves `hz`, `physmem`, `loadavg`,
+   `host_basic_info` and the rest. But the claim attached to it was
+   wrong -- kernfs is system variables, not processes. The process
+   filesystem is **procfs**, type 12 in the same table, and it is not
+   built (`obj/server` has `procfs.h` and no objects). Building it is
+   the real answer to `ps`, and is now the largest open item.
 
 ## Superseded: multi-user boot works: init, rc, getty, login, csh
 
