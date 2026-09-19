@@ -157,7 +157,29 @@ can quietly answer a different question than the one you asked. Chapter
 7 catalogues the ones that produced wrong conclusions here; chapter 9 is
 twenty lines.
 
-## State as of session 6: NetBSD init runs, and the blocker is known
+## State: a shell runs commands
+
+`/bin/sh` from NetBSD 1.0 executes commands typed at the console under
+LITES on OSFMK 7.3. `echo`, `pwd`, `ls`, `date` all work; the
+transcript is at the head of `docs/current-blocker.md`.
+
+Reaching it needed three things, all committed: the pid-2 hack in
+`wait4()` conditioned on mach_init actually being the first program,
+`/mach_servers` populated automatically by `boot-ide.sh`, and
+`tools/console.py`, which turns the serial line into a socket that can
+be answered instead of a file that can only be read.
+
+```sh
+CONSOLE=socket STARTUP_ARGS='-s -i /init' sh tools/boot-ide.sh
+python3 tools/console.py --attach &
+python3 tools/console.py --send ''
+python3 tools/console.py --send 'echo hi'
+```
+
+The next work is in `ROADMAP.md`, and the shell itself named it: the
+root is mounted read-only, so nothing can be written anywhere.
+
+## Superseded: state as of session 6
 
 The stack boots end to end. LITES mounts the ext2 root, execs NetBSD
 1.0's unmodified 1994 `/sbin/init`, init opens and acquires

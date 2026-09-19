@@ -336,7 +336,39 @@ an ELF as its own only when the entry is above `0x10000000`; ours are at
 bites the moment an i386 ELF first program is exec'd. xMach shows the
 shape of the fix.
 
-## Where step 4 actually stands, after session 6
+## Step 4 is done: a shell runs commands
+
+`/bin/sh` executes commands typed at the console. The transcript is at
+the head of `docs/current-blocker.md`; `ls /` alone exercises fork,
+exec, an ext2 directory read and tty output.
+
+`tools/console.py` is what made it reachable -- the serial line is now
+a socket that can be answered, rather than a file that can only be
+read.
+
+**What the shell immediately showed is the next work, in order:**
+
+1. **A read-write root.** `ext2_vfsops.c:117` mounts `MNT_RDONLY`, and
+   the shell confirms it: `cannot create /tmp/x: read-only file
+   system`. Nothing can be written anywhere. This is the largest item,
+   because it is the first thing to exercise ext2's write path, which
+   has never run in this project -- expect that to be a piece of work
+   in itself rather than a flag change.
+2. **`/etc` and the login chain**, for a multi-user system.
+   `mkroot-netbsd.sh` fetches the `etc10` set but its `NEED` list
+   installs only `bin/` and `sbin/` binaries, so `/etc` in the built
+   root is **empty**: no `ttys`, no `rc`, no `getty`, no `login`, no
+   password database. Multi-user init would read no `ttys` and spawn
+   nothing. Extending that list is cheap; making `login` work needs
+   the password database and a writable `/var` for `utmp`.
+3. **`/dev/mem`**, or a decision not to have one. `ps` fails with
+   `Device not configured`. A 1994 BSD `ps` reads the proc table out of
+   kernel memory, which under a microkernel is not where it lives, so
+   this is a design question rather than a missing node.
+4. **The paging file.** `default_pager` is given raw `hd1c`;
+   `doc/install.freebsd` describes a paging file in `/mach_servers`.
+
+## Superseded: where step 4 stood after session 6
 
 Step 4 is further than the sections below assume, and the remaining gap
 is different from the one they describe.

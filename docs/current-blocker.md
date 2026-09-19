@@ -1,3 +1,78 @@
+# MILESTONE: a shell, and commands that run
+
+NetBSD 1.0's `/bin/sh` is running under LITES on OSFMK 7.3 and
+executing commands typed at the console. Step 4 of `ROADMAP.md` is
+done.
+
+The transcript, unedited apart from stripping carriage returns:
+
+```
+Enter pathname of shell or RETURN for sh:
+# echo hello from lites
+hello from lites
+# pwd
+/
+# ls /
+bin             etc             mach_servers    tmp
+dev             lost+found      sbin            usr
+# ls /mach_servers
+emulator        init
+# ps
+ps: /dev/mem: Device not configured
+# date
+Fri Sep 18 00:35:04  2026
+# echo test > /tmp/x
+cannot create /tmp/x: read-only file system
+```
+
+`ls` alone is fork, exec, a directory read through ext2 and formatted
+output back through the tty, in one line.
+
+## What this settles
+
+**COM input reaches LITES.** Every byte before this went outward, and
+whether the kernel's `com` driver delivered input through the device
+port to the server's tty layer was unknown -- it is the one thing that
+could not be established by reading. It works, first try, with no
+change to any driver.
+
+**The console is the serial line, not `kd`.** `-r` in the kernel
+command line selects it and `boot-ide.sh` has always passed it, which
+is why output reached a file at all. Answering the prompt confirms the
+same line carries input.
+
+**The line discipline is doing real work**: `#` prompts, commands echo,
+and a carriage return terminates a line. No `stty` was needed.
+
+## What the transcript also establishes, as open work
+
+- **`ps` fails: `/dev/mem: Device not configured`.** The node exists
+  (`c 2 0`) and LITES has no device behind it. `ps` on a 1994 BSD reads
+  kernel memory directly, which on a microkernel is not where the proc
+  table lives, so this wants thought rather than a device node.
+- **The root is read-only**, confirmed from userland rather than from
+  `ext2_vfsops.c:117` alone. Nothing can be written anywhere, including
+  `/tmp`, which rules out most real use and is the next substantial
+  piece of work -- and the first thing to exercise ext2's write path,
+  which has never run.
+- `date` is right, and still prints the `e_mapped_timeofday` fallback
+  because `/dev/time` does not exist.
+
+## How to get here
+
+```sh
+CONSOLE=socket STARTUP_ARGS='-s -i /init' sh tools/boot-ide.sh
+python3 tools/console.py --attach &
+python3 tools/console.py --send ''            # answer the prompt
+python3 tools/console.py --send 'echo hi'
+tail /tmp/console.log
+```
+
+Under TCG the boot takes about five minutes before the prompt appears,
+and each command takes a few seconds to echo.
+
+---
+
 # RESOLVED: the pid-2 hack is now conditioned on mach_init
 
 The blocker below is fixed, by option 2 of the three listed there.
