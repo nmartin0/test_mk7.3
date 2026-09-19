@@ -504,6 +504,65 @@ index 8ef5031..3114371 100644
  			nfound--;
  			continue;
  		}
+diff --git a/server/kern/kern_resource.c b/server/kern/kern_resource.c
+index 002c1b8..5945a8b 100644
+--- a/server/kern/kern_resource.c
++++ b/server/kern/kern_resource.c
+@@ -214,6 +214,54 @@ mach_error_t set_task_priority(task_t task, int prio)
+ 			     POLICY_TIMESHARE_LIMIT_COUNT,
+ 			     TRUE);
+ 	assert(kr == KERN_SUCCESS);
++
++	/*
++	 * AI-ONLY NOTE, 2026: this function had NO RETURN STATEMENT.
++	 *
++	 * It computed kr, asserted on it and fell off the end, so it
++	 * returned whatever happened to be in the return register. The
++	 * declared type is mach_error_t and donice() ends with
++	 *
++	 *   return set_task_priority(chgp->p_task, prio);
++	 *
++	 * so that junk became setpriority(2)'s error, went back through
++	 * the emulator, and failed to decode as anything:
++	 *
++	 *   emul_syscall[96] e_setpriority(x0, x0, x0, ...)
++	 *   libemul: Can't handle error code x80aad3b:
++	 *   "(server/?) unknown subsystem error". Terminating.
++	 *
++	 * which killed login, since the emulator terminates a process
++	 * whose error it cannot map. x80aad3b was never an error code at
++	 * all -- it decodes as system 2, subsystem 42, code 11579, which
++	 * is not a LITES errno -- and reading it as one sent this looking
++	 * for a failing Mach call that had not failed.
++	 *
++	 * MEASURED: with the return supplied, kr is KERN_SUCCESS. The
++	 * task_set_policy() above works. The missing return was the whole
++	 * bug, and login now completes.
++	 *
++	 * The assert is why nobody saw it: ASSERTIONS is 0 in this build
++	 * (obj/server/assertions.h), so it compiles to nothing and a
++	 * failure here would have been silent too.
++	 *
++	 * A failure is translated rather than returned raw, because a
++	 * mach_error_t reaching user space as an errno is the same defect
++	 * this project has now fixed three times -- tty_param()'s
++	 * TTY_STATUS being the other. EACCES is what setpriority(2)
++	 * documents for a refused priority change, and is what the
++	 * non-OSFMACH3 branch below maps KERN_FAILURE to.
++	 *
++	 * Returning 0 and ignoring the failure was considered, on the
++	 * grounds that p_nice is already set and scheduling is advisory.
++	 * It is rejected: the caller asked for something that did not
++	 * happen, and a silent success is how this went unnoticed for
++	 * thirty years.
++	 */
++	if (kr != KERN_SUCCESS)
++		return (EACCES);
++
++	return (0);
+ }
+ 
+ #else /* OSFMACH3 */
 diff --git a/server/kern/kern_sig.c b/server/kern/kern_sig.c
 index f131504..057d880 100644
 --- a/server/kern/kern_sig.c
