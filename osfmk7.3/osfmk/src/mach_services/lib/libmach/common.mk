@@ -194,6 +194,20 @@ TRUNCOFILES		= BTServer.o \
 
 MACHINEOFILES		= ${${TARGET_MACHINE}_OFILES:S/mach_host_priv/M_h_p/}
 
+#
+# AI-ONLY NOTE: which mach_init implementation goes into this library.
+#
+# mach_init.c defines mach_init as static, reachable only through the
+# _mach_init_routine pointer, and does not test STANDALONE. The
+# standalone implementation is a separate file, mach_init_sa.c, which
+# defines mach_init globally -- that is the symbol standalone programs
+# such as LITES's emulator link against by name.
+#
+# Defaulted with ?= so libmach and libmach_p are unaffected; libmach_sa
+# sets it to mach_init_sa.o.
+#
+MACH_INIT_OFILE		?= mach_init.o
+
 OFILES =		  clock_res.o \
 			  clock_sleep.o \
 			  clock_user.o \
@@ -203,7 +217,7 @@ OFILES =		  clock_res.o \
 			  exc_user.o \
 			  ledger_user.o \
 			  mach_error.o \
-			  mach_init.o \
+			  ${MACH_INIT_OFILE} \
 			  mach_msg.o \
 			  mach_user.o \
 			  malloc.o \
