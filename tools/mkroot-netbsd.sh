@@ -315,6 +315,72 @@ for f in usr/libexec/getty usr/bin/login etc/master.passwd etc/ttys; do
 done
 echo "  login chain: getty login csh + /etc password database"
 
+# /etc/ttys decides what multi-user init spawns, and the shipped file
+# has the console line OFF:
+#
+#   console "/usr/libexec/getty Pc"  pc3    off secure
+#   ttyv0   "/usr/libexec/getty Pc"  pc3    on  secure
+#
+# That is right for a real PC, where the user is at ttyv0, one of the
+# virtual consoles the NetBSD kernel provides. We have no ttyv0: LITES
+# gives us /dev/console and nothing else, so with the file unmodified
+# init spawns getty on a device that does not exist and nothing appears
+# on the console at all.
+#
+# So the console line is turned on and the ttyv lines left alone --
+# they are harmless, since init skips an entry whose device is missing.
+TTYS=$(mktemp)
+sed 's|^console\(.*\)off secure|console\1on  secure|' \
+	"$WORK/tree/etc/ttys" > "$TTYS"
+grep -q '^console.*on  secure' "$TTYS" || {
+	echo "mkroot: could not enable the console line in /etc/ttys" >&2
+	exit 1; }
+"$DEBUGFS" -w -R "rm /etc/ttys" "$ROOT" >/dev/null 2>&1
+"$DEBUGFS" -w -R "write $TTYS /etc/ttys" "$ROOT" >/dev/null 2>&1
+"$DEBUGFS" -w -R "sif /etc/ttys mode 0100644" "$ROOT" >/dev/null 2>&1
+rm -f "$TTYS"
+
+# /etc/rc is OURS, not NetBSD's.
+#
+# Multi-user init runs /bin/sh /etc/rc before it spawns anything from
+# ttys, and treats a failure as a reason to drop to single user. The
+# shipped rc cannot run here: it fscks the disks, mounts everything in
+# fstab, runs swapon, starts the network and syslogd, and calls
+# programs from /usr/sbin that this root does not have. Installing it
+# would produce a page of failures and then a single-user shell.
+#
+# This one does the two things that actually need doing on this system:
+# remount the root read-write, which BSD also does from rc and which is
+# otherwise a command to remember, and say so on the console so a boot
+# that reaches rc can be told from one that does not.
+RC=$(mktemp)
+cat > "$RC" <<'RCEOF'
+#	/etc/rc -- minimal, written for LITES on OSF Mach Kernel 7.3.
+#
+#	NOT NetBSD's own rc, which fscks, mounts everything in fstab,
+#	runs swapon, starts the network and needs /usr/sbin programs
+#	this root does not carry.
+
+HOME=/; export HOME
+PATH=/sbin:/bin:/usr/sbin:/usr/bin; export PATH
+
+echo "rc: remounting / read-write"
+/sbin/mount -u -w / || echo "rc: remount failed, / stays read-only"
+
+echo "rc: done"
+RCEOF
+"$DEBUGFS" -w -R "rm /etc/rc" "$ROOT" >/dev/null 2>&1
+"$DEBUGFS" -w -R "write $RC /etc/rc" "$ROOT" >/dev/null 2>&1
+"$DEBUGFS" -w -R "sif /etc/rc mode 0100644" "$ROOT" >/dev/null 2>&1
+rm -f "$RC"
+
+for f in etc/ttys etc/rc; do
+	"$DEBUGFS" -R "stat /$f" "$ROOT" 2>/dev/null |
+	    grep -q "Type: regular" || {
+		echo "mkroot: /$f was not installed" >&2; exit 1; }
+done
+echo "  /etc/ttys: console line enabled; /etc/rc: remounts / rw"
+
 echo
 echo "$ROOT:"
 "$DEBUGFS" -R "ls -l /" "$ROOT" 2>/dev/null | sed 's|^|  |'
