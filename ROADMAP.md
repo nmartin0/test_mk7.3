@@ -336,7 +336,31 @@ an ELF as its own only when the entry is above `0x10000000`; ours are at
 bites the moment an i386 ELF first program is exec'd. xMach shows the
 shape of the fix.
 
-## Step 4 is done, and the root is read-write
+## The login chain: getty prompts, login does not run
+
+`/etc` is populated and the login chain installed by
+`mkroot-netbsd.sh`. getty runs, sets the terminal and prompts; login
+dies in `setpriority`. Dynamic linking works, which was the open
+question -- these are the first non-static binaries this project has
+run.
+
+**Next, in order:**
+
+1. **`donice()` returns a raw Mach error** from
+   `set_task_priority()`, which the emulator cannot map, so it
+   terminates login. Same class as the TTY_STATUS bug just fixed in
+   `tty_param`. Decide whether to translate it or to treat a failed
+   Mach policy set as non-fatal, and separately whether the emulator
+   should terminate at all when an error will not map.
+2. **The console drops characters** once getty reconfigures the line.
+   A login that cannot print its prompt cannot read a password.
+3. **`/etc/ttys` needs the console line turned on** for a multi-user
+   boot; it is installed unmodified, with `console` off and `ttyv0`
+   on. Nothing can use it until 1 and 2 are done.
+4. **`/dev/mem`**, or a decision not to have one, for `ps`.
+5. **The paging file**, replacing raw `hd1c`.
+
+## Superseded: step 4 is done, and the root is read-write
 
 `/bin/sh` runs commands, and after `/sbin/mount -u -w /` it can write:
 files created under LITES reach the disk and the result passes

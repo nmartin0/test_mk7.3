@@ -1,3 +1,107 @@
+# getty prompts; login dies in setpriority
+
+`/usr/libexec/getty` runs, sets the console's terminal attributes and
+prints a login prompt. `login` then dies. Both are dynamically linked,
+so `ld.so` and the shared libc work.
+
+```
+# /usr/libexec/getty
+
+itei36(Aeic(coole
+
+loi:root
+emulator [3] libemul: Can't handle error code x80aad3b:
+"(server/?) unknown subsystem error". Terminating.
+```
+
+## Fixed to get here: TTY_STATUS again, one caller along
+
+`getty` failed with `getty: /dev/console: Inappropriate ioctl for
+device` -- the same bug session 5 fixed for `open()`, because that fix
+was applied at the call site rather than at the cause.
+
+`tty_param()` ends in `device_set_status(TTY_STATUS)`; OSFMK's `kd`
+console does not implement it and answers `D_INVALID_OPERATION`
+(x9c9), a **Mach** error, which `e_mach_error_to_errno()` turns into
+ENOTTY. `tty_open()` ignored it; `ttioctl()`'s `TIOCSETA` did not. The
+tolerance now lives in `tty_param()` itself.
+
+It was located from the emulator's syscall trace, after three probes in
+the server failed to fire -- which was itself the evidence that the
+error came from somewhere not instrumented:
+
+```
+emul_syscall[54] e_ioctl(x0, x802c7414, ...)
+err_return[54] e_ioctl -> 25
+```
+
+`x802c7414` is `_IOW('t', 20, 44)` = `TIOCSETA`. The `TIOCGETA` before
+it, `x402c7413`, returned 0. Turn tracing on the same way:
+
+```
+EMULATOR_DEBUG=3 /usr/libexec/getty
+```
+
+## Open 1: login dies in setpriority, and it is the same shape
+
+```
+emul_syscall[96] e_setpriority(x0, x0, x0, ...)
+libemul: Can't handle error code x80aad3b
+```
+
+`x80aad3b` decodes as system 2 (`err_server`), subsystem 42, code
+11579 -- not a LITES errno, which would carry `LITES_ERRNO_BASE`
+(`3<<14`).
+
+The server implements `setpriority` (entry 96 of the generated
+`init_sysent.c`), so this is not a missing syscall. `setpriority` calls
+`donice()`, which ends:
+
+```c
+	/* Mach priorities are in the range 0 to 31.  Base is 12 */
+	prio = 12 + (n >> 1);
+
+	return set_task_priority(chgp->p_task, prio);
+```
+
+and `set_task_priority()` returns `task_set_policy()`'s
+`kern_return_t`. So a failing `task_set_policy` -- plausibly because
+`default_processor_set` or `POLICY_TIMESHARE` is not set up the way
+this code expects on OSFMK 7.3 -- escapes as a raw Mach error where an
+errno belongs. **Exactly the `tty_param` pattern, one layer down.**
+
+Two things to decide, and they are separable:
+
+1. **`donice()` should not return a Mach error.** Either translate it,
+   or treat a failure to set a Mach policy as non-fatal the way
+   `tty_param` now treats a missing TTY_STATUS -- nice(2) failing
+   should not stop a login.
+2. **The emulator terminates the process** when it cannot map an
+   error, rather than returning something like EINVAL. That is
+   arguably the worse half: one unmapped error anywhere kills the
+   program, far from the cause. `emulator/error_codes.c:49`.
+
+Worth checking whether `task_set_policy` is failing at all, or whether
+it succeeds and something else in the return path mangles the value --
+print the `kern_return_t` in `set_task_priority()` before returning it.
+
+## Open 2: the console drops characters once getty reconfigures it
+
+`login:` arrives as `loi:`, and getty's banner as
+`itei36(Aeic(coole`. Before getty runs, the shell's output is intact,
+so this starts when the line is reconfigured.
+
+The `tty_param` fix does **not** change this and does not claim to: on
+a device with no `TTY_STATUS` the speeds and flags are not applied at
+all, so getty believes it has set something the driver never received.
+Whether the dropping is a consequence of that mismatch, or a separate
+fault in the console write path, is unmeasured.
+
+It matters beyond cosmetics: a login that cannot reliably print its
+prompt cannot reliably read a password either.
+
+---
+
 # MILESTONE: the root mounts read-write, and ext2 writes work
 
 `/bin/sh` can now create, copy, remove and read back files, and what
