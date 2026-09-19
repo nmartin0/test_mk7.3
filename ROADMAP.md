@@ -79,6 +79,11 @@ Two details there correct assumptions this project has been running on:
 the pager is given a **paging file** rather than the raw `hd1c` device
 we currently use -- which matches `mach4-UK22`'s `def_pager_setup.c`.
 
+**Corrected later:** true of mach4, and not a criticism of this tree.
+OSFMK 7.3's pager takes device names only and its bootstrap has no
+paging-file code, so `hd1c` is the supported mechanism here. See the
+head of `docs/current-blocker.md`.
+
 ### The a.out toolchain problem, and a way round it
 
 **Linking `mach_init` against NetBSD's libc needs a toolchain we do not
@@ -364,7 +369,16 @@ independent things, none of which stops the system running:**
    `w`, `uptime`, `vmstat`, `netstat` and `pstat`. Full account, and
    the two routes that would work, at the head of
    `docs/current-blocker.md`.
-4. **The paging file**, replacing raw `hd1c`.
+4. ~~The paging file, replacing raw `hd1c`~~ **decided: not
+   applicable, nothing shipped.** OSFMK 7.3's `default_pager` takes
+   Mach device names only -- `dp_parse_argument()` accepts `-v` and
+   `cl=N`, everything else goes to `device_open()`, and
+   `dev_name_lookup()` parses `<name><unit><partition>` with no paths.
+   The paging file in `doc/install.freebsd` belongs to the mach4
+   lineage, where the BOOTSTRAP task set it up
+   (`mach4-UK22/bootstrap/def_pager_setup.c`); this bootstrap has no
+   such code. `hd1c` is the supported mechanism, not a workaround.
+   Full account at the head of `docs/current-blocker.md`.
 5. **More userland.** The root carries a deliberately small subset of
    the NetBSD sets. `id` is already missing, and anything beyond the
    `NEED` list in `mkroot-netbsd.sh` will be too.

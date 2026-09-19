@@ -1,3 +1,87 @@
+# DECIDED: OSFMK 7.3 has no paging file, and hd1c is not a workaround
+
+The roadmap carried "the paging file, replacing raw `hd1c`", on the
+strength of LITES's own `doc/install.freebsd`:
+
+```
+- Create a paging file. Let's assume /usr has space and is on /dev/sd0g
+  dd if=/dev/zero of=/usr/PAGING_FILE bs=1024k count=60
+  ln -s /dev/sd0g/PAGING_FILE /mach_servers/paging_file
+```
+
+That instruction is real, and it is for a different system. Nothing in
+this tree can consume it.
+
+## What the pager here actually accepts
+
+`default_pager`'s `main()` takes each argument, offers it to
+`dp_parse_argument()`, and gives anything that is not consumed to
+`bs_add_device()`. The parser accepts exactly two things: `-v`, and
+`cl...=N` to set the cluster size. Everything else is a device name,
+and `bs_add_device()` does
+
+```c
+	if (device_open(master, MACH_PORT_NULL, D_READ | D_WRITE,
+			null_security_token, dev_name, &device))
+		return FALSE;
+```
+
+a Mach `device_open` by name on the master device port. The kernel
+resolves that name with `dev_name_lookup()`, which parses
+
+```
+	<device_name><unit_number><partition>
+```
+
+and nothing else -- no paths, no files. Grepping the whole of
+`osfmk7.3/osfmk/src` for `paging_file` finds one `.defs` string and no
+code.
+
+## Where the instruction comes from
+
+`mach4-UK22/bootstrap/def_pager_setup.c` in the reference collection
+has the missing half:
+
+```c
+add_paging_file(master_device_port, file_name)
+	...
+	result = open_file(master_device_port, file_name, &pfile);
+	...
+	isa_file = file_is_structured(&pfile);
+	result = open_file_direct(pfile.f_dev, fdp, isa_file);
+	...
+		panic("Can't open paging file %s\n", file_name);
+```
+
+So the paging file was set up by the **bootstrap task**, using its own
+`file_io` layer -- which is what understands the `/dev/<device>/<file>`
+form in the symlink -- and handed to a pager that lived in the kernel.
+
+OSFMK 7.3 splits this differently. Its `default_pager` is an ordinary
+user task started from `bootstrap.conf`, and its bootstrap task has no
+`add_paging_file`, no `create_paging_partition` and no `open_file`
+(`osfmk7.3/osfmk/src/bootstrap/` is fifteen files and none of them
+mentions paging). The file-based path was not carried across.
+
+## The decision
+
+**Nothing is shipped.** `default_pager /mach_servers/default_pager
+hd1c` is the supported mechanism for this pager, not a shortcut around
+a better one, and the roadmap entry was wrong to imply otherwise.
+
+The earlier note that our setup differs from `def_pager_setup.c` was
+correct as a statement about mach4 and wrong as a criticism of this
+configuration.
+
+If a paging file were ever wanted, it is a port rather than a
+configuration change: the bootstrap task here already reads files from
+ext2, so the `open_file`/`open_file_direct` half has an analogue, but
+the pager it would have to hand the result to is in another task and
+takes a device port. That is real work for no benefit anyone has
+named -- a raw partition is if anything the faster arrangement.
+
+---
+
 # DECIDED: ps cannot work through libkvm, and /dev/mem is not the reason
 
 `ps` was on the roadmap as "`/dev/mem`, or a decision not to have one".
