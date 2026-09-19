@@ -678,6 +678,72 @@ index 0fedb29..46b259b 100644
  	mach_error_t kr;
  	struct exec_section secs[NSECTIONS];
  	int i;
+diff --git a/server/serv/server_init.c b/server/serv/server_init.c
+index 25907d4..3ad6e20 100644
+--- a/server/serv/server_init.c
++++ b/server/serv/server_init.c
+@@ -298,7 +298,22 @@ void init_ports()
+ 				       &default_processor_set);
+ }
+ 
+-char default_root[] = "hd0a"; /* XXX */
++/*
++ * OSFMK 7.3's hd driver builds its partition table in getvtoc() by
++ * reading sector 0 as a DOS/BIOS partition table. When that fails --
++ * which it does on an unpartitioned image -- it falls back to
++ *
++ *     "make partition 'c' the whole disk in case of failure"
++ *
++ * setting d_partitions[PART_DISK], and PART_DISK is 2, which
++ * dev_name_lookup spells 'c' since it maps partition letters a-h onto
++ * indices 0-7.
++ *
++ * So "hd0c" is the whole of an unpartitioned disk and needs no MBR,
++ * no BSD disklabel and no partition arithmetic. "hd0a" would require
++ * a real DOS partition table.
++ */
++char default_root[] = "hd0c";
+ 
+ void parse_arguments(
+ 	int	argc,
+@@ -693,10 +708,35 @@ void main(
+ #if OSFMACH3
+ kernel_boot_info_t kernel_boot_info;
+ 
++/*
++ * The compiled-in configuration, used when a server starts with
++ * argc == 0 -- which is always here, since the bootstrap task gives
++ * servers a deliberate dummy zero argument count.
++ *
++ * get_config_info() below hands this to parse_arguments() as argc 4, so
++ * these four strings ARE the configuration; default_root[] above is not
++ * consulted on this path. Changing default_root alone has no effect,
++ * which cost a round to discover: a hardware breakpoint on
++ * device_open() showed LITES asking the kernel for "hd0a" long after
++ * default_root had been changed to "hd0c".
++ *
++ * hd0a -> hd0c, twice. Partition 'c' is the whole disk: getvtoc() in
++ * the kernel's hd driver builds its partition table by reading sector 0
++ * as a DOS partition table, and when that fails -- as it does on an
++ * unpartitioned image -- it falls back to "make partition 'c' the whole
++ * disk", setting d_partitions[PART_DISK] with PART_DISK 2, which
++ * dev_name_lookup spells 'c'. Partition 'a' simply does not exist
++ * there, so hdopen() returns D_NO_SUCH_DEVICE (2502, seen as
++ * kr = 0x9c6 in the "cannot mount root" panic).
++ *
++ * hd0f in the first entry is the server directory prefix and is left
++ * alone: it is only used to derive a path when none is given, and
++ * entry 3 supplies that here.
++ */
+ char argv_space[10][40] = {"/dev/hd0f/mach_servers/startup", 
+ 			   "-s",
+-			   "hd0a",
+-			   "/dev/hd0a/mach_servers",
++			   "hd0c",
++			   "/dev/hd0c/mach_servers",
+ 			   (char *)0,};
+ 
+ void get_config_info(
 diff --git a/server/serv/tty_io.c b/server/serv/tty_io.c
 index 025aaaa..128d9a8 100644
 --- a/server/serv/tty_io.c
