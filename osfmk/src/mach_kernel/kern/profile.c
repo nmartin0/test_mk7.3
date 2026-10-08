@@ -406,7 +406,7 @@ thread_sample(
     prof_data_t	    pbuf;
     vm_offset_t	    vmpbuf;
 
-    if (reply != MACH_PORT_NULL) {
+    if (reply != IP_NULL) {
 	if (thr_act->act_profiled) 	/* yuck! */
 		return KERN_INVALID_ARGUMENT;
 	/* Start profiling this activation, do the initialization. */
@@ -464,7 +464,7 @@ task_sample(
 {
     prof_data_t	    pbuf=task->profil_buffer;
     vm_offset_t	    vmpbuf;
-    boolean_t	    turnon = (reply != MACH_PORT_NULL);
+    boolean_t	    turnon = (reply != IP_NULL);
 
     if (task == TASK_NULL)
 	    return KERN_INVALID_ARGUMENT;
@@ -559,7 +559,7 @@ pbuf_alloc(void)
 	pbuf = (prof_data_t)kalloc(sizeof(struct prof_data));
 	if (!pbuf)
 		return(NULLPROFDATA);
-	pbuf->prof_port = MACH_PORT_NULL;
+	pbuf->prof_port = IP_NULL;
 	for (i=0; i< NB_PROF_BUFFER; i++) {
 	        zone = (natural_t *)kalloc(NCPUS*SIZE_PROF_BUFFER*sizeof(natural_t));
 		if (!zone) {
@@ -578,7 +578,7 @@ pbuf_alloc(void)
 		      pbuf->prof_area[i].p_full[k] = FALSE;
 	        }
 	}
-	pbuf->prof_port = MACH_PORT_NULL;
+	pbuf->prof_port = IP_NULL;
 	return(pbuf);
 }
 
@@ -594,7 +594,7 @@ pbuf_alloc(void)
 	pbuf = (prof_data_t)kalloc(sizeof(struct prof_data));
 	if (!pbuf)
 		return(NULLPROFDATA);
-	pbuf->prof_port = MACH_PORT_NULL;
+	pbuf->prof_port = IP_NULL;
 	for (i=0; i< NB_PROF_BUFFER; i++) {
 		zone = (natural_t *)kalloc(SIZE_PROF_BUFFER*sizeof(natural_t));
 		if (!zone) {
@@ -608,7 +608,7 @@ pbuf_alloc(void)
 		pbuf->prof_area[i].p_zone = zone;
 		pbuf->prof_area[i].p_full = FALSE;
 	}
-	pbuf->prof_port = MACH_PORT_NULL;
+	pbuf->prof_port = IP_NULL;
 	return(pbuf);
 }
 #endif /* DCI */
