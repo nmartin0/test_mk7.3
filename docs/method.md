@@ -285,8 +285,32 @@ counted afterwards were left from an earlier run.
 directive was dead.  Grep for the diagnostic class, not for text that
 appears in the source.
 
+**Reading past the evidence.**  The costliest of the four.  A proof
+that `PMAP_NULL` and `(vm_offset_t)NULL` generate identical code
+printed, in its own output:
+
+	call  __x86.get_pc_thunk.ax
+	addl  $_GLOBAL_OFFSET_TABLE_, %eax
+
+That is PIC, in a kernel.  It was used to settle the question it was
+run for and never read for what else it said.  The kernel built, linked
+with zero undefined symbols, and could not run.  Cost: a config pushed
+to the branch that produces a dead kernel.
+
+The rule it suggests: **when a check prints more than it was asked,
+read the rest.**
+
 And one destructive error: a scratch `rm -rf "$REPO/osfmk/export"`
 deleted 240 vendor files.  `docs/provenance/pristine.md` records it.
+
+## 6b. A build that links is not a build that runs
+
+Adding compiler flags as the compiler demands them finds everything
+that blocks the build and nothing that breaks the runtime.  `-fno-pic`
+is the worked case: no build error ever points at it, and without it
+the kernel faults 15,377 times before its first line of output.
+
+**Boot it before believing the configuration is complete.**
 
 ## 7. Standing facts worth not rediscovering
 
