@@ -140,6 +140,20 @@ neither OSF's server nor Lites used.
 
 ## 2. Deferred
 
+### The two latent `i386_rpc.c` defects
+
+Block 607 writes to an operand declared `"g"` input; blocks 195, 411,
+464, 521 and 567 each do `addl $4, %N` on an operand declared `"r"`
+input.  Both are the same class as the defect that blocked the build.
+
+**Deferred because** neither blocks anything and both are in collocated
+RPC paths that cannot run until a server is collocated — Tier 1 item 4,
+where this file becomes central.  Changing untested assembly to close a
+latent hazard is how a latent hazard becomes a live one.
+
+**What would settle it:** a collocated server that exercises these
+paths, so a fix can be tested rather than reasoned about.
+
 ### `THREAD_STATE_SYSCALL`
 
 Patience §4 adds a thread-state flavour carrying only the registers a
@@ -195,6 +209,37 @@ would be worthwhile". They did not do it.
 
 **Deferred to Tier 2.** Recorded so it is not rediscovered as a
 surprise when the collocation numbers come in lower than hoped.
+
+## 2a. Tooling defects, to fix in a later patch
+
+Found while auditing `nmartin0/test_mk7.3` `dev`'s build scripts.  The
+first three are fixed in our copy at `docs/tools/bootstrap-ode.sh`;
+they are recorded because that tree still has them and because the
+reasoning matters.
+
+**`build_md()` swallowed every compiler error.**  `2>/dev/null || true`
+in both loops.  The exclusion list is explicit, so a file that stops
+compiling should fail the build rather than produce a quietly smaller
+`libode.a` that only fails at the link.  Fixed: both loops `exit 1`.
+
+**The `ar` was unchecked.**  Combined with the above, a near-empty
+archive was possible.  Fixed.
+
+**The `DEF_ARFLAGS` comment buried its conclusion.**  It matters only
+for ODE's self-build: OSFMK's `Buildconf` line 140 already sets `cr`.
+Fixed: the comment now leads with that.
+
+**`dev`'s `.gitignore` has five prose lines with no leading `#`.**  Git
+treats any non-blank line not starting with `#` as a pattern, so all
+five are live ignore rules:
+
+	$ git check-ignore -v "empty."
+	.gitignore:5:empty.	empty.
+
+The failure mode is the bad kind — a file that should be tracked is
+silently skipped and `git status` says nothing.  Not fixed here because
+this tree has no `.gitignore` yet; recorded so ours is written with
+`#` from the start.
 
 ## 3. Refused
 
