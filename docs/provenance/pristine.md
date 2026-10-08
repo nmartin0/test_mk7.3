@@ -7,8 +7,12 @@ worked precedent behind it.
 way except where we deliberately change code, and every such change is
 visible in one command:
 
-	git diff <import>..HEAD -- osfmk7.3/
-	git diff <import>..HEAD -- lites/
+	git diff <import>..HEAD -- osfmk/src/mach_kernel
+
+That path and not osfmk/ alone, because the startup server was added
+to osfmk/src/mach_services/servers deliberately and would otherwise
+dominate the diff.  The kernel proper is where drift must stay
+visible.
 
 That is the deviation record. "We changed two files" becomes something
 a reader can verify instead of a claim in a commit message. It only
@@ -116,6 +120,48 @@ This is why the preference order above is not merely about tidiness. A
 configuration change surprises nobody reading the source. A source
 change in the wrong idiom surprises every later reader, and the surprise
 outlasts the reason for it.
+
+## What the first build proved about this order
+
+Every one of the nine settings that make OSFMK build is level 1 --
+vendor configuration, through a hook the vendor provides:
+
+| setting | hook |
+| --- | --- |
+| `SOURCEDIR` | `Buildconf.local`, `lib/libode/builddata.c` |
+| `MAKESYSPATH` colon list | `bin/make/parse.c` line 2255 |
+| `CARGS` | `Buildconf`'s own `CARGS` line for i386-on-Linux |
+| `NO_STRICT_ANSI` | `osf.gcc.mk` line 94 |
+| `ANSI_CC`, `TRADITIONAL_CC`, `HOST_CC` | `osf.std.mk` lines 120-131 |
+| `LDOPTS` | `conf/AT386/template.mk` line 279, `+=` |
+| `AT386_LDFLAGS` | `bootstrap/Makefile` line 37 |
+
+Two of those are narrower than the obvious answer.  `NO_STRICT_ANSI`
+drops `-pedantic` alone where a blanket `-Wno-error` would have
+disabled every diagnostic; `AT386_LDFLAGS` reaches the one link that
+assigns `LDFLAGS` with a plain `=`.
+
+Keeping `-Werror` on everything else is what surfaced eleven genuine
+type confusions in the vendor tree.  A blanket `-Wno-error` would have
+hidden all of them, and did, in the tree this one is walking.
+
+## One worked case, from this project's own mistake
+
+A scratch shell line during the first build ran
+
+	rm -rf "$REPO/osfmk/export"
+
+to replace a symlink.  `osfmk/export/powermac` is 240 vendor files.
+The next `git diff` showed 241 files changed and 40,263 deletions
+instead of the expected four, and it was restored with
+`git checkout -- osfmk/export`.
+
+The destructive step was in a throwaway command, not in any reviewed
+patch, which is exactly where this rule earns its keep: without the
+deviation diff as a standing check, that deletion would have ridden
+quietly into a commit.
+
+The symlink is `osfmk/export/at386`, never `osfmk/export`.
 
 ## Verifying it
 
