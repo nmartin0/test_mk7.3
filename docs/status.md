@@ -1,6 +1,6 @@
 # Where the work stands
 
-**The microkernel builds.** Three trees run independently; none of
+**The microkernel boots.** Three trees run independently; none of
 the design work in `docs/roadmap.md` has started. This file is honest
 about that and will be rewritten as soon as it is not true.
 
@@ -17,7 +17,7 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 
 | | |
 | --- | --- |
-| `mach_kernel.PRODUCTION` | 1,106,116 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
+| `mach_kernel.PRODUCTION` | 1,021,472 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 233,788 bytes, same format |
 | errors | 0 |
 | vendor files changed | 8 |
@@ -31,9 +31,37 @@ found".  `setup.sh` does not build it and it is PowerMac-specific:
 AT386 has `conf/AT386/config.makeboot` and a boot path under
 `stand/AT386`, so that step will differ.
 
-**It has never been run.**  "Builds" is not "works", and the
-`i386_rpc.c` paths in particular cannot execute until a server is
-collocated.
+## The boot
+
+	qemu-system-i386 -kernel mach_kernel.PRODUCTION \
+	    -initrd bootstrap -m 64 -display none -no-reboot
+
+Zero exceptions, zero CPU resets, and on the VGA framebuffer:
+
+	Kernel virtual space from 0x0 to 0x40000000.
+	Available physical space from 0x101000 to 0x100000
+	Mach 3.0 VERSION(PMK1.1): root <>; mach_kernel/PRODUCTION (vm)
+
+PMK1.1 is the OSF branch name that XNU's own revision histories record,
+printed by the kernel we built.
+
+**The console is VGA, not serial.**  `-r` sets `cons_is_com1`, but the
+kernel does not read the multiboot command line yet, so `-append` has
+no effect and every serial capture is empty.  Reading the command line
+is `nmartin0/test_mk7.3` `dev` commit 419e109, still ahead of us.
+Capture the screen with QEMU's monitor instead:
+
+	-monitor unix:/tmp/mon.sock,server,nowait
+	printf 'screendump /tmp/shot.ppm\nquit\n' | socat - UNIX-CONNECT:/tmp/mon.sock
+
+**And the banner shows the next defect.**  "Available physical space
+from 0x101000 to 0x100000" is end below start: no usable RAM.  That is
+the symptom `dev` commit fc55282 describes, and its diagnosis is that
+`i386_init()` runs `bzero` over BSS three calls after
+`parse_multiboot()` has written nine variables into it.
+
+Booting is not working.  The `i386_rpc.c` paths in particular cannot
+execute until a server is collocated.
 
 ## What runs
 
