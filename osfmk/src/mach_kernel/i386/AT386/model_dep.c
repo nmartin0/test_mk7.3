@@ -265,7 +265,18 @@ unsigned int	avail_remaining;
 
 /* parameters passed from GRUB */
 int mb_info_size = sizeof(struct multiboot_info);
-struct multiboot_info mb_info = { 0 };
+/*
+ * AI-ONLY NOTE: the section attribute is required, not decorative.
+ * start.S fills mb_info from %ebx before any C runs, so it must
+ * survive the BSS clear at the top of machine_startup().  Under GCC
+ * 2.7, which Buildconf names as the era compiler, an explicitly
+ * zero-initialized global went to .data and did survive; GCC 3.x
+ * onward places it in .bss (-fzero-initialized-in-bss, on by
+ * default).  OSF recorded the same reliance two lines above, where
+ * the declaration of cnvmem carries the comment
+ * "must be in .data section".
+ */
+struct multiboot_info mb_info __attribute__((section(".data"))) = { 0 };
 extern vm_offset_t boot_start;
 extern vm_size_t boot_size;
 extern vm_offset_t exec_start;
@@ -303,6 +314,24 @@ int		boottype = 0;
 void
 machine_startup(void)
 {
+	/*
+	 * Zero the BSS.
+	 *
+	 * AI-ONLY NOTE: this call was in i386_init(), which runs after
+	 * parse_multiboot() below, so the clear wiped everything
+	 * parse_multiboot() had just written: cnvmem, extmem, mb_module,
+	 * boot_start, boot_size, exec_start, exec_size, kern_args_start
+	 * and kern_args_size, nine variables, all of them .bss.
+	 * i386_init() then read cnvmem and extmem as zero and printed
+	 * "Available physical space from 0x101000 to 0x100000" -- end
+	 * below start, no memory to bootstrap with.
+	 *
+	 * Clearing before touching boot data is ordinary freestanding
+	 * practice; it is what a crt0 does.  The call itself is OSF's,
+	 * moved between two OSF functions and otherwise unchanged.
+	 */
+	bzero((char *)&edata,(unsigned)(&end - &edata));
+
 	/*
 	 * Prepare multiboot information
 	 */
@@ -624,7 +653,6 @@ i386_init(void)
 	/*
 	 * Zero the BSS.
 	 */
-	bzero((char *)&edata,(unsigned)(&end - &edata));
 
 	boot_string = &boot_string_store[0];
 
