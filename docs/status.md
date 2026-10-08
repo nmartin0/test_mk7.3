@@ -1,11 +1,39 @@
 # Where the work stands
 
-**Nothing has been built yet.** Three trees run independently; none of
+**The microkernel builds.** Three trees run independently; none of
 the design work in `docs/roadmap.md` has started. This file is honest
 about that and will be rewritten as soon as it is not true.
 
 `RULES.md` 7.1: an honest account of what is open ships with the work.
 At this point the account is almost entirely open.
+
+## The build
+
+From a clean clone of this branch, with `docs/tools/bootstrap-ode.sh`
+and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
+`sandboxrc.template`:
+
+	cd osfmk/src && sh ../../build_world
+
+| | |
+| --- | --- |
+| `mach_kernel.PRODUCTION` | 1,106,116 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
+| `bootstrap` | 233,788 bytes, same format |
+| errors | 0 |
+| vendor files changed | 8 |
+
+Reproduced four times: during the walk, from a clean clone with the
+changes copied in, from the patch applied to a clean clone, and from
+the pushed branch.
+
+The remaining `build_world` step is `makeboot`, which reports "not
+found".  `setup.sh` does not build it and it is PowerMac-specific:
+AT386 has `conf/AT386/config.makeboot` and a boot path under
+`stand/AT386`, so that step will differ.
+
+**It has never been run.**  "Builds" is not "works", and the
+`i386_rpc.c` paths in particular cannot execute until a server is
+collocated.
 
 ## What runs
 
@@ -89,6 +117,24 @@ ufs/ufs 80.1%, kern 73.6%, nfs 63.5%.
 against `bsd/`.** The maintainer reports `dev3` is more functional than
 stock and fixes many bugs. The delta has not been measured and the
 figures above should not be quoted about this repository until it has.
+
+## Defects found and left, deliberately
+
+Each blocks nothing and sits in a path that cannot be exercised yet.
+Recorded so Tier 1 inherits them rather than rediscovers them.
+
+| where | what |
+| --- | --- |
+| `i386/i386_rpc.c:607` | `"movl %0, %%edx; movl %%edx, %1"` writes `%1`, declared `"g"` input. Identical to the defect that blocked the build; escapes only because `*new_argv` is not a constant |
+| `i386/i386_rpc.c` 195, 411, 464, 521, 567 | each does `addl $4, %N` on an operand declared `"r"` input. GCC may assume inputs unmodified and reuse the register; these want `"+r"` |
+| `mach_services/lib/libmach/sbrk.c:38` | returns `-1` from a function declared `void *`. An unimplemented stub whose body is one `fprintf` |
+| `i386/start.S:354` | suffix/width mismatch inside `#if NCPUS > 1`; PRODUCTION builds `NCPUS 1` so it never reaches the assembler. Left as OSF wrote it |
+
+The whole kernel was scanned for int/pointer confusion by rebuilding
+with `-Wint-conversion`, `-Wpointer-to-int-cast`, `-Wint-to-pointer-cast`
+and `-Wpointer-compare` enabled.  After the eleven sites fixed in
+`kern, vm, intel: use the typed null constants`, exactly one remains:
+`sbrk.c` above.
 
 ## What has not been checked and should be, first
 
