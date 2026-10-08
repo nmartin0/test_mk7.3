@@ -262,11 +262,11 @@ extern void	profile(
 
 #define task_prof_deallocate(task) \
 	if (task->profil_buffer) \
-		task_sample(task, MACH_PORT_NULL); \
+		task_sample(task, IP_NULL); \
 
 #define act_prof_deallocate(thr_act) \
 	if (thr_act->act_profiled_own && thr_act->profil_buffer)  \
-		thread_sample(thr_act, MACH_PORT_NULL); \
+		thread_sample(thr_act, IP_NULL); \
 
 extern kern_return_t thread_sample(thread_act_t, ipc_port_t);
 extern kern_return_t task_sample(task_t, ipc_port_t);
