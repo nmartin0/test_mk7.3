@@ -263,6 +263,31 @@ other.
 
 ---
 
+## 6a. What the first build taught
+
+Three instrument errors, all mine, all in one session.  They are listed
+because the pattern is the same each time and it is the pattern this
+file exists to catch.
+
+**`grep -m1` on a conditional config file.**  Checking `Buildconf` for
+`ELF_CC_EXEC_PREFIX` returned the general line at 118 and appeared to
+contradict the claim.  The i386-on-Linux override is at 152.  A config
+file written as a cascade cannot be checked with a first-match grep.
+
+**Reading `rc=0` as success.**  A test of whether `object_base` could
+be redirected returned 0 and produced a two-line log saying "No such
+directory: ../obj/at386".  The build never started.  The headers
+counted afterwards were left from an earlier run.
+
+**Counting a diagnostic by its quoted source text.**  `grep -c
+'IN_KERNEL definition'` reported 8 after the fix, because
+`-Wtraditional` warns *about* the `#error` line and quotes it.  The
+directive was dead.  Grep for the diagnostic class, not for text that
+appears in the source.
+
+And one destructive error: a scratch `rm -rf "$REPO/osfmk/export"`
+deleted 240 vendor files.  `docs/provenance/pristine.md` records it.
+
 ## 7. Standing facts worth not rediscovering
 
 - **Patience's mechanisms are already in OSFMK 7.3.** `EXC_SYSCALL`
