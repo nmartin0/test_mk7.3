@@ -17,7 +17,7 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 
 | | |
 | --- | --- |
-| `mach_kernel.PRODUCTION` | 1,021,472 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
+| `mach_kernel.PRODUCTION` | 1,021,600 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 233,788 bytes, same format |
 | errors | 0 |
 | vendor files changed | 8 |
@@ -54,11 +54,59 @@ Capture the screen with QEMU's monitor instead:
 	-monitor unix:/tmp/mon.sock,server,nowait
 	printf 'screendump /tmp/shot.ppm\nquit\n' | socat - UNIX-CONNECT:/tmp/mon.sock
 
-**And the banner shows the next defect.**  "Available physical space
-from 0x101000 to 0x100000" is end below start: no usable RAM.  That is
-the symptom `dev` commit fc55282 describes, and its diagnosis is that
-`i386_init()` runs `bzero` over BSS three calls after
-`parse_multiboot()` has written nine variables into it.
+The kernel now probes hardware and initialises the VM system:
+
+	Available physical space from 0x100000 to 0x3fe0000
+	vm_page_bootstrap: 14705 free pages
+	adjusting delay count: 10 4 10 42 105 150 164 179 187 177 181
+	fdc0, fd0, fd1, kd0, com0, vga0 probed
+	realtime clock configured
+	battery clock configured
+	intnull(14)
+	panic: splx(old 41, new 8): logic error in locore.s
+
+## The splx panic, and what is established about it
+
+**`splx` is correct.**  The panic message's labels are reversed, which
+is why it reads as nonsense.  From the built binary:
+
+	00159eba <splxpanic>:
+	  push   0x1e0a08      curr_ipl   -> third argument
+	  push   %eax          argument   -> second argument
+	  push   $0x1d0a60     format     -> first argument
+	  call   panic
+
+cdecl pushes right to left, so the format's first `%x` is `%eax` and
+its second is `curr_ipl`.  The format is `"splx(old %x, new %x)"`, so
+printed **old** is the argument passed to `splx` and printed **new** is
+the current IPL.
+
+The range check closes it:
+
+	mov  0x4(%esp),%eax      %eax IS the argument
+	cmp  $0x0,%eax
+	jl   splxpanic
+	cmp  $0x8,%eax           SPLHI is literally 8
+	ja   splxpanic
+
+`NIPSC386` is 0, so `SPLHI = IPLHI = 8`.  If printed `new` were `%eax`
+then `%eax` would be 8, and neither `jl` nor `ja` could fire.  The
+panic happened, so printed `new` is not `%eax`.
+
+So a caller is passing an out-of-range IPL and `splx` is rejecting it
+correctly.
+
+**The value is not deterministic.**  Five boots of one binary gave
+`old 41` and `old a`; the `adjusting delay count:` line differs per run
+as well, which is a timer calibration loop and the visible source of
+the variation.  `nmartin0/test_mk7.3` `dev` records the same thing --
+0x91, 0x57, 0x3f, 0x18, 0x4b and 0x17 from one binary -- and lost three
+rounds of work to comparing two measurements taken in different boots
+as though they came from one.
+
+**Not established: which caller.**  `intnull(14)`, the default handler
+for an unhandled IRQ 14, precedes the panic in every run.  That is
+suggestive and nothing more.
 
 Booting is not working.  The `i386_rpc.c` paths in particular cannot
 execute until a server is collocated.
