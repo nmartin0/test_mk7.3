@@ -213,10 +213,20 @@ machine_rpc_simple(
 	 * for temporary storage; use a callee-saves register instead.
 	 */
 	__asm__ volatile(
-		"movl %0, %%ebx; xchgl %%ebx,%%esp; \
-			call %1; movl %%ebx,%%esp; movl %%eax,%2"
-		: /* no outputs */
-		: "g" (new_sp), "r" (server_func), "g" (kr)
+		/* AI-ONLY NOTE: kr moved from inputs to outputs, and the
+		 * call made explicitly indirect.  The asm writes kr with
+		 * "movl %%eax,...", but it was declared an input, so GCC
+		 * treated it as read-only, constant-folded it (0 here) and
+		 * emitted "movl %%eax,$0" -- a store to an immediate.  GCC
+		 * 2.7 happened to allocate a register and the defect never
+		 * showed.  Operands renumbered because outputs are numbered
+		 * first.  "call *%2" is the correct AT&T spelling for a call
+		 * through a register; without the "*" gas warns "indirect
+		 * call without `*'" and guesses.  Compile-blocking. */
+		"movl %1, %%ebx; xchgl %%ebx,%%esp; \
+			call *%2; movl %%ebx,%%esp; movl %%eax,%0"
+		: "=g" (kr)
+		: "g" (new_sp), "r" (server_func)
 		: "%ebx", "%eax", "%ecx", "%edx", "cc", "memory");
 	mp_enable_preemption();
 
@@ -305,10 +315,10 @@ vm_map_t port_name_to_map(mach_port_t);
 
 #define klkernel_call(entry, ksp, rv)                                   \
         __asm__ volatile(                                               \
-                "movl %0,%%ebx;                                         \
+                "movl %1,%%ebx;                                         \
                  xchgl %%ebx,%%esp;                                     \
                  call " CC_SYM_PREFIX entry ";                          \
-                 movl %%eax,%1;                                         \
+                 movl %%eax,%0;                                         \
               8: cmpl $0," CC_SYM_PREFIX "need_ast;                     \
                  je 9f;                                                 \
                  pushl $0;                                              \
@@ -316,8 +326,8 @@ vm_map_t port_name_to_map(mach_port_t);
                  addl $4,%%esp;                                         \
                  jmp 8b;                                                \
               9: movl %%ebx,%%esp"                                      \
-                : /* no outputs */                                      \
-                : "g" (ksp), "g" (rv)                                   \
+                : "=g" (rv)            /* see AI-ONLY NOTE above */    \
+                : "g" (ksp)                                             \
                 : "%ebx", "%eax", "%ecx", "%edx", "cc", "memory")
 
 #else	/* NCPUS > 1 */
@@ -336,11 +346,11 @@ vm_map_t port_name_to_map(mach_port_t);
 MACRO_BEGIN                                                             \
 	/* On MP, preemption is disabled at this point */		\
         __asm__ volatile(                                               \
-                "movl %0,%%ebx;                                         \
+                "movl %1,%%ebx;                                         \
                  xchgl %%ebx,%%esp;                                     \
 		 " CALL_MP_ENABLE_PREEMPTION "				\
                  call " CC_SYM_PREFIX entry ";                          \
-                 movl %%eax,%1;                                         \
+                 movl %%eax,%0;                                         \
               8: " CALL_MP_DISABLE_PREEMPTION "				\
 		 call " CC_SYM_PREFIX "_cpu_number;			\
 		 cmpl $0," CC_SYM_PREFIX "need_ast(,%%eax,4);           \
@@ -351,8 +361,8 @@ MACRO_BEGIN                                                             \
                  addl $4,%%esp;                                         \
                  jmp 8b;                                                \
               9: movl %%ebx,%%esp"                                      \
-                : /* no outputs */                                      \
-                : "g" (ksp), "g" (rv)		                        \
+                : "=g" (rv)            /* see AI-ONLY NOTE above */    \
+                : "g" (ksp)		                                \
                 : "%ebx", "%eax", "%ecx", "%edx", "cc", "memory");      \
 	/* On MP, preemption is still disabled */			\
 MACRO_END
