@@ -153,7 +153,14 @@ extern __inline__ unsigned short inw(
 				i386_ioport_t port)
 {
 	unsigned short datum;
-	__asm__ volatile(".byte 0x66; inl %1, %0" : "=a" (datum) : "d" (port));
+	/* AI-ONLY NOTE: was ".byte 0x66; inl %1, %0".  The 0x66 operand-size
+	 * prefix was hand-emitted in front of a 32-bit instruction while the
+	 * "a" constraint supplies the 16-bit %ax, and modern gas rejects the
+	 * mismatch: "incorrect register `%ax' used with `l' suffix".  The w
+	 * suffix IS that prefix, so "inw" is the same instruction spelled
+	 * correctly.  Verified identical: both assemble to 66 ed.
+	 * Compile-blocking. */
+	__asm__ volatile("inw %1, %0" : "=a" (datum) : "d" (port));
 	return(datum);
 }
 
@@ -176,7 +183,9 @@ extern __inline__ void outw(
 				i386_ioport_t port,
 				unsigned short datum)
 {
-	__asm__ volatile(".byte 0x66; outl %0, %1" : : "a" (datum), "d" (port));
+	/* AI-ONLY NOTE: was ".byte 0x66; outl %0, %1"; see inw above.
+	 * Verified identical: both assemble to 66 ef.  Compile-blocking. */
+	__asm__ volatile("outw %0, %1" : : "a" (datum), "d" (port));
 }
 
 extern __inline__ void outb(
