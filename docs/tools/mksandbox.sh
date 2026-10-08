@@ -124,6 +124,44 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # which emits calls to __stack_chk_fail_local.  That lives in libssp and
 # a freestanding kernel has no such library.
 #
+# -fno-pic: REQUIRED TO RUN, and nothing in the build complains without
+# it.  Modern distro gcc defaults to -fPIE.  A kernel is loaded at a
+# fixed address and has no dynamic linker, so every GOT-relative access
+# is garbage.  Without this flag the kernel links with zero undefined
+# symbols and then faults in Switch_context, recurses inside
+# t_page_fault and resets: 15,377 page faults and 2 CPU resets before
+# the first line of output.  With it: zero faults, zero resets, and the
+# banner appears.
+#
+# OSF never asks for PIC, which is what makes this a restoration of
+# their configuration rather than an addition to it.  osf.gcc.mk lines
+# 165-180 leave _ELF_PIC_ empty unless shared libraries are being
+# built, and Buildconf line 158 forces it empty on Linux regardless:
+#
+#	on_os linux replace setenv _ELF_PIC_ ""
+#
+# So there is no vendor hook to reach for: the PIC comes from a
+# compiler default that postdates the vendor by two decades.  Measured
+# after adding it: get_pc_thunk symbols 7 -> 0, objects referencing the
+# GOT 177 of 206 -> 1, kernel 1,106,116 -> 1,021,472 bytes.
+#
+# -fno-strict-aliasing: insurance, and the distinction is deliberate.
+# At -O2 gcc assumes accesses through different types do not alias.
+# Measured here: kern/ipc_kobject.c generates different code with and
+# without the flag, so the optimiser IS making aliasing assumptions in
+# this tree.  That is not the same as the code violating them, which
+# has not been demonstrated.  FreeBSD's sys/conf/kern.pre.mk appends
+# this flag whenever COPTFLAGS holds -O[23s] and it is missing, and
+# Linux has carried it in kernel CFLAGS since 2.4 -- both conclusions
+# drawn from long experience with code of exactly this vintage.
+#
+# NOT added, because they were measured and produce nothing:
+# -fcf-protection=none and -fno-stack-clash-protection.  gcc 13.3.0
+# enables -fcf-protection=full and -fstack-clash-protection by default
+# on this host, and the built kernel contains zero endbr32 instructions
+# and zero stack probes.  Adding flags for problems that do not occur
+# is speculative work.
+#
 # -Wno-error=overflow: MIG's generated servers set a polymorphic
 # disposition to ((mach_msg_type_name_t) -1) in an 8-bit field, which
 # truncates to 255.  Deliberate, and the files are regenerated so they
@@ -137,7 +175,7 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # is what surfaced eight genuine type confusions in this tree, each of
 # which is now fixed rather than silenced.
 #
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -Wno-error=overflow -Wno-endif-labels"
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -Wno-error=overflow -Wno-endif-labels"
 
 #
 # NO_STRICT_ANSI: a hook osf.gcc.mk line 94 provides --
