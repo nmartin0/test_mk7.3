@@ -496,7 +496,7 @@ Entry(start_timer)
 	movl	MAP_PMAP(%ecx),%ecx	/* get map's pmap */		;\
 	cmpl	kernel_pmap, %ecx	/* If kernel loaded task */	;\
 	jz	1f			/* use kernel data segment */	;\
-	movl	$USER_DS,%cx		/* else use user data segment */;\
+	movl	$USER_DS,%ecx		/* else use user data segment */;\
 	mov	%cx,%es							;\
 1:									;\
 	movl	$R_UESP,%ecx						;\
@@ -813,9 +813,14 @@ trap_push_segs:
 	pushl	%gs
 
 trap_set_segs:
-	movl	%ss,%ax
-	movl	%ax,%ds
-	movl	%ax,%es			# switch to kernel data seg
+	/* AI-ONLY NOTE: %ax -> %eax. GNU as 2.42 rejects movl with a
+	 * 16-bit register. Suffix and encoding are unchanged
+	 * (8c d0 / 8e d8 / 8e c0); only the register name is
+	 * corrected. movw would have added a 66 prefix the original
+	 * never had. Compile-blocking. */
+	movl	%ss,%eax
+	movl	%eax,%ds
+	movl	%eax,%es			# switch to kernel data seg
 	cld				/* clear direction flag */
 	testl	$(EFL_VM),R_EFLAGS(%esp) /* in V86 mode? */
 	jnz	trap_from_user		/* user mode trap if so */
@@ -2065,7 +2070,7 @@ syscall_emul:
 	subl	$8,%edi			/* push space for new arguments */
 	cmpl	$(VM_MIN_ADDRESS),%edi	/* still in user space? */
 	jb	syscall_addr		/* error if not */
-	movl	$USER_DS,%ax		/* user data segment access */
+	movl	$USER_DS,%eax		/* user data segment access */
 1:
 	mov	%ax,%fs
 	movl	R_EFLAGS(%ebx),%eax	/* move flags */
@@ -2144,7 +2149,7 @@ ENTRY(copyin)
 	movl	MAP_PMAP(%ecx),%ecx		/* get map->pmap */
 	cmpl	kernel_pmap, %ecx
 	jz	1f
-	movl	$USER_DS,%cx		/* user data segment access */
+	movl	$USER_DS,%ecx		/* user data segment access */
 	mov	%cx,%ds
 1:
 	cmpl	%esi,%eax
@@ -2200,7 +2205,7 @@ Entry(copyinstr)
 	mov	%ds,%cx			/* kernel data segment access */
 	jmp	1f
 0:
-	movl	$USER_DS,%cx		/* user data segment access */
+	movl	$USER_DS,%ecx		/* user data segment access */
 1:
 	mov	%cx,%fs
 	xorl	%eax,%eax
@@ -2208,11 +2213,11 @@ Entry(copyinstr)
 	je	4f
 2:
 	RECOVER(copystr_fail)		/* copy bytes... */
-	movb	%fs:(%esi),%eax
+	movb	%fs:(%esi),%al
 	incl	%esi
 	testl	%edi,%edi		/* if kernel address is ... */
 	jz	3f			/* not NULL */
-	movb	%eax,(%edi)		/* copy the byte */
+	movb	%al,(%edi)		/* copy the byte */
 	incl	%edi
 3:
 	decl	%edx
@@ -2263,7 +2268,7 @@ ENTRY(copyout)
 	mov	%ds,%cx			/* else kernel data segment access */
 	jmp	1f
 0:
-	movl	$USER_DS,%cx
+	movl	$USER_DS,%ecx
 1:
 	mov	%cx,%es
 
@@ -2290,7 +2295,7 @@ copyout_retry:
 	movl	%edi,%ebx		/* ebx = edi; */
 
 	mov	%es,%cx		
-	cmpl	$USER_DS,%cx		/* If kernel data segment */
+	cmpl	$USER_DS,%ecx		/* If kernel data segment */
 	jnz	0f			/* skip check */
 
 #if	defined(AT386) && defined(i386)
@@ -2874,13 +2879,13 @@ ENTRY(dr3)
 
 	movzbl	B_ARG1, %eax
 	andb	$3, %al
-	addb	$0x10, %ecx
+	addb	$0x10, %cl
 	shll	%cl, %eax
 	orl	%eax, %edx
 
 	movzbl	B_ARG2, %eax
 	andb	$3, %al
-	addb	$0x2, %ecx
+	addb	$0x2, %cl
 	shll	%cl, %eax
 	orl	%eax, %edx
 
