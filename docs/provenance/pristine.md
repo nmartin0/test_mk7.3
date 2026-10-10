@@ -60,6 +60,43 @@ commit against the vendor import is of this kind: `fb0c4d5` adds
 `-fno-strict-aliasing` and `-fno-pic`, with `nm` evidence for the
 second and a measured 61,844 bytes removed from the server.
 
+### The per-target `_CFLAGS` hook, for one object file
+
+`makedefs/osf.std.mk` line 330 composes every compile as
+
+	${${.TARGET}_CFLAGS:U${CFLAGS}}
+
+so defining `<object>.o_CFLAGS` gives one object its own flags.  **OSF
+uses this itself**, eleven times, in `mach_kernel/conf/template.mk`:
+
+	MIG_CFLAGS=-Dmig_internal= -DTypeCheck=0
+	bootstrap_server.o_CFLAGS+=${CFLAGS} ${MIG_CFLAGS}
+
+Prefer it to a kernel-wide flag when a change is a property of one
+file.  Two things it costs, both learned the hard way:
+
+- `${CFLAGS}` must be repeated, because defining the target variable
+  suppresses the `:U${CFLAGS}` default.
+- It **cannot** be set from `Buildconf.local`.  `setenv` goes through
+  the shell, and a name containing a dot is not a valid shell variable
+  name -- `dash` discards it silently and the flag never arrives.
+  Tested: the build completed with zero occurrences of the flag in the
+  log.  It has to be a make variable, so `template.mk` is where it
+  goes.
+
+The one use so far is `hardclock.o_CFLAGS`, and the three alternatives
+were built and measured before it was chosen:
+
+| option | vendor files | text size | why not |
+|---|---|---|---|
+| `template.mk` per-object hook | 1 (`conf/template.mk`) | 818,058 | **chosen** |
+| `__attribute__((optimize))` on the function | 1 (`i386/hardclock.c`) | 818,058 | a source change where configuration serves; GCC documents the attribute as debugging-only and Linux removed it from their tree for dropping command-line flags. Tested here: under GCC 13.3 it kept `-fno-pic` and `-fno-stack-protector`, so the risk is latent and version-dependent, not present |
+| `-fno-optimize-sibling-calls` in `CARGS` | 0 | 821,398 | the only option with no vendor change at all, and immune to any asm-to-C contract the audit missed -- but it disables a legitimate optimization in ~118 functions to fix one, and buries the reason in a flag string |
+| hook plus a pointer comment in the `.c` | 2 | 818,058 | defensible; declined because the point of the hook is keeping that file byte-identical, and a comment that exists only to apologise for a makefile undercuts it |
+
+Pristine for comparison, with the sibling call present: 818,090 bytes
+of text.
+
 **3. A symlink out of the tree.**
 
 Where a build insists on writing inside the source directory, the path

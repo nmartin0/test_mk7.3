@@ -18,9 +18,10 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 | | |
 | --- | --- |
 | `mach_kernel.PRODUCTION` | 1,021,600 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
-| `bootstrap` | 233,788 bytes, same format |
+| `bootstrap` | 220,656 bytes, same format |
 | errors | 0 |
-| vendor files changed | 8 |
+| vendor files modified | 11, with 165 insertions and 43 deletions against `f8fee21` |
+| kernel text | 818,058 bytes |
 
 Reproduced four times: during the walk, from a clean clone with the
 changes copied in, from the patch applied to a clean clone, and from
@@ -63,53 +64,106 @@ The kernel now probes hardware and initialises the VM system:
 	realtime clock configured
 	battery clock configured
 	intnull(14)
-	panic: splx(old 41, new 8): logic error in locore.s
 
-## The splx panic, and what is established about it
+It then loads the boot module, parses its ELF, creates the task and
+resumes it:
 
-**`splx` is correct.**  The panic message's labels are reversed, which
-is why it reads as nonsense.  From the built binary:
+	Looking for program sections
+	Found text region
+	Found data region
+	I've found: 2 sections
+	task loaded:check1 / check2 / check3
+	argv[0]: exec.static
 
-	00159eba <splxpanic>:
-	  push   0x1e0a08      curr_ipl   -> third argument
-	  push   %eax          argument   -> second argument
-	  push   $0x1d0a60     format     -> first argument
-	  call   panic
+The `splx` panic that used to stop the boot here is fixed; the section
+below records the diagnosis, because the method is worth more than the
+one-line fix.
 
-cdecl pushes right to left, so the format's first `%x` is `%eax` and
-its second is `curr_ipl`.  The format is `"splx(old %x, new %x)"`, so
-printed **old** is the argument passed to `splx` and printed **new** is
-the current IPL.
+## The splx panic: diagnosis, and the fix
 
-The range check closes it:
+**Fixed.**  The defect was in neither `splx` nor `spl.S`.  It was GCC
+rewriting the timer interrupt's stack frame.
 
-	mov  0x4(%esp),%eax      %eax IS the argument
-	cmp  $0x0,%eax
-	jl   splxpanic
-	cmp  $0x8,%eax           SPLHI is literally 8
-	ja   splxpanic
+`hardclock` is declared with four parameters but is reached through the
+generic interrupt dispatcher, which pushes only one of them:
 
-`NIPSC386` is 0, so `SPLHI = IPLHI = 8`.  If printed `new` were `%eax`
-then `%eax` would be 8, and neither `jl` nor `ja` could fire.  The
-panic happened, so printed `new` is not `%eax`.
+	i386/AT386/pic_isa.c   take_irq(pic, 0, SPLHI, (intr_t)hardclock)
+	i386/interrupt.S:290   pushl %eax             <- the saved IPL
+	                       pushl iunit(,%ecx,4)   <- the one argument
+	                       call  *ivect(,%ecx,4)
 
-So a caller is passing an out-of-range IPL and `splx` is rejecting it
-correctly.
+`old_ipl` is therefore read from the slot the dispatcher pushed,
+`ret_addr` from the call's own return address, and `regs` from the
+interrupt frame beneath.  The aliasing is deliberate and reading
+through it is correct.  Writing through it is not: GCC turns
+`hardclock`'s trailing call to `hertz_tick` into a sibling call and
+rebuilds the outgoing arguments in the incoming argument area, which
+the C calling convention entitles it to assume it owns.  One of those
+slots is the dispatcher's saved IPL.  `return_from_interrupt` pops the
+wreckage and hands it to `set_spl_noi`, which stores it into
+`curr_ipl` unchecked.
 
-**The value is not deterministic.**  Five boots of one binary gave
-`old 41` and `old a`; the `adjusting delay count:` line differs per run
-as well, which is a timer calibration loop and the visible source of
-the variation.  `nmartin0/test_mk7.3` `dev` records the same thing --
-0x91, 0x57, 0x3f, 0x18, 0x4b and 0x17 from one binary -- and lost three
-rounds of work to comparing two measurements taken in different boots
-as though they came from one.
+GCC 2.7.2.1, the compiler `Buildconf` names, had no sibling-call
+optimization, so the contract held for thirty years.  **This is a
+change in compiler behaviour, not a defect in OSF's code.**
 
-**Not established: which caller.**  `intnull(14)`, the default handler
-for an unhandled IRQ 14, precedes the panic in every run.  That is
-suggestive and nothing more.
+Caught with a hardware watchpoint on the slot itself.  Four writes in
+the whole boot:
 
-Booting is not working.  The `i386_rpc.c` paths in particular cannot
-execute until a server is collocated.
+	slot <- 0x154d79   eip=0x159e78   call set_spl pushing its return
+	slot <- 0x0        eip=0x154d7a   push %eax, the saved IPL, valid
+	slot <- 0x121641   eip=0x154111   hardclock, the poisoning write
+	slot <- 0x154d9a   eip=0x159ecc   call set_spl_noi, after the pop
+
+Fixed with the per-target `_CFLAGS` hook in
+`mach_kernel/conf/template.mk`, which is OSF's own mechanism in OSF's
+own file, so `i386/hardclock.c` stays byte-identical to the import.
+See `docs/provenance/pristine.md` for the three alternatives that were
+measured and declined.
+
+### Two things this investigation ruled out
+
+Both had been suspected here and both are innocent.  They are recorded
+so they are not re-suspected.
+
+**`splsched()` is correct.**  It is not a separate routine: with
+`MACH_KPROF` off, `splclock`, `splvm`, `splsched`, `splhigh` and
+`splhi` are five labels on one address, `0x159e38`, and the body is
+
+	cli
+	mov  curr_ipl,%eax      return the full 32-bit prior value
+	movl $0x8,curr_ipl
+	ret
+
+It returned exactly what `curr_ipl` held.  `curr_ipl` was already
+poisoned.
+
+**`spl_t` being `unsigned char` is a red herring.**  `i386/spl.h:35`
+types it one byte wide while the assembly moves 32-bit words, so
+`install_special_handler`'s `movzbl %al,%ebx` truncates.  That is real,
+but it is not a defect: `curr_ipl` holds 0..8, which fits in a byte.
+It mattered only during diagnosis, where it hid the high bytes and made
+every bad value look byte-sized.  No change is warranted.
+
+**`splx`'s panic labels are still reversed**, and that is worth
+keeping in mind when reading older logs.  cdecl pushes right to left,
+so in `"splx(old %x, new %x)"` the printed **old** is the argument
+passed to `splx` and the printed **new** is the current IPL.
+
+### The completeness check
+
+The same pattern is legal and common in C -- 118 functions in the
+linked image write at or above argument two and end in a sibling call.
+It is a defect only where the caller is hand-written assembly that
+still owns those slots.  Every C function reachable from assembly was
+enumerated from the `.S` files and from `mach_trap_table`, and
+intersected with that set.
+
+**`hardclock` is the only one.**  Everything else either discards its
+arguments (`addl $N,%esp` -- `i386_astintr` at all four call sites,
+and every other `ivect[]` handler) or abandons the frame wholesale
+(`skip_syscall` recomputes `%esp` from the kernel stack base, which
+covers `mach_msg_overwrite_trap`).
 
 ## What runs
 
