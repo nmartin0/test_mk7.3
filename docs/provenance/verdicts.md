@@ -99,11 +99,24 @@ first.
 | 10 | `321cbc0` | i386/i386_rpc.c: declare written asm as outputs | adopt extended | The diagnosis is right and sharper than ours — GCC constant-folded the operand and emitted `movl %eax,$0`. Extended here: the indirect `call %1` wants `call *%1`, which `dev` left as a warning. Two further defects of the same class found in the same file and deliberately left, both recorded. |
 | 11 | `a5c4cec` | keep zero-init globals out of BSS | **declined** | Reverted by `dev` itself in `091e475`. Nothing to adopt; the reasoning on both sides is worth reading when BSS comes up. |
 | 12 | `091e475` | Revert of 11 | **declined** | See above. |
+| 20 | `f4a62b6` | i386/hardclock.c: stop GCC rewriting the interrupt frame | adopt reworked | Diagnosis independently reproduced here before the commit was opened, by the same method: a hardware watchpoint on the clobbered slot, three matching writes at different addresses. The remedy differs. `dev` used `__attribute__((optimize("no-optimize-sibling-calls")))` on the function; this tree uses `hardclock.o_CFLAGS` in `conf/template.mk`, which is OSF's own hook used eleven times in that same file, so `i386/hardclock.c` stays byte-identical to the import. Both were built and both remove the poisoning writes. Completeness also differs: `dev` spot-checked a handful of `ivect[]` handlers; this tree derives it from the linked image. See `pristine.md` for the four options and their measured sizes. |
 | — | `7a4e86d` | Port CMU's mach_init, notices intact | **decline in advance** | Installs CMU's `mach_init` into `MACH3_ROOT_SERVERS_IDIR` "alongside default_pager and the bootstrap task" — two bootstrap mechanisms where the kernel calls one. `kern/bootstrap.c:288` hard-codes `/mach_servers/bootstrap`. Its findings about LITES never reading `ports[SERVICE_SLOT]` are worth keeping. |
 
 ## Standing notes for the walk
 
 Recorded in advance, so the first batch does not rediscover them.
+
+**`94f8e25` is already settled, by the `f4a62b6` investigation.** It
+declares `curr_ipl` as `int` in `i386/AT386/lpr.c`, matching
+`i386/pic.c:162`'s `int curr_ipl[NCPUS]` against that file's
+`extern spl_t curr_ipl[]`. The diagnosis is right and the fix is
+right, but **`lpr.c` is not in the AT386 PRODUCTION configuration**,
+so nothing here compiles it. The same wrong-width declaration exists
+in `kern/sched_prim.c:2560`, which *is* configured -- but its only use,
+at line 2580, sits inside `#if 0`. So the construct is dead in both
+places. Expect `defer`, not `adopt`, when the walk reaches it; it
+becomes live only if either file is configured in.
+
 
 **`dev` and `dev3` have different goals.** `dev` was reaching a booting
 microkernel with Lites on top, and took the shortest honest path.

@@ -129,6 +129,47 @@ ledger_server.o_CFLAGS+=${CFLAGS} ${MIG_CFLAGS}
 monitor_server.o_CFLAGS+=${CFLAGS} ${MIG_CFLAGS}
 
 #
+# AI-ONLY NOTE: hardclock must not be compiled with sibling-call
+# optimization.
+#
+# hardclock is declared with four parameters but is reached through the
+# generic interrupt dispatcher, which pushes only one of them:
+#
+#	i386/AT386/pic_isa.c   take_irq(pic, 0, SPLHI, (intr_t)hardclock)
+#	i386/interrupt.S:290   pushl %eax             <- the saved IPL
+#	                       pushl iunit(,%ecx,4)   <- the one argument
+#	                       call  *ivect(,%ecx,4)
+#
+# old_ipl is therefore read from the slot the dispatcher pushed,
+# ret_addr from the call's own return address, and regs from the
+# interrupt frame beneath.  That aliasing is deliberate, and reading
+# through it is correct.
+#
+# Writing through it is not.  GCC turns the trailing call to hertz_tick
+# into a sibling call and rebuilds the outgoing arguments in the
+# incoming argument area, which the C calling convention entitles it to
+# assume it owns:
+#
+#	mov %edx,0x24(%esp)   <- argument two: the dispatcher's saved IPL
+#	mov %eax,0x20(%esp)   <- argument one: hardclock's own, harmless
+#	jmp hertz_tick
+#
+# return_from_interrupt pops that slot and hands it to set_spl_noi,
+# which stores it into curr_ipl with no bounds check.  Every spl the
+# kernel produces afterwards is garbage and splx panics on the first
+# one it checks.  GCC 2.7.2.1, the compiler Buildconf names, had no
+# sibling-call optimization, so the contract held.  This is a change in
+# compiler behaviour, not a defect in OSF's code.
+#
+# Expressed with the per-target _CFLAGS hook the MiG block above uses,
+# which is OSF's own mechanism in OSF's own file, so that
+# i386/hardclock.c stays byte-identical to the vendor import.
+# ${CFLAGS} is repeated because defining the target variable suppresses
+# the :U${CFLAGS} default in makedefs/osf.std.mk line 330.
+#
+hardclock.o_CFLAGS+=${CFLAGS} -fno-optimize-sibling-calls
+
+#
 #  These macros are filled in by the config program depending on the
 #  current configuration.  The MACHDEP macro is replaced by the
 #  contents of the machine dependent makefile template and the others
