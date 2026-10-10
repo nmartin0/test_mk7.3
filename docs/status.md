@@ -65,8 +65,8 @@ The kernel now probes hardware and initialises the VM system:
 	battery clock configured
 	intnull(14)
 
-It then loads the boot module, parses its ELF, creates the task and
-resumes it:
+It then loads the boot module, parses its ELF, creates the task,
+resumes it, and starts the second one:
 
 	Looking for program sections
 	Found text region
@@ -74,10 +74,20 @@ resumes it:
 	I've found: 2 sections
 	task loaded:check1 / check2 / check3
 	argv[0]: exec.static
+	task loaded:check1 / check2 / check3
+	task_resume entry
+	after task resume
+	start ext2fs.static:
 
-The `splx` panic that used to stop the boot here is fixed; the section
-below records the diagnosis, because the method is worth more than the
-one-line fix.
+Over a fixed 15 second run, measured with `qemu -d int`:
+
+	18 page faults, 28 interrupt records in total
+
+which is what demand paging for a running user task looks like.
+
+Two defects had to go before it got this far, and they were
+independent of each other: the `splx` panic, and an unbounded read of
+the multiboot module array.  Both are below.
 
 ## The splx panic: diagnosis, and the fix
 
@@ -164,6 +174,53 @@ arguments (`addl $N,%esp` -- `i386_astintr` at all four call sites,
 and every other `ivect[]` handler) or abandons the frame wholesale
 (`skip_syscall` recomputes `%esp` from the kernel stack base, which
 covers `mach_msg_overwrite_trap`).
+
+## The multiboot module array, read unbounded
+
+**Fixed.**  `parse_multiboot()` read `mb_module[0]` and `mb_module[1]`
+without consulting either `mb_info.flags` or `mb_info.mods_count`.
+This tree's own `i386/multiboot.h` is the authority against it, twice:
+
+	:102  "List of boot modules loaded with the kernel.  Valid only
+	       if MULTIBOOT_MODS is set in flags word above."
+	:146  "The mods_addr field above contains the physical address
+	       of the first of 'mods_count' multiboot_module structures."
+
+With one module supplied, which is how this kernel is booted,
+`mb_module[1]` is past the end of the array.  Measured at the end of
+`parse_multiboot`:
+
+	                before              after
+	mods_count      1                   1
+	boot_start      0x200000            0x200000
+	boot_size       220656              220656
+	exec_start      0x706d742f          0
+	exec_size       -1091240192         0
+
+`0x706d742f` is ASCII `/tmp`: the QEMU command line read as a module
+descriptor.  Those two feed `kern/bootstrap.c:1239` directly --
+`boot_script_parse_line(exec_start, exec_size, "exec.static ...")` --
+and the result was a page-fault storm:
+
+	                page faults / 15s   interrupt records
+	before          1,619,177           1,620,661
+	after           18                  28
+
+`boot_start` and `boot_size` were always correct, so the first boot
+script line worked and the console looked healthy up to
+`argv[0]: exec.static`.  The storm began after that and produced no
+further output, which is why it was briefly mistaken here for the
+kernel simply stopping.
+
+**A measurement that does not carry over.**  `nmartin0/test_mk7.3`
+`dev` commit `a77f81b` reports 0 faults for the one-module case both
+before and after its fix.  That is correct for `dev`'s tree at that
+point and wrong for ours.  `dev` still had the `splx` panic then, so
+its kernel halted before reaching `bootstrap.c:1239` and the garbage
+was never consumed.  This branch took the `hardclock` fix first, so
+the kernel reaches that line and the storm appears.  The order the two
+were adopted in changed what the instrument shows -- which is the
+argument for re-measuring rather than inheriting a number.
 
 ## What runs
 

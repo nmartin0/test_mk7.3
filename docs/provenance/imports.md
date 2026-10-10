@@ -85,7 +85,14 @@ closest to our kernel. Moving forward is moving away.
 Evidence inside the tree or in the upstream's own history; no other
 system needed.
 
-*(none yet)*
+| what | the upstream's own evidence |
+|---|---|
+| `i386/AT386/model_dep.c`, `parse_multiboot` bounded by `mods_count` and `MULTIBOOT_MODS` | `i386/multiboot.h:102` "Valid only if MULTIBOOT_MODS is set in flags word above" and `:146` "the physical address of the first of 'mods_count' multiboot_module structures" — the header three files away states both constraints the code broke |
+
+**The first entry of this kind, and it was nearly filed as something
+weaker.** `dev`'s version of the same fix cites the multiboot
+specification, an outside document. The tree had the answer, which is
+what `audit.md` exists to catch.
 
 ## B -- corrected following another tree's line
 
