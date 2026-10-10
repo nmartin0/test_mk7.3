@@ -212,6 +212,81 @@ received nothing" is weak evidence until the instrument is proved.
 `v=0d e=0010` is a general protection fault against selector 0x10;
 `v=0e` with `CR2` is a page fault and `CR2` is the address.
 
+### Is the failure the same every time?
+
+**Run it three times and compare before reasoning about it.** On a
+non-deterministic failure every value in a chain of argument must come
+from a single stopped guest: stop once, read everything, then
+continue.  Assembling an argument from values captured in separate
+runs is how `nmartin0/test_mk7.3` `dev` concluded that a stack slot
+was being corrupted between two adjacent instructions, which is
+impossible, and lost three rounds to it.  The `splx` panic that
+prompted that rule is fixed, but the rule is general.
+
+### Reading guest memory: the segment base, and where the rule bends
+
+OSFMK relocates the kernel by segmentation, base `0xC0000000`, so a
+link address from `nm` is a segment offset and not a linear address.
+Three facts, each measured on this branch:
+
+- **Breakpoints need the linear address.** `break *0xc0159e38`, not
+  `break *0x159e38`.  A breakpoint at the low address never fires, and
+  that reads exactly like "the kernel never gets there".
+- **Registers are segment offsets too.**  `$esp` of `0x1c9ff4` is
+  linear `0xc01c9ff4`.  Read a stack with `x/8xw $esp + 0xc0000000`.
+- **Low addresses are readable early in boot and not later, and this
+  is the trap.**  `dev`'s `DEBUGGING.md` says memory reads "work at
+  either address, since both map to the same physical page".  That is
+  true while the low identity mapping is still up and false once the
+  kernel's own page tables replace it.  Measured in one run, same
+  binary:
+
+	stopped in parse_multiboot      stopped in a timer interrupt
+	0xc01d6e4c -> 0x1ff03b          0xc01c9ff4 -> 0x154d87
+	0x001d6e4c -> 0x1ff03b          0x001c9ff4 -> Cannot access memory
+
+  A rule that works when you first try it and stops working later is
+  worse than no rule: the failure arrives as "Cannot access memory"
+  and looks like a corrupt pointer.  **Always add the base.**
+
+### Which gdb facilities work against the QEMU stub
+
+**Watchpoints work; prefer them.**  `commands` blocks attached to a
+watchpoint run reliably, which makes them scriptable:
+
+	watch *(int *)0xc01e0a08 if (*(int *)0xc01e0a08 > 8)
+	continue
+
+That instrument found the `hardclock` defect in one run, after a
+disassembly search for writers had missed it -- the poisoning write is
+an ordinary `mov` to a stack slot, which no grep for the variable's
+address would ever show.
+
+**Scripted PC breakpoints are unreliable here.**  Two symptoms seen
+this session, same kernel: a breakpoint set at a linear address fired
+but arrived as `Program received signal SIGTRAP` at the *low* address,
+unattributed, so its `commands` block never ran; and a second attempt
+reported `Cannot execute this command while the target is running`.
+The mechanism was not pinned down and is not worth the time, because
+a watchpoint answers the same questions.  If a PC stop is unavoidable,
+read the result by hand rather than from a `commands` block.
+
+### Tail calls hide the caller
+
+GCC compiles a trailing `splx(s);` into `jmp splx`, so at `splx` the
+return address on the stack belongs to the caller's *caller*.  On this
+branch `[esp]` at `splx` was inside `thread_hold`, which is tempting
+to read as "`thread_hold` called `splx`".  It did not;
+`install_special_handler` tail-jumped and left the frame in place.
+The same shape makes `-d exec` block adjacency misleading: blocks
+logged next to each other may be a tail jump or a fallthrough, not a
+call.
+
+To identify a caller, read `[esp]` at the callee's entry, map it with
+`nm`, then **disassemble that address** and check it is a return site
+from a `call`, and a call to what.  The instruction at a return
+address is the one *after* the call.
+
 ### Is the hardware doing what you think?
 
 For anything timing- or hardware-shaped, a stub under QEMU settles it

@@ -100,12 +100,24 @@ first.
 | 11 | `a5c4cec` | keep zero-init globals out of BSS | **declined** | Reverted by `dev` itself in `091e475`. Nothing to adopt; the reasoning on both sides is worth reading when BSS comes up. |
 | 12 | `091e475` | Revert of 11 | **declined** | See above. |
 | 18 | `a77f81b` | i386/AT386/model_dep.c: bound the module reads by mods_count | adopt reworked | The fix is right and minimal. Reworked for its citation: `dev` argues from the multiboot specification, an outside document, when this tree's own `i386/multiboot.h` says it twice — line 102 "Valid only if MULTIBOOT_MODS is set" and line 146 "the first of 'mods_count' multiboot_module structures". That makes it kind **A** in `imports.md`, upstream corrected to upstream's own intent, which is the most authentic kind and stronger than what the original claimed. All measurements re-taken here; `dev`'s one-module fault counts do not carry over, see `docs/status.md`. |
+| 19 | `26c449a` | Add WORKFLOW.md; record non-determinism and correct the splx diagnosis | adopt reworked | Documentation and one tool, no kernel change. Its `WORKFLOW.md` is declined: this project has `RULES.md`, `docs/method.md` and `docs/provenance/` covering the same ground for different constraints. Its `splx` findings are superseded — it retracts one wrong diagnosis and reaches a second that `f4a62b6` then replaces. Its **method** lessons are adopted into `docs/method.md` §4, three of them re-measured here first: the determinism rule, the segment base, and tail calls hiding the caller. One claim is corrected rather than copied, see below. `tools/vmem.py` and `tools/pmem.py` declined: both exist because `dev` read guest memory through the QEMU monitor, which has separate physical and linear commands. gdb reads linear directly and is already this project's instrument, so neither tool has a job here. |
 | 20 | `f4a62b6` | i386/hardclock.c: stop GCC rewriting the interrupt frame | adopt reworked | Diagnosis independently reproduced here before the commit was opened, by the same method: a hardware watchpoint on the clobbered slot, three matching writes at different addresses. The remedy differs. `dev` used `__attribute__((optimize("no-optimize-sibling-calls")))` on the function; this tree uses `hardclock.o_CFLAGS` in `conf/template.mk`, which is OSF's own hook used eleven times in that same file, so `i386/hardclock.c` stays byte-identical to the import. Both were built and both remove the poisoning writes. Completeness also differs: `dev` spot-checked a handful of `ivect[]` handlers; this tree derives it from the linked image. See `pristine.md` for the four options and their measured sizes. |
 | — | `7a4e86d` | Port CMU's mach_init, notices intact | **decline in advance** | Installs CMU's `mach_init` into `MACH3_ROOT_SERVERS_IDIR` "alongside default_pager and the bootstrap task" — two bootstrap mechanisms where the kernel calls one. `kern/bootstrap.c:288` hard-codes `/mach_servers/bootstrap`. Its findings about LITES never reading `ports[SERVICE_SLOT]` are worth keeping. |
 
 ## Standing notes for the walk
 
 Recorded in advance, so the first batch does not rediscover them.
+
+**`dev`'s `DEBUGGING.md` has one claim that is half true, and the
+half that is false costs time.** It says memory reads "work at either
+address, since both map to the same physical page". Measured here, in
+one run of one binary: stopped in `parse_multiboot`, `0x001d6e4c`
+reads correctly; stopped in a timer interrupt, `0x001c9ff4` returns
+"Cannot access memory". The low identity mapping is up early and gone
+once the kernel's page tables replace it. A rule that works on first
+use and silently stops working is worse than no rule, because the
+failure presents as a corrupt pointer. `docs/method.md` §4 carries the
+corrected version: always add the base.
 
 **`94f8e25` is already settled, by the `f4a62b6` investigation.** It
 declares `curr_ipl` as `int` in `i386/AT386/lpr.c`, matching
