@@ -427,12 +427,67 @@ parse_multiboot(void)
          * Get information about the bootstrap. Currently we only
 	 * support loading one module.
 	 */
-	mb_module = (struct multiboot_module *) mb_info.mods_addr;
- 	boot_start = mb_module[0].mod_start;
- 	boot_size = mb_module[0].mod_end - mb_module[0].mod_start;
- 
- 	exec_start = mb_module[1].mod_start;
- 	exec_size = mb_module[1].mod_end - mb_module[1].mod_start;
+	/*
+	 * AI-ONLY NOTE: the two guards below are required, and this
+	 * tree's own multiboot.h is the authority for both.
+	 *
+	 *   i386/multiboot.h:102  "List of boot modules loaded with the
+	 *                          kernel.  Valid only if MULTIBOOT_MODS
+	 *                          is set in flags word above."
+	 *   i386/multiboot.h:146  "The mods_addr field above contains the
+	 *                          physical address of the first of
+	 *                          'mods_count' multiboot_module
+	 *                          structures."
+	 *
+	 * The code read mb_module[0] and mb_module[1] unconditionally,
+	 * consulting neither the flag nor the count, so it violated both
+	 * sentences of its own header.
+	 *
+	 * With no module at all, QEMU leaves mods_count at 0 and
+	 * mods_addr pointing at the same address as cmdline, so
+	 * mb_module[0] is the kernel command line read as a module
+	 * table.  bootstrap_create() guards itself with
+	 * "if (boot_size == 0) return" at kern/bootstrap.c:309, which is
+	 * plainly meant to catch exactly that; it never fired, because
+	 * boot_size had been computed from the command line rather than
+	 * left at zero.
+	 *
+	 * mb_module[1] is out of bounds even when one module IS
+	 * supplied, which is how this kernel is booted.  Measured on
+	 * this branch with -initrd bootstrap, at the end of
+	 * parse_multiboot:
+	 *
+	 *   mods_count  1
+	 *   boot_start  0x200000        boot_size  220656   correct
+	 *   exec_start  0x706d742f      ASCII "/tmp", the command line
+	 *   exec_size   -1091240192     garbage, and not zero
+	 *
+	 * Those two feed kern/bootstrap.c:1239 directly:
+	 *
+	 *   boot_script_parse_line(exec_start, exec_size,
+	 *                          "exec.static $(exec-task=task-create)")
+	 *
+	 * which is the last thing this kernel reaches.
+	 *
+	 * boot_start, boot_size, exec_start and exec_size are zero
+	 * initialized globals in kern/bootstrap.c and the BSS clear runs
+	 * before this function, so leaving them untouched when the
+	 * module is absent is what makes OSF's own guard work as
+	 * written.
+	 */
+	if (mb_info.flags & MULTIBOOT_MODS) {
+		mb_module = (struct multiboot_module *) mb_info.mods_addr;
+
+		if (mb_info.mods_count >= 1) {
+			boot_start = mb_module[0].mod_start;
+			boot_size = mb_module[0].mod_end - mb_module[0].mod_start;
+		}
+
+		if (mb_info.mods_count >= 2) {
+			exec_start = mb_module[1].mod_start;
+			exec_size = mb_module[1].mod_end - mb_module[1].mod_start;
+		}
+	}
 
 
 	kern_args_start = mb_info.cmdline;
