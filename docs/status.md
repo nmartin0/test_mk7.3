@@ -341,6 +341,86 @@ if they fire.
 Neither has been measured here. Both are recorded in Utah's paper as
 costing them real time.
 
+## The two Utah traps, measured
+
+Both were listed in `docs/roadmap.md` Tier 0 as unchecked, and both
+change the shape of Tier 1 if they fire.  Measured against `lites/` as
+it sits at `osfmk/src/mach_services/servers/startup/`.
+
+### Trap 1 — per-thread state at a fixed offset from a C-threads stack
+
+**It fires.**  `libcthreads/cthread_internals.h:241`:
+
+	#define _cthread_ptr(sp) \
+	    (*(cthread_t *) \
+	      (((vm_offset_t)(sp) | cthread_status.stack_mask) \
+	       + 1 - sizeof(cthread_t *)))
+
+	#define _cthread_self()  ((cthread_t) _cthread_ptr(cthread_sp()))
+
+A thread's identity is its **stack pointer masked to a fixed size**,
+reading a self-pointer planted at the top of that stack by
+`stack.c:251`.  Lites depends on it: `server/serv/ux_server_loop.c:155`
+registers its per-thread state with
+`cthread_set_data(cthread_self(), pk)`, where `pk` is the
+`proc_invocation_t` that is Lites' equivalent of OSF/1's `uthread`.
+Every `get_proc_invocation()` in the server resolves through that
+mask.
+
+**What it costs Tier 1.**  A syscall exception delivered on a stack
+that C-threads did not allocate — the kernel's stack, or any stack of
+the wrong size or alignment — makes `cthread_self()` return garbage,
+and with it `pk`.  So the kernel must hand the server a C-threads
+service stack, exactly as Utah found for the OSF/1 server.  This is a
+constraint on the syscall path, Tier 1 item 2, not a detail of it.
+
+Already anticipated in the library: `stack.c:430` has
+
+	if (in_kernel && cthread_stack_size == 0)
+		cthread_stack_size = IN_KERNEL_STACK_SIZE;
+
+with `IN_KERNEL_STACK_SIZE` 32 KB at `cthread_internals.h:437`.  There
+is a collocated path here already, and Tier 1 item 4 should start from
+it rather than invent one.
+
+### Trap 2 — arguments copied twice
+
+**It does not fire on the generic path.  The MIG path is not settled.**
+
+`server/serv/bsd_msg.h:99` is the whole request:
+
+	struct bsd_request {
+	    mach_msg_header_t  hdr;
+	    mach_msg_type_t    int_type;
+	    integer_t          rval2;
+	    integer_t          syscode;
+	    integer_t          arg[10];
+	};
+
+Ten inline scalars and no out-of-line buffer.
+`server/serv/ux_syscall.c:227` hands `req->arg` straight to the BSD
+handler, and pointer arguments are then fetched by Lites' own
+`copyin` in `server/serv/user_copy.c`, which reads the user task
+directly.  So a pointer argument's data moves once, not twice.
+
+Not settled: `server/serv/bsd_1.defs` declares 70 MIG routines, and
+whether any of them is reached in the configured build — and if so
+whether its generated stub copies what the service routine copies
+again — was not traced.  No out-of-line or array arguments were found
+in it, which is weak evidence against the trap and not proof.  Stated
+as open rather than closed.
+
+### A third thing found on the way
+
+`server/serv/cprocs.c` and `serv/synch_prim.c` are `fileif data_synch`
+in `conf/files`, and `data_synch` is listed under "Experimental
+features" in `conf/MASTER:64` and selected by no i386 configuration.
+They do not compile.  That is why `cproc_self()` at
+`include/mach/cthread_internals.h:184` expands to `ur_cthread_self()`,
+which is **defined nowhere in the tree**, without anything
+complaining.  Worth knowing before reading `cprocs.c` as though it
+were live code.
+
 ## What is open and has no answer anywhere
 
 - `getsysinfo` operations the vendor marked "for internal use only".

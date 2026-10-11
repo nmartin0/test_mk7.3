@@ -32,12 +32,36 @@ Measured against the trees as they stand:
 
 | | state |
 |---|---|
-| OSFMK 7.3 boots | yes |
-| Lites runs on it | yes, via a 1,414-line patch |
-| the 4.4BSD-Lite2 personality runs | yes, standalone |
-| the three are one repository | not yet |
-| one build drives all three | not yet |
-| the two Utah traps checked for | not yet |
+| OSFMK 7.3 boots | yes, and reaches `start ext2fs.static:` |
+| Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
+| the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
+| the three are one repository | **done** — `osfmk/` plus Lites at `osfmk/src/mach_services/servers/startup/` |
+| one build drives all three | not yet, and it is now the blocking item |
+| the two Utah traps checked for | **done** — trap 1 fires, trap 2 does not on the generic path; `docs/status.md` |
+
+Two of those rows moved since this file was written.
+
+**Lites is in the repository and in the right place.** It was
+imported verbatim as `lites/` and then relocated to
+`osfmk/src/mach_services/servers/startup/`, beside OSF's own
+`machid`, `netname` and `netmemoryserver`, under the name OSF's
+`bootstrap.template` uses for the OSF/1 server. The roadmap's
+"not yet" understated it.
+
+**The build driver is now the blocking item, not merely the next
+one.** The boot stops at `start ext2fs.static:` because
+`bootstrap_create()` is hardcoded to start two GNU Hurd servers and
+OSF's own `bootstrap_create_old()` is disabled in `#if 0`. No defect
+fix moves it further; it needs a second task of our own to load.
+`docs/deferred.md` §2 has the evidence.
+
+**Trap 1 fires, and it is a constraint on Tier 1 item 2.** C-threads
+finds a thread's identity by masking its stack pointer to a fixed
+size, and Lites hangs its per-thread state off that. The kernel must
+hand the server a C-threads service stack, or `cthread_self()` and
+every `get_proc_invocation()` return garbage. The library already has
+an `in_kernel` path forcing a 32 KB stack, which is where item 4
+should start.
 
 **The repository.** Three verbatim imports as separate subdirectories,
 each as commit one for its tree, so `git diff <import>..HEAD -- <dir>/`
