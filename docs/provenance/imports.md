@@ -94,6 +94,19 @@ weaker.** `dev`'s version of the same fix cites the multiboot
 specification, an outside document. The tree had the answer, which is
 what `audit.md` exists to catch.
 
+**Qualified, one commit later.** "Upstream's own intent" is doing
+more work in that row than it should. The header is the authority on
+how a multiboot module array may be read, and the fix honours it. But
+reading exactly two modules was not OSF being careless: it is the GNU
+Hurd bootstrap grafted onto this tree before publication, which
+expects `ext2fs.static` and `exec.static` as `mods[0]` and `mods[1]`
+and therefore always two. See `docs/deferred.md` §2. **The code
+corrected is the grafter's, not OSF's.** The entry stays kind A,
+because the evidence is still inside the tree and no other system was
+needed, but "upstream" there means the tree as published, not OSF's
+design. Where that distinction matters — and on this project it
+usually does — the row is not evidence about what OSF intended.
+
 ## B -- corrected following another tree's line
 
 The code stays its upstream's; the line taken exists in a tree that may

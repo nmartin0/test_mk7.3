@@ -140,6 +140,52 @@ neither OSF's server nor Lites used.
 
 ## 2. Deferred
 
+### The bootstrap fork: Hurd or OSF
+
+**This is where the boot currently stops, so it is deferred only until
+the build driver exists.**
+
+As published, this tree does not boot the way Mach does. Verified
+here, in our own copy:
+
+| | |
+|---|---|
+| `kern/startup.c:517` | calls `bootstrap_create()` |
+| `kern/bootstrap.c:1146` | `bootstrap_create()`, which hardcodes two **GNU Hurd** servers |
+| `kern/bootstrap.c:1238` | `boot_script_parse_line(boot_start, boot_size, "ext2fs.static ...")` |
+| `kern/bootstrap.c:1239` | `boot_script_parse_line(exec_start, exec_size, "exec.static ...")` |
+| `kern/boot_script.c:3` | "Written by Shantanu Goel" — GNU Mach's boot script parser |
+| `kern/bootstrap.c:1257` | `bootstrap_create_old()`, the classic Mach path, inside `#if 0` |
+
+Someone grafted Hurd's bootstrap protocol onto OSFMK before this tree
+was published. `bootstrap_create_old()` is OSF's own path — allocate a
+bootstrap port, create a task and thread, set `TASK_BOOTSTRAP_PORT`,
+start the thread at `user_bootstrap` — and it is disabled and
+uncalled.
+
+**This explains the wall.** The boot reaches `start ext2fs.static:`
+and stops, because the kernel is asking for a Hurd ext2 translator we
+do not have and do not want. No amount of defect-fixing moves it
+further; it needs a different second task, which is Tier 0's "one
+build drives all three".
+
+**Deferred because** the choice is not ours to make yet. Switching to
+`bootstrap_create_old()` means having something for it to load, and
+that is the build driver. `nmartin0/test_mk7.3` `dev` commits
+`c1620a0` and `856290c` put the old path behind a flag; they are
+ahead of us in the walk and should be read when the driver lands, not
+before.
+
+**It also qualifies a claim this branch has already made.** `752cba4`
+corrects `parse_multiboot`'s unbounded module reads and files them in
+`docs/provenance/imports.md` as kind A, "upstream's code corrected to
+upstream's own intent". The fix is right and the citation to
+`i386/multiboot.h` holds: reading past `mods_count` is unsafe however
+the array came to be read that way. But the *intent* is not OSF's.
+Reading exactly two modules is the Hurd graft assuming its two
+servers will always be supplied. The code corrected is the grafter's,
+not OSF's, and `imports.md` now says so.
+
 ### The two latent `i386_rpc.c` defects
 
 Block 607 writes to an operand declared `"g"` input; blocks 195, 411,
