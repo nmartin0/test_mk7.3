@@ -32,7 +32,7 @@ Measured against the trees as they stand:
 
 | | state |
 |---|---|
-| OSFMK 7.3 boots | yes: OSF's bootstrap task reads `bootstrap.conf` from an IDE disk and starts `default_pager`; `name_server` does not build yet |
+| OSFMK 7.3 boots | yes: OSF's bootstrap task reads `bootstrap.conf` from UFS on a vtoc-labelled IDE disk, as OSF's own did, and starts `default_pager`; `name_server` does not build yet |
 | Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
 | the three are one repository | **done** for two of them — the kernel at `osfmk/`, and Lites at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was |

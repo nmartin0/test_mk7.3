@@ -336,6 +336,22 @@ and whether any of it is APSL or GPL — GCC is GPL as a tool, which is
 not the same as GPL code in this tree, and that distinction needs to
 be written down before a toolchain lands here.
 
+### Booting with OSF's own boot loader
+
+**Not needed yet; recorded because it is OSF's.** QEMU loads the kernel
+and the bootstrap task directly with `-kernel` and `-initrd`, through
+the multiboot entry in `i386/start.S`. OSF booted an
+i386 from the disk: a primary boot in block 0, a secondary that reads
+the root file system and loads `/mach_kernel` and
+`/mach_servers/bootstrap`, with the `boot:` prompt and
+`disk(unit, partition)/kernel` syntax of MK7.3 Release Notes §2.5.3.
+Both are in the tree, `stand/AT386/boot/primary` and `secondary`, and
+the secondary is linked with `libsa_fs`. The boot disk is already in
+OSF's layout (vtoc, UFS root in partition a), so the remaining work
+would be building `stand/AT386/boot` and installing it on that disk.
+Taken up if multiboot ever stands in the way, or for fidelity once the
+system runs.
+
 ### A halting idle loop: `POWER_SAVE` and `machine_idle()`
 
 **Not needed yet; recorded because it is OSF's own hook.**

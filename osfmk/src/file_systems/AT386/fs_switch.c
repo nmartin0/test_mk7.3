@@ -58,9 +58,11 @@ extern struct fs_ops ufs_ops;
 extern struct fs_ops ext2fs_ops;
 extern struct fs_ops minixfs_ops;
 
+/*
+ * AI-ONLY NOTE: UFS only; ext2fs and minixfs are not built.  See
+ * AT386/machdep.mk.
+ */
 fs_ops_t fs_switch[] = {
 	&ufs_ops,
-	&ext2fs_ops,
-	&minixfs_ops,
 	0
 };
