@@ -19,6 +19,115 @@ imports are verbatim: `git diff <import>..HEAD -- <dir>/` is the
 complete deviation record for each, and each must stay small enough to
 read.
 
+## Where the server lives, and why
+
+The server is a peer of the microkernel, not a part of it. It sits at
+the top of the repository beside `osfmk/`, is built by its own
+configuration against the kernel's exported headers and libraries, and
+installs as `/mach_servers/startup`. Every lineage this project can read
+arranges it that way, and CMU wrote the rule down.
+
+| lineage | kernel | server | how the server reaches the kernel | read in |
+|---|---|---|---|---|
+| CMU Mach 3.0, 1993 | `src/mk` | `src/ux`, a peer collection | shared `export/<context>`, `release/<context>` | Thompson, *Building Mach 3.0* |
+| Lites at CMU, 1994 | `src/mk` | `src/lites`, a peer | `--with-release=…/export/…` | Lites `doc/building` |
+| OSF/1 MK, OSF | the MK product | OSF/1's own tree, a separate product | the MK release | Wells 1994; Condict et al.; MK6.1 release notes |
+| Paragon OSF/1 AD 1.0.4, Intel | `kernels/src/mk` | `servers/svr/src`, a peer | `MKREL=…/release/i386_mach` | cd155 `servers/svr/src/latest/Makeconf` |
+| MkLinux DR3, OSF RI, OSFMK 7.3 | `osfmk/` | `mklinux/`, a peer | committed links into `osfmk/export/` | `OSFMK_BUILD.README`; `mklinux/src/export-osfmach3/` |
+
+**CMU, in its own words.** Mary R. Thompson, *Building Mach 3.0*, CMU,
+18 June 1993 — `mach3_build.doc` in `github.com/Prajna/mach`:
+
+	src/{buildtools,mk,ux,user,bsdss}/...
+	obj/<context>/{buildtools,mk,ux,user,bsdss}/...
+	release/<context>/{bin,lib,include,etc,man,special}/...
+	export/<context>/{bin,include,lib,special}/...
+
+"Each collection contains one Makeconf now, at top-level." The UX
+server is built from `ux/` after `mk` has exported its headers and
+libraries, and "both the mach kernel and Unix server use a modified
+version of the BSD config program" — `MASTER`, `files`, `template.mk`,
+`CONFIG` set in each collection's own `Makeconf`. All of it under OSF's
+ODE, whose `odemake` "came from the OSF DCE v 2.1 tape". Distribution
+followed the same seam: "There is a different collection for each
+source subtree", each with its own licence.
+
+Lites came out of that environment. Its `doc/building` (Helander,
+November 1994) builds it at CMU from `/p/mach/mach3/work/src/lites` —
+a peer of `mk` and `ux` — with `--with-release` pointing at
+`/p/mach/mach3/work/export/…`, and says "in theory you could pick up a
+standard MK83a release and build with that."
+
+**The name is CMU's too.** `mach3_setup.doc`: "In Mach 3.0 the names
+mach and mach.boot are used for the Mach micro-kernel and vmunix and
+startup are used for the Unix-server", and the kernel looks in
+`/mach_servers` for "startup which is the program it will start the
+user task in". OSF kept it: `osfmk/src/bootstrap/bootstrap.template`
+names "the osf1_server (conventionally called "startup")", and the
+bootstrap task's built-in default is `unix startup -s`
+(`osfmk/src/bootstrap/bootstrap.c:81`).
+
+**OSF, in its own words.** OSF's server was the OS's own system
+services, carried in OSF/1's tree rather than the microkernel's:
+
+- "The server code is taken directly from the integrated kernel code
+  base with over 95% code reuse." — Wells, OSF RI, 1994 IEEE
+  Dual-Use Technologies conference.
+- "Over 90% of the OSF/1 server code in the MK version of the system
+  is unchanged from the OSF/1 IK, and the code that differs consists
+  almost entirely of glue code." — Condict, Bolinger, Mitchell and
+  McManus, OSF RI, the collocation paper in OSFMK 6.1's `doc/`.
+- "This is a kernel-only release; we are not releasing an unencumbered
+  UNIX server at this time." — MK6.1 release notes.
+- *Design of the OSF/1 Operating System, Release 1.2* (OSF, Prentice
+  Hall, 1993), §1.3 and §1.4: the kernel "consists of two logical
+  elements: the core kernel and the system services", and "most of
+  what is now contained in the system services will be moved into its
+  own, separate address space." The core kernel became the MK product.
+
+**For OSFMK 7.3 itself**, OSF RI's `OSFMK_BUILD.README`: the kernel
+tree builds "header files and libraries required for mach tasks (such
+as the Linux single server)", then "You can stop now, if you're just
+going to rebuild the Linux Server … simply move on to building the
+Linux server."
+
+**Runtime and source are different questions.** At runtime the server
+is one of the `/mach_servers` programs like `name_server` and
+`default_pager`: started by the bootstrap task, asking it for
+privileged ports through `bootstrap.defs`. In source it is not one of
+them. Those two build with `build -here` inside `osfmk/src`; no
+personality server in any lineage does. The Paragon AD server is a
+reminder that the two questions separate: its source arrangement
+agrees with the table, but its runtime does not transfer, because it
+asks for its ports with CMU's raw `msgh_id 999999` handshake, which
+OSFMK 7.3's `bootstrap.defs` skips.
+
+**Not yet read.** *MK7.3a Real-Time Microkernel for the OSF/1 OS —
+Release Notes*, §2.5 "Source Installation" and §2.5.2 "Building the
+Release", would show OSF's own OSF/1 MK layout. Only a preview has
+been reachable. Every precedent above agrees; if it does not, this
+section changes.
+
+### A correction to `696c173`
+
+That commit moved Lites to `osfmk/src/mach_services/servers/startup/`,
+reasoning that the server "would have been built by a "build -here"
+line alongside" `name_server` and `default_pager`, and that "a
+personality sitting outside that directory cannot be built by
+build_world at all."
+
+Both halves are wrong. No lineage builds its personality server inside
+the microkernel's source tree, and OSF's own build notes for this
+kernel stop `build_world` before the server and build it separately.
+The runtime slot was right — `startup` in `/mach_servers` — and the
+source location was not. The commit that follows this one moves Lites
+back to `lites/`, where `e31a69d` imported it.
+
+The mistake cost something already: `docs/provenance/pristine.md` had
+to narrow the deviation-record command to `osfmk/src/mach_kernel`,
+because the server "would otherwise dominate the diff". The move back
+restores one plain command per tree.
+
 ## Where to look, in order
 
 1. **This tree itself** — any of the three subdirectories, and
@@ -174,7 +283,7 @@ The expected entries, from `docs/roadmap.md`:
 |---|---|
 | `servers/startup/uxkern/syscall.c` | ours, written from Patience §3–4 against OSFMK's exception interface |
 | `THREAD_STATE_SYSCALL` in `osfmk7.3/` | ours; a new i386 thread-state flavour, no donor has it |
-| `build_world` stanza for the server | derived from MkLinux's, which is OSF's own |
+| the server's build driver, in `docs/tools/` | ours, following Lites' `doc/building` and CMU's release-tree convention. Not a `build_world` stanza: DR3's `build_world` builds no server, and OSF's notes build it separately |
 
 Our own files carry an SPDX-FileCopyrightText line. Whether they carry
 a licence identifier, and which, is the maintainer's decision and is

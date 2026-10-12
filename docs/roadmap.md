@@ -35,18 +35,23 @@ Measured against the trees as they stand:
 | OSFMK 7.3 boots | yes, and reaches `start ext2fs.static:` |
 | Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
-| the three are one repository | **done** — `osfmk/` plus Lites at `osfmk/src/mach_services/servers/startup/` |
+| the three are one repository | `osfmk/` plus Lites, which is in the wrong place: it belongs at top level as `lites/`, a peer of `osfmk/`, and the next commit moves it there |
 | one build drives all three | not yet, and it is now the blocking item |
 | the two Utah traps checked for | **done** — trap 1 fires, trap 2 does not on the generic path; `docs/status.md` |
 
 Two of those rows moved since this file was written.
 
-**Lites is in the repository and in the right place.** It was
-imported verbatim as `lites/` and then relocated to
+**Lites is in the repository, but not yet in the right place.** It
+was imported verbatim as `lites/` and then relocated into
 `osfmk/src/mach_services/servers/startup/`, beside OSF's own
-`machid`, `netname` and `netmemoryserver`, under the name OSF's
-`bootstrap.template` uses for the OSF/1 server. The roadmap's
-"not yet" understated it.
+`machid`, `netname` and `netmemoryserver`. That was wrong, and this
+file said otherwise for one commit. Every lineage that can be read —
+CMU's `src/{mk,ux}`, OSF's separate OSF/1 tree, Intel's Paragon,
+OSF RI's MkLinux DR3 — keeps the personality server beside the
+microkernel as a peer, built against its exports. The `startup` name
+belongs to the runtime slot in `/mach_servers`, not to a source
+directory. `docs/provenance/precedent.md`, "Where the server lives,
+and why", has the sources.
 
 **The build driver is now the blocking item, not merely the next
 one.** The boot stops at `start ext2fs.static:` because
