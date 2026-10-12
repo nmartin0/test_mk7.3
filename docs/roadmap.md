@@ -34,17 +34,19 @@ Measured against the trees as they stand:
 | OSFMK 7.3 boots | yes, and reaches `start ext2fs.static:` |
 | Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
-| the three are one repository | **done** for two of them — `osfmk/` and `lites/`, peers at the top level, as CMU's `src/{mk,ux}` and DR3's `osfmk/` + `mklinux/` were |
+| the three are one repository | two of them are in, but Lites is in the wrong place again: it belongs at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was, and the next commit moves it there |
 | one build drives all three | not yet, and it is now the blocking item |
 | the two Utah traps checked for | **done** — trap 1 fires, trap 2 does not on the generic path; `docs/status.md` |
 
 Two of those rows moved since this file was written.
 
-**Lites is in the repository, as a peer of the kernel.** It was
-imported verbatim as `lites/`, spent a few commits inside
-`osfmk/src/mach_services/servers/startup/`, and is back at the top
-level, byte-identical to its import. The move inside was wrong, and
-this file briefly said otherwise. Every lineage whose layout is documented —
+**Lites is in the repository; its place has now been read rather than
+inferred.** OSF's MK6.1 and MK7.3 release notes build the OSF/1 server
+as `src/osf1_server`, a peer of `mach_kernel` in one ODE sandbox, with
+the same build driver run after `mach_services`. Lites goes to
+`osfmk/src/lites/` accordingly. Two earlier placements were wrong —
+inside `mach_services/servers/` and then at the top level beside
+`osfmk/` — and `docs/provenance/precedent.md` records both. Every lineage whose layout is documented —
 CMU's `src/{mk,ux}`, OSF's separate OSF/1 tree, OSF RI's MkLinux
 DR3 — keeps the personality server beside the
 microkernel as a peer, built against its exports. The `startup` name
