@@ -35,7 +35,7 @@ Measured against the trees as they stand:
 | Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
 | the three are one repository | **done** for two of them — the kernel at `osfmk/`, and Lites at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was |
-| one build drives all three | not yet, and it is now the blocking item |
+| one build drives all three | **in part** — `build -here lites` builds Lites under ODE and stops at Lites' own source, 145 server objects in; not yet in `build_world`. The blocking item is now the source fixes |
 | the two Utah traps checked for | **done** — trap 1 fires, trap 2 does not on the generic path; `docs/status.md` |
 
 Two of those rows moved since this file was written.
@@ -54,8 +54,13 @@ belongs to the runtime slot in `/mach_servers`, not to a source
 directory. `docs/provenance/precedent.md`, "Where the server lives,
 and why", has the sources.
 
-**The build driver is now the blocking item, not merely the next
-one.** The boot stops at `start ext2fs.static:` because
+**The build driver exists; the source fixes are the blocking item.**
+`osfmk/src/lites/Makefile` runs Lites' own configure build under ODE
+(`docs/provenance/precedent.md`, "How Lites meets ODE"; option A,
+reviving Lites' CMU ODE build, is held in `docs/deferred.md` §2). The
+server stops on errors in six files, listed in `docs/status.md`; `dev`'s
+Lites patch has fixes for all but one, and the walk adopts them as it
+reaches them. Until then the boot stops at `start ext2fs.static:` because
 `bootstrap_create()` is hardcoded to start two GNU Hurd servers and
 OSF's own `bootstrap_create_old()` is disabled in `#if 0`. No defect
 fix moves it further; it needs a second task of our own to load.
@@ -87,7 +92,7 @@ the order:
 	makeboot
 
 Our server builds after `mach_kernel`, linking against those four
-libraries. That answers "where do the Mach libraries live" by OSF's
+libraries: `build -here lites`, joining this list once it succeeds. That answers "where do the Mach libraries live" by OSF's
 precedent rather than by preference: they stay in `osfmk7.3/` and the
 server links against them.
 
