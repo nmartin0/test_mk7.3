@@ -136,6 +136,7 @@ so at the site.
 
 | what | why no donor, and the nearest precedent |
 |---|---|
+| `kern/bootstrap.c`, `do_bootstrap_compat()`: read-only PT_LOAD segments mapped read-only; `regions[]` sized by `NREGIONS`, five, and the bound tested | No tree we can read has this loader with a read-only arm; `dev`'s `11ecb84` is the nearest, and its `p_vaddr > e_entry` test is replaced by the bound it was unknowingly avoiding (verdict 26). The arms beside it are OSF's, unchanged |
 | `lites/Makefile` added, `lites/Makeconf` removed: Lites' configure build run by ODE | No tree builds Lites under OSFMK's ODE. Nearest: Lites' own `OSF_ENVIRONMENT` block in `conf/Makerules`, which pointed the same build at an OSF sandbox's tools, and OSF's step 8, `build ... osf1_server`. The file says so in its AI-ONLY NOTE. `docs/provenance/precedent.md`, "How Lites meets ODE" |
 | `lites/conf/config.guess`, `lites/conf/move-if-change`, mode 644 to 755 | The import carries every Lites file as 644, and no copy of Lites 1.1.u3 with its modes has been found to restore them from (that would be kind F). These two are run by path by `configure`; both are GNU scripts whose upstreams ship them executable |
 

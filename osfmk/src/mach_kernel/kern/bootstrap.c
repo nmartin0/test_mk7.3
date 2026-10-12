@@ -283,7 +283,20 @@ extern void set_bootstrap_args(void);
 int	startup_single_user = 0;
 
 struct thread_syscall_state thread_state;
-struct region_desc regions[4];
+/*
+ * AI-ONLY NOTE: five entries, not four, and do_bootstrap_compat() now
+ * checks the bound it relied on.  The table holds one entry per
+ * PT_LOAD segment of the boot module plus one for the stack.  With
+ * text and data only, three of four were used.  Today's GNU ld emits
+ * four PT_LOAD segments by default -- the ELF headers, text, read-only
+ * data, data -- and with the stack that is five.  Nothing checked the
+ * bound: measured with four entries, the fifth lands on device_io_map,
+ * the next symbol, and the kernel dies in a fault storm once the task
+ * is created; with five it does not.  NREGIONS is the bound the
+ * loader now tests.
+ */
+#define	NREGIONS	5
+struct region_desc regions[NREGIONS];
 char kernel_args_buf[256] = "/mach_kernel";
 char boot_args_buf[256] = "/mach_servers/bootstrap";
 char env_buf[256] = "";
@@ -322,6 +335,10 @@ do_bootstrap_compat(void)
 		printf("Loop\n");
 		switch ((int)ph->p_type) {
 		case PT_LOAD:
+			if (boot_region_count >= NREGIONS - 1) {
+				printf("Too many PT_LOAD regions, ignoring one\n");
+				continue;
+			}
 			if (ph->p_flags == (PF_R | PF_X)) {
 				printf("Found text region\n");
 				regions[boot_region_count].prot = VM_PROT_READ|VM_PROT_EXECUTE;
@@ -341,6 +358,28 @@ do_bootstrap_compat(void)
 					ph->p_memsz - ph->p_filesz);
 				bss_start = ph->p_vaddr + ph->p_filesz;
 				bss_size = ph->p_memsz - ph->p_filesz;
+			}
+			else if (ph->p_flags == PF_R) {
+				/*
+				 * AI-ONLY NOTE: a read-only segment, mapped
+				 * read-only.  The two arms above match p_flags
+				 * exactly: read+execute and read+write, the two
+				 * segments of a link without separate read-only
+				 * data.  Today's GNU ld separates it by default,
+				 * adding read-only segments for the ELF headers
+				 * and .rodata, which matched neither arm and were
+				 * never mapped; the task faulted on its first read
+				 * of .rodata.  Our own programs are linked without
+				 * them (LDARGS in docs/tools/mksandbox.sh); this
+				 * arm is for programs linked any other way.  No
+				 * bss: a read-only segment's memsz is its filesz.
+				 */
+				printf("Found read-only region\n");
+				regions[boot_region_count].prot = VM_PROT_READ;
+				regions[boot_region_count].addr = trunc_page(ph->p_vaddr);
+				regions[boot_region_count].size = round_page(ph->p_filesz);
+				regions[boot_region_count].offset = trunc_page(ph->p_offset);
+				regions[boot_region_count].mapped = TRUE;
 			}
 			else {
 				printf("Found PT_LOAD region with unknown flags\n");
