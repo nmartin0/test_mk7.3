@@ -7,12 +7,13 @@ worked precedent behind it.
 way except where we deliberately change code, and every such change is
 visible in one command:
 
-	git diff <import>..HEAD -- osfmk/src/mach_kernel
+	git diff <import>..HEAD -- osfmk/       # import f8fee21
+	git diff <import>..HEAD -- lites/       # import e31a69d
 
-That path and not osfmk/ alone, because the startup server was added
-to osfmk/src/mach_services/servers deliberately and would otherwise
-dominate the diff.  The kernel proper is where drift must stay
-visible.
+One plain command per tree.  For a while the first had to be narrowed
+to `osfmk/src/mach_kernel`, because Lites had been moved inside
+`osfmk/src/mach_services/servers/` and would otherwise have dominated
+the diff.  It is a peer again, and the narrowing is gone.
 
 That is the deviation record. "We changed two files" becomes something
 a reader can verify instead of a claim in a commit message. It only

@@ -20,7 +20,7 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 | `mach_kernel.PRODUCTION` | 1,021,600 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 220,656 bytes, same format |
 | errors | 0 |
-| vendor files modified | 11, with 165 insertions and 43 deletions against `f8fee21` |
+| vendor files modified | 11 under `osfmk/`, with 226 insertions and 49 deletions against `f8fee21`; none under `lites/` against `e31a69d` |
 | kernel text | 818,058 bytes |
 
 Reproduced four times: during the walk, from a clean clone with the
@@ -344,8 +344,7 @@ costing them real time.
 ## The two Utah traps, measured
 
 Both were listed in `docs/roadmap.md` Tier 0 as unchecked, and both
-change the shape of Tier 1 if they fire.  Measured against `lites/` as
-it sits at `osfmk/src/mach_services/servers/startup/`.
+change the shape of Tier 1 if they fire.  Measured against `lites/`.
 
 ### Trap 1 — per-thread state at a fixed offset from a C-threads stack
 

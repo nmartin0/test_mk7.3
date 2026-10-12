@@ -281,7 +281,7 @@ The expected entries, from `docs/roadmap.md`:
 
 | file or change | expected kind |
 |---|---|
-| `servers/startup/uxkern/syscall.c` | ours, written from Patience §3–4 against OSFMK's exception interface |
+| `syscall.c` in the server's glue, `lites/server/serv/` today, after OSF's `uxkern/syscall.c` | ours, written from Patience §3–4 against OSFMK's exception interface |
 | `THREAD_STATE_SYSCALL` in `osfmk7.3/` | ours; a new i386 thread-state flavour, no donor has it |
 | the server's build driver, in `docs/tools/` | ours, following Lites' `doc/building` and CMU's release-tree convention. Not a `build_world` stanza: DR3's `build_world` builds no server, and OSF's notes build it separately |
 
