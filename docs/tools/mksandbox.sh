@@ -175,7 +175,37 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # is what surfaced eight genuine type confusions in this tree, each of
 # which is now fixed rather than silenced.
 #
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -Wno-error=overflow -Wno-endif-labels"
+# -fno-aggressive-loop-optimizations: REQUIRED for kernel IPC, and the
+# same kind of flag as -fno-strict-aliasing -- it withdraws an
+# assumption a modern optimiser makes and a 1995 one did not.  GCC
+# derives a loop's trip count from the bounds of the arrays it indexes
+# and treats running past them as impossible.  mach/rpc.h declares
+#
+#	struct routine_descriptor      routine[1 /* Actually, (start-end+1) */];
+#	struct routine_arg_descriptor  arg_descriptor[1 ...];
+#
+# in struct rpc_subsystem: the pre-C99 variable-length idiom, its own
+# comment saying so, with routine[] not the last member.  GCC 13 takes
+# the [1] at its word.  In kern/ipc_kobject.c, mig_init()'s loop over
+# each subsystem's routines runs once, so mig_buckets holds one routine
+# per subsystem and every other kernel RPC answers MIG_BAD_ID -- the
+# bootstrap task's first call, host_page_size, included.  Found by
+# nmartin0/test_mk7.3 dev's 80ef3b0, which changed that one loop.
+#
+# A flag rather than that source change, because the class is wider
+# than the one loop.  Building the whole tree with and without it,
+# objdump -d differs in 23 objects.  19 are in the kernel:
+# ipc_kobject.o, rpc.o, subsystem.o and exception.o, which index the
+# same arrays, and 15 more.  4 are in the libraries:
+# mach_subsystem_join.o, which walks routine[] too, and
+# mach_host_user.o, each in libmach and libmach_maxonstack.  The kernel
+# text grows by 20 bytes.  Not every one of the 23 need be a
+# miscompilation -- the flag changes what the
+# optimiser may assume, not only where the code is wrong -- but each is
+# a place where the assumption was used, on code written for a
+# compiler that made none.
+#
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -Wno-error=overflow -Wno-endif-labels"
 
 #
 # NO_STRICT_ANSI: a hook osf.gcc.mk line 94 provides --
