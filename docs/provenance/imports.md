@@ -111,7 +111,14 @@ usually does — the row is not evidence about what OSF intended.
 **Three notes on the `bootstrap.c` row.** `set_user_regs()` and
 `build_args_and_stack()` are left compiled and are now uncalled: the
 graft's `user_bootstrap()` was their only caller, and whether they are
-OSF's or the graft's is not established. OSFMK 6.1 was read while
+OSF's or the graft's is not established. *Established 12 October 2026:
+the graft's.* Neither is in `slp/osfmk-mklinux`'s first commit,
+`0f6f7e6`; both arrive with the Hurd graft in `63279d3`, and
+`build_args_and_stack(argv, envp)` follows GNU Mach's
+`kern/bootstrap.c` line for line in its comments ("pointers to
+environment variables", "Then the strings and string pointers for each
+environment variable"), where OSFMK 6.1's takes a variable argument
+list. OSFMK 6.1 was read while
 checking it and not used: its `bootstrap.c` is a different design, and
 its notice differs from 7.3's — 6.1 adds that OSF's name not "be used
 in advertising or publicity pertaining to distribution of the software
@@ -137,7 +144,7 @@ so at the site.
 | what | why no donor, and the nearest precedent |
 |---|---|
 | `file_systems/AT386/machdep.mk` and `fs_switch.c`: the bootstrap task's file systems cut to UFS | A build change: `minixfs` (partly GPL) and `ext2fs` (derived from Linux's header) are MkLinux's additions and are no longer compiled for AT386; their sources stay as imported. The nearest precedent is OSF's own `HP700/fs_switch.c`, which has no minix reader. `docs/provenance/precedent.md`, "What OSF booted from" |
-| `kern/bootstrap.c`, `do_bootstrap_compat()`: read-only PT_LOAD segments mapped read-only; `regions[]` sized by `NREGIONS`, five, and the bound tested | No tree we can read has this loader with a read-only arm; `dev`'s `11ecb84` is the nearest, and its `p_vaddr > e_entry` test is replaced by the bound it was unknowingly avoiding (verdict 26). The arms beside it are OSF's, unchanged |
+| `kern/bootstrap.c`, `do_bootstrap_compat()`: read-only PT_LOAD segments mapped read-only; `regions[]` sized by `NREGIONS`, five, and the bound tested | No tree we can read has this loader with a read-only arm; `dev`'s `11ecb84` is the nearest, and its `p_vaddr > e_entry` test is replaced by the bound it was unknowingly avoiding (verdict 26). The arms beside it were taken to be OSF's; they are not -- the whole ELF `PT_LOAD` parser in `do_bootstrap_compat()` is `slp/osfmk-mklinux`'s `444954a` (2011), which replaced OSF's `loader_info` code (corrected 12 October 2026; `docs/provenance/precedent.md`, "Where the two imports came from") |
 | `lites/Makefile` added, `lites/Makeconf` removed: Lites' configure build run by ODE | No tree builds Lites under OSFMK's ODE. Nearest: Lites' own `OSF_ENVIRONMENT` block in `conf/Makerules`, which pointed the same build at an OSF sandbox's tools, and OSF's step 8, `build ... osf1_server`. The file says so in its AI-ONLY NOTE. `docs/provenance/precedent.md`, "How Lites meets ODE" |
 | `lites/conf/config.guess`, `lites/conf/move-if-change`, mode 644 to 755 | The import carries every Lites file as 644, and no copy of Lites 1.1.u3 with its modes has been found to restore them from (that would be kind F). These two are run by path by `configure`; both are GNU scripts whose upstreams ship them executable |
 

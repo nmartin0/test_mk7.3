@@ -3,9 +3,11 @@
 The hardest constraint on this project, and the one with the most
 worked precedent behind it.
 
-`osfmk7.3/` and `lites/` are verbatim vendor imports. They stay that
-way except where we deliberately change code, and every such change is
-visible in one command:
+`osfmk7.3/` and `lites/` are verbatim vendor imports -- verbatim from
+the copies they were taken from, which are not their upstreams'
+releases: `docs/provenance/precedent.md`, "Where the two imports came
+from". They stay that way except where we deliberately change code,
+and every such change is visible in one command:
 
 	git diff f8fee21 HEAD -- osfmk/ ':(exclude)osfmk/src/lites'
 	git diff e31a69d:lites HEAD:osfmk/src/lites

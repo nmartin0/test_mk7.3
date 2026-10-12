@@ -138,6 +138,37 @@ subsystem 2800, is what OSF's own server used. The async request/reply
 pairs and the trap fast path at −94 to −99 are a later optimisation
 neither OSF's server nor Lites used.
 
+### The intermediate goal's choices
+
+**Decided 12 October 2026, by the maintainer**, for `docs/roadmap.md`,
+"Intermediate goal". The evidence for each is in
+`docs/provenance/precedent.md`, "What OSF's running system was" and
+"Where the two imports came from".
+
+- **The releases, not the copies.** Lites is restored from Utah's
+  1.1.u3 tarball, and the kernel from the nearest readable DR3,
+  `slp/osfmk-mklinux` `0f6f7e6`, each later change judged as a
+  deviation. The maintainer is fetching independent copies to check
+  both against.
+- **OSF's boot loader, with multiboot kept.** The system boots through
+  `stand/AT386/boot` and `asm_startup.h`, as OSF's did. slp's multiboot
+  entry stays as a second way in, "so we still have the multiboot
+  option for later down the line".
+- **NetBSD 1.0's binaries as the userland, provisionally.** The release
+  Lites' own documents name. Marked as the layer expected to change
+  most: "later on we're probably going to be significantly modifying
+  this part". The binaries live only on disk images a script builds,
+  never in the source tree; several are GPL programs.
+- **The network is the in-tree `ne` driver**, with QEMU's `ne2k_isa`,
+  over OSF's documented boards, which QEMU does not emulate.
+- **The compiler is OSF's line first.** gcc 2.7.x in its OSF/1 i386
+  ELF configuration, bootstrapped on the running system from NetBSD
+  1.0's own gcc, as Lites self-hosted in its day; later GCCs once that
+  is stable.
+- **PRODUCTION** stays the kernel configuration; FAST for debugging.
+- **Lites runs as a separate task.** Collocation (`-k`) waits for
+  Tier 1 item 4.
+
 ## 2. Deferred
 
 ### The bootstrap fork: Hurd or OSF

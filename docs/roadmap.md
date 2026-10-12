@@ -75,9 +75,11 @@ every `get_proc_invocation()` return garbage. The library already has
 an `in_kernel` path forcing a 32 KB stack, which is where item 4
 should start.
 
-**The repository.** Three verbatim imports as separate subdirectories,
-each as commit one for its tree, so `git diff <import>..HEAD -- <dir>/`
-is a complete deviation record.
+**The repository.** Three imports as separate subdirectories, verbatim
+from the copies they were taken from (not their upstreams' releases:
+"Intermediate goal", milestone 0, below), each as commit one for its
+tree, so `git diff <import>..HEAD -- <dir>/` is a complete deviation
+record.
 
 **The build.** MkLinux's `build_world` is OSF's own driver and gives
 the order:
@@ -130,6 +132,75 @@ greps and both change the shape of Tier 1 if they fire.
 and under what name Lites appears there, has not been recorded.
 `name_server` is in the default list and nothing here has established
 whether the server needs to register with it.
+
+## Intermediate goal — the whole system, online, hosting itself
+
+**Set 12 October 2026, by the maintainer.** Before Tier 1 changes the
+server's design, the system as its creators assembled it runs end to
+end: OSF's boot loader, OSF's kernel and bootstrap task, OSF's
+`name_server` and `default_pager`, Lites as the server, a BSD userland
+in multi-user mode, a network interface, and enough of a toolchain
+that the system rebuilds its own kernel, servers and Lites. Each step
+is taken the way OSF -- or, for Lites, Helander and Utah -- intended,
+and where neither said, that is recorded rather than guessed. The
+research behind each milestone is in `docs/provenance/precedent.md`,
+"What OSF's running system was", and the decisions are in
+`docs/deferred.md` §1, "The intermediate goal's choices".
+
+The walk through `dev`'s commits continues as the way there; dev
+reached a multi-user login under Lites, by other means, at its commit
+`7c428c2`.
+
+**0. The releases, not the copies.** Neither import is its upstream's
+release (`docs/provenance/precedent.md`, "Where the two imports came
+from"). Lites is restored from Utah's `lites-1.1.u3.tar.gz`. For the
+kernel the nearest readable copy of MkLinux DR3 is `slp/osfmk-mklinux`'s
+first commit, `0f6f7e6`, with its `start.s~`; each of slp's eighteen
+later commits gets a verdict, as `dev`'s do. The deviation record keeps
+one command per tree, against reference copies of the two releases
+kept in the repository. Independent copies of DR3 and of the Lites
+tarball are being fetched by the maintainer to check both.
+
+**1. Boot as OSF did.** OSF's primary boot and `mach_boot`
+(`stand/AT386/boot`) on the vtoc disk, loading `/mach_kernel` and
+`/mach_servers/bootstrap` from partition a, through
+`i386/AT386/asm_startup.h`. QEMU boots the disk through its BIOS. The
+multiboot entry slp added stays, as a second way in (maintainer,
+12 October 2026), and `docs/tools/boot.sh` keeps it as an option. The
+`hd.c` changes made for a boot without a BIOS (`dev`'s `052a105`,
+slp's `7e81018`) are tested again under a BIOS boot before any is
+adopted.
+
+**2. The three servers.** `bootstrap.conf` as OSF's template and
+release notes give it: `name_server`, `default_pager` on partition b,
+`startup` -- Lites -- with the root, partition a. `name_server` builds.
+No `mach_init`: OSF's bootstrap task and `name_server` provide what it
+did.
+
+**3. Lites, multi-user.** Lites 1.1.u3 configured `STD+WS+osfmach3`,
+run as an ordinary task, not collocated. Root on partition a in the
+old UFS format OSF's reader and boot loader read and Lites mounts
+read-write. Userland: NetBSD 1.0's i386 binaries, the release Lites'
+own documents name -- marked as provisional; this layer is expected to
+change most later. `/mach_servers/mach_init` is a symbolic link to
+`/sbin/init`, as Lites' `doc/README` allows when a name server is
+already running.
+
+**4. Online.** The kernel's own `ne` driver, already in the PRODUCTION
+configuration, with QEMU's `ne2k_isa`; its two defects fixed first
+(the 3c501 interrupt handler installed for it in `autoconf.c`, and
+odd-length copies in `if_ne.c`). Lites' 4.4BSD TCP/IP stack opens
+`ne0` by its Mach device name; `ifconfig`, `route`, then telnet and ftp.
+
+**5. Hosting itself.** On the running system, ODE's minimal tools and
+a GCC of OSF's own line -- gcc 2.7.x, the compiler MK7.2 and MK7.3
+were built with, in its OSF/1 i386 ELF configuration -- rebuild the
+kernel, the servers and Lites, and the result boots. The first
+compiler is NetBSD 1.0's own, running under Lites, as Lites
+self-hosted in 1995. Later GCCs come after this is stable.
+
+The kernel configuration stays PRODUCTION, OSF's documented default;
+FAST, with the debugger, is for debugging only.
 
 ## Tier 1 — the server becomes OSF-shaped
 
