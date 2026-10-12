@@ -34,17 +34,17 @@ Measured against the trees as they stand:
 | OSFMK 7.3 boots | yes, and reaches `start ext2fs.static:` |
 | Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
-| the three are one repository | `osfmk/` plus Lites, which is in the wrong place: it belongs at top level as `lites/`, a peer of `osfmk/`, and the next commit moves it there |
+| the three are one repository | **done** for two of them — `osfmk/` and `lites/`, peers at the top level, as CMU's `src/{mk,ux}` and DR3's `osfmk/` + `mklinux/` were |
 | one build drives all three | not yet, and it is now the blocking item |
 | the two Utah traps checked for | **done** — trap 1 fires, trap 2 does not on the generic path; `docs/status.md` |
 
 Two of those rows moved since this file was written.
 
-**Lites is in the repository, but not yet in the right place.** It
-was imported verbatim as `lites/` and then relocated into
-`osfmk/src/mach_services/servers/startup/`, beside OSF's own
-`machid`, `netname` and `netmemoryserver`. That was wrong, and this
-file said otherwise for one commit. Every lineage whose layout is documented —
+**Lites is in the repository, as a peer of the kernel.** It was
+imported verbatim as `lites/`, spent a few commits inside
+`osfmk/src/mach_services/servers/startup/`, and is back at the top
+level, byte-identical to its import. The move inside was wrong, and
+this file briefly said otherwise. Every lineage whose layout is documented —
 CMU's `src/{mk,ux}`, OSF's separate OSF/1 tree, OSF RI's MkLinux
 DR3 — keeps the personality server beside the
 microkernel as a peer, built against its exports. The `startup` name
