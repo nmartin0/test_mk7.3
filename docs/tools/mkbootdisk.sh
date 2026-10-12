@@ -25,10 +25,9 @@
 # from partition a.  The kernel's default boot device in machine_init()
 # resolves to unit 0, partition a, so no boot argument is needed.
 #
-# The file system is UFS, written by makefs(8) from NetBSD (Debian and
-# Ubuntu package "makefs") and converted to the 4.3BSD format OSF's
-# reader expects by ufs-oldfmt.py, beside this file; that script says
-# why.  It contains
+# The file system is UFS in the 4.3BSD format OSF's reader expects,
+# written by NetBSD's makefs(8) with "-o version=0": the nbmakefs that
+# docs/tools/mknbmakefs.sh builds, or NBMAKEFS=<path>.  It contains
 #
 #   /mach_servers/bootstrap.conf    one "<name> <name>" line per server
 #   /mach_servers/<server>...       the files given, by basename
@@ -42,12 +41,13 @@
 set -eu
 
 [ $# -ge 2 ] || { echo "usage: $0 <disk.img> <server>..." >&2; exit 1; }
-command -v makefs >/dev/null ||
-	{ echo "makefs is required (package \"makefs\")" >&2; exit 1; }
 command -v python3 >/dev/null ||
 	{ echo "python3 is required" >&2; exit 1; }
+NBMAKEFS=${NBMAKEFS:-${MK_BUILD:-$HOME/.cache/osfmk}/netbsd/tools/bin/nbmakefs}
+[ -x "$NBMAKEFS" ] ||
+	{ echo "no nbmakefs at $NBMAKEFS; run docs/tools/mknbmakefs.sh" >&2
+	  exit 1; }
 
-HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$1; shift
 ROOT_MB=${ROOT_MB:-16}
 PAGING_MB=${PAGING_MB:-16}
@@ -76,11 +76,13 @@ else
 	done > "$TMP/root/mach_servers/bootstrap.conf"
 fi
 
-# UFS1, 8 KB blocks and 1 KB fragments: OSF's reader takes blocks up to
-# MAXBSIZE, 8192 (file_systems/ufs/fs.h).
-makefs -t ffs -o version=1,bsize=8192,fsize=1024 \
+# version=0 is "newfs -O 0": 4.3BSD directory entries, with a 16-bit
+# d_namlen and no d_type (file_systems/ufs/defs.h), and fs_maxsymlinklen
+# 0 and fs_inodefmt FS_42INODEFMT, so a 4.4BSD reader (Lites) reads it
+# as the old format too.  8 KB blocks and 1 KB fragments: OSF's reader
+# takes blocks up to MAXBSIZE, 8192 (file_systems/ufs/fs.h).
+"$NBMAKEFS" -t ffs -o version=0,bsize=8192,fsize=1024 \
 	-s $((A_SIZE * 512)) "$TMP/a.img" "$TMP/root" >/dev/null
-python3 "$HERE/ufs-oldfmt.py" "$TMP/a.img" >/dev/null
 
 # The label: MBR, vtoc and alternates table.  The vtoc's geometry is
 # nominal -- 16 heads, 63 sectors -- since every address in it is a

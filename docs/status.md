@@ -119,7 +119,8 @@ The kernel now probes hardware and initialises the VM system:
 
 **OSF's bootstrap task starts `default_pager`.** With a boot disk:
 
-	cd osfmk/src && build -here default_pager
+	sh docs/tools/mknbmakefs.sh		# once
+	(cd osfmk/src && build -here default_pager)
 	sh docs/tools/mkbootdisk.sh disk.img \
 	    $MK_BUILD/obj/at386/default_pager/default_pager
 	sh docs/tools/boot.sh disk.img
@@ -135,7 +136,9 @@ partition of type 99 holding OSF's vtoc, partition a a UFS file system
 with `/mach_servers/` on it, b for paging. The bootstrap task reads only
 UFS: ext2fs and minixfs, MkLinux's additions, are no longer built.
 `docs/provenance/precedent.md`, "What OSF booted from". `mkbootdisk.sh`
-needs `makefs` (package `makefs`) and `python3`. The kernel's own
+needs `python3` and NetBSD 11.0's `makefs`, which
+`sh docs/tools/mknbmakefs.sh` builds once into `$MK_BUILD/netbsd/`
+(git and a C compiler; a 235 MB sparse checkout). The kernel's own
 default boot device resolves to unit 0, partition a, so no boot
 argument is needed.
 

@@ -352,6 +352,28 @@ would be building `stand/AT386/boot` and installing it on that disk.
 Taken up if multiboot ever stands in the way, or for fidelity once the
 system runs.
 
+### Making disks on the running system, as OSF did
+
+**Not possible yet; recorded because it is OSF's procedure.** OSF never
+built a disk image from a directory. `disk_setup` ran the `vtoc`
+utility and `newfs` on the target machine under MK7.3 itself, and
+`mk_install` then extracted the release onto the new file systems
+(MK7.3 Release Notes §2.4.2.2, §2.4.2.4). The boot floppies came from
+`mkbootfloppies` on a running MK7.X (§2.4), and
+`stand/AT386/boot/secondary/README` does the same by hand with `newfs`,
+`mount` and `cp`. This project makes its disk on the host instead,
+with NetBSD 11.0's `makefs -o version=0` (`docs/tools/mknbmakefs.sh`;
+`docs/provenance/precedent.md`, "How the disk is made"), because
+nothing here yet runs `newfs` or mounts a file system.
+
+Once Lites runs, the same steps can be taken inside the system:
+`newfs -O`, mount, copy. Lites runs NetBSD, FreeBSD and 386BSD
+binaries, and its `doc/README` says `mount` and `fsck` "should be
+taken from Lite"; the old format would then be written by 4.4BSD's own
+file system code, in the system being built. The first disk still has
+to come from outside, as OSF's came from an earlier MK release, so
+`makefs` stays for that.
+
 ### A halting idle loop: `POWER_SAVE` and `machine_idle()`
 
 **Not needed yet; recorded because it is OSF's own hook.**
