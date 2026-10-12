@@ -32,7 +32,7 @@ Measured against the trees as they stand:
 
 | | state |
 |---|---|
-| OSFMK 7.3 boots | yes, and starts OSF's own bootstrap task, which runs in user mode as far as C-threads' `alloc_stack` |
+| OSFMK 7.3 boots | yes, and starts OSF's own bootstrap task, which runs in user mode until its first read of `.rodata`, a segment the kernel's loader does not map |
 | Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
 | the three are one repository | **done** for two of them — the kernel at `osfmk/`, and Lites at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was |

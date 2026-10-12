@@ -147,10 +147,11 @@ task again, through OSF's `bootstrap_create()` and `user_bootstrap()`
 under their own names; the graft's functions stay in
 `kern/bootstrap.c` behind `#if 0 /* GNU Hurd bootstrap graft */`, and
 `conf/files` no longer builds GNU Mach's `kern/boot_script.c`. Taken
-in the verdict walk as rows 22–24, `dev`'s `c1620a0`, `856290c` and
-`8a15d03`, reworked; `docs/provenance/verdicts.md` has the three
-shapes considered and why this one. The deferral below said to wait
-for the server to link. That was too strict: the bootstrap task, and
+in the verdict walk as rows 22 and 23, `dev`'s `c1620a0` and
+`856290c`, reworked; row 24, `8a15d03`, declined.
+`docs/provenance/verdicts.md` has the three shapes considered, why
+this one, and why the third commit is not needed. The deferral below
+said to wait for the server to link. That was too strict: the bootstrap task, and
 the `name_server` and `default_pager` it starts, are OSF's own and
 need nothing from Lites.
 

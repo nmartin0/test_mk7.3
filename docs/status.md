@@ -20,11 +20,11 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 | `mach_kernel.PRODUCTION` | 1,021,600 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 220,656 bytes, same format |
 | errors | 0 |
-| vendor files modified | 12 in the kernel, all under `osfmk/src/mach_kernel`, with 281 insertions and 56 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
-| kernel text | 809,690 bytes |
+| vendor files modified | 12 in the kernel, all under `osfmk/src/mach_kernel`, with 262 insertions and 56 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
+| kernel text | 809,290 bytes |
 
 The kernel text was 818,058 after `2508bd3` and 818,102 after
-`752cba4`, whose `mods_count` guards added 44 bytes. It is 809,690 now
+`752cba4`, whose `mods_count` guards added 44 bytes. It is 809,290 now
 that the GNU Hurd bootstrap graft and `kern/boot_script.c` are no
 longer compiled; "The boot" below.
 
@@ -47,7 +47,7 @@ succeeds.
 | `include/`, `liblites/` | build; `liblites.a` and `liblites_p.a` |
 | `server/` | stops; 145 objects compiled, with `GMAKE="gmake -k"` |
 | `emulator/`, `bin/` | not reached |
-| kernel and bootstrap | unchanged: 818,102 bytes of text, 220,656 bytes |
+| kernel and bootstrap | not affected by building Lites |
 
 What stops it, every error, from a clean object directory:
 
@@ -127,18 +127,28 @@ screen ends at the ELF scan of the boot module,
 	Found unknown section: 0x6474e551
 	I've found: 2 sections
 
-and the bootstrap task then runs in user mode — through `mach_init`,
-`processor_set_default` and `IN_KERNEL` in C-threads — until a write
-to address 0 at `0x08054cdf`, `alloc_stack+0xff` in
-`mach_services/lib/libcthreads/stack.c`, building a free list from a
-base of 0. 17 page faults, no resets, the same fault at the same
-address in three boots out of three. That is where `dev` stood after
-the same three commits. Not yet diagnosed here; the next rows in the
-walk are `dev`'s next steps from the same point.
+and the bootstrap task then runs in user mode — crt0, `mach_init`,
+`host_page_size`, `mach_init_ports` — and stops in
+`bootstrap_arguments` on its first read of `.rodata`, at `0x08069ca0`.
+13 page faults, no resets, the same in three boots out of three.
 
-Two lines on that screen are what rows 26 and 32 are about: the boot
-module's read-only segments (`.note`, and `.rodata` with `.eh_frame`)
-are reported as "unknown flags" and not mapped.
+The two "unknown flags" lines are why. The boot module has two
+read-only PT_LOAD segments — the ELF header with
+`.note.gnu.build-id`, and `.rodata` with `.eh_frame` — and the kernel's
+loader maps only read+execute and read+write, so `.rodata` is never
+mapped. Today's GNU ld separates read-only data by default; relinked
+with `-z noseparate-code`, the same objects make two segments, R+X and
+R+W, the two the loader handles. That is row 26.
+
+Two things are known to be next, from scratch builds not yet
+committed: row 25's defect — GCC collapsing `mig_init`'s loop so that
+nearly every kernel RPC returns `MIG_BAD_ID` — and row 26's segment.
+With both removed for the test, the task reaches its own prompt:
+
+	ERROR: bootstrap task cannot find configuration file, please make sure that
+	       your boot device and partition is correctly specified.
+
+	Configuration file (or 'builtin'): /dev/boot_device/mach_servers/bootstrap.conf
 
 What follows is the boot as it was until then, on the graft's path.
 It loaded the boot module, parsed its ELF, created the task, resumed
