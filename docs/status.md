@@ -20,12 +20,13 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 | `mach_kernel.PRODUCTION` | 1,021,600 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 220,656 bytes, same format |
 | errors | 0 |
-| vendor files modified | 11 in the kernel, all under `osfmk/src/mach_kernel`, with 226 insertions and 49 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
-| kernel text | 818,102 bytes |
+| vendor files modified | 12 in the kernel, all under `osfmk/src/mach_kernel`, with 281 insertions and 56 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
+| kernel text | 809,690 bytes |
 
-The kernel text was 818,058 here until this table was corrected; that
-was the figure after `5af8713` and before `c964add`, whose
-`mods_count` guards added 44 bytes.
+The kernel text was 818,058 after `5af8713` and 818,102 after
+`c964add`, whose `mods_count` guards added 44 bytes. It is 809,690 now
+that the GNU Hurd bootstrap graft and `kern/boot_script.c` are no
+longer compiled; "The boot" below.
 
 ### Lites
 
@@ -113,8 +114,35 @@ The kernel now probes hardware and initialises the VM system:
 	battery clock configured
 	intnull(14)
 
-It then loads the boot module, parses its ELF, creates the task,
-resumes it, and starts the second one:
+**Since verdicts 22–24 the kernel starts OSF's bootstrap task**, not
+the GNU Hurd servers; `docs/deferred.md` §2, "The bootstrap fork". The
+screen ends at the ELF scan of the boot module,
+
+	Looking for program sections
+	Found PT_LOAD region with unknown flags
+	Found text region
+	Found PT_LOAD region with unknown flags
+	Found data region
+	Found unknown section: 0x4
+	Found unknown section: 0x6474e551
+	I've found: 2 sections
+
+and the bootstrap task then runs in user mode — through `mach_init`,
+`processor_set_default` and `IN_KERNEL` in C-threads — until a write
+to address 0 at `0x08054cdf`, `alloc_stack+0xff` in
+`mach_services/lib/libcthreads/stack.c`, building a free list from a
+base of 0. 17 page faults, no resets, the same fault at the same
+address in three boots out of three. That is where `dev` stood after
+the same three commits. Not yet diagnosed here; the next rows in the
+walk are `dev`'s next steps from the same point.
+
+Two lines on that screen are what rows 26 and 32 are about: the boot
+module's read-only segments (`.note`, and `.rodata` with `.eh_frame`)
+are reported as "unknown flags" and not mapped.
+
+What follows is the boot as it was until then, on the graft's path.
+It loaded the boot module, parsed its ELF, created the task, resumed
+it, and started the second one:
 
 	Looking for program sections
 	Found text region

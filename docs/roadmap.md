@@ -31,7 +31,7 @@ Measured against the trees as they stand:
 
 | | state |
 |---|---|
-| OSFMK 7.3 boots | yes, and reaches `start ext2fs.static:` |
+| OSFMK 7.3 boots | yes, and starts OSF's own bootstrap task, which runs in user mode as far as C-threads' `alloc_stack` |
 | Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
 | the three are one repository | **done** for two of them — the kernel at `osfmk/`, and Lites at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was |
@@ -60,11 +60,11 @@ and why", has the sources.
 reviving Lites' CMU ODE build, is held in `docs/deferred.md` §2). The
 server stops on errors in six files, listed in `docs/status.md`; `dev`'s
 Lites patch has fixes for all but one, and the walk adopts them as it
-reaches them. Until then the boot stops at `start ext2fs.static:` because
-`bootstrap_create()` is hardcoded to start two GNU Hurd servers and
-OSF's own `bootstrap_create_old()` is disabled in `#if 0`. No defect
-fix moves it further; it needs a second task of our own to load.
-`docs/deferred.md` §2 has the evidence.
+reaches them. The boot no longer waits on it: since verdicts 22–24 the
+kernel starts OSF's bootstrap task instead of the two GNU Hurd servers
+a graft had wired in, and `name_server` and `default_pager` — OSF's
+own, needing nothing from Lites — are the next things for it to load.
+`docs/deferred.md` §2, "The bootstrap fork".
 
 **Trap 1 fires, and it is a constraint on Tier 1 item 2.** C-threads
 finds a thread's identity by masking its stack pointer to a fixed
