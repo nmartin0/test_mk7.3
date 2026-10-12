@@ -7,13 +7,15 @@ worked precedent behind it.
 way except where we deliberately change code, and every such change is
 visible in one command:
 
-	git diff <import>..HEAD -- osfmk/       # import f8fee21
-	git diff <import>..HEAD -- lites/       # import e31a69d
+	git diff f8fee21 HEAD -- osfmk/ ':(exclude)osfmk/src/lites'
+	git diff e31a69d:lites HEAD:osfmk/src/lites
 
-One plain command per tree.  For a while the first had to be narrowed
-to `osfmk/src/mach_kernel`, because Lites had been moved inside
-`osfmk/src/mach_services/servers/` and would otherwise have dominated
-the diff.  It is a peer again, and the narrowing is gone.
+One command per tree.  Lites lives inside the kernel's sandbox at
+`osfmk/src/lites/` -- where OSF built its own server, as
+`src/osf1_server` -- so the kernel's record excludes it, and the
+server's record compares its import's tree directly against where it
+lives now.  Both were run when Lites moved: the first shows the 11
+kernel files, all under `osfmk/src/mach_kernel`; the second is empty.
 
 That is the deviation record. "We changed two files" becomes something
 a reader can verify instead of a claim in a commit message. It only

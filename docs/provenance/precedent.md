@@ -10,13 +10,20 @@ first thing to establish before looking anywhere.
 
 ## The three trees
 
-	osfmk7.3/   OSF Mach Kernel 7.3, from MkLinux DR3.  Verbatim.
-	lites/      Lites, the CMU/HUT 4.4BSD-Lite single server.  Verbatim.
-	bsd/        the 4.4BSD-Lite2 personality, from nmartin0/4.4BSD-Lite2.
+	name        where it is          import    what
+	osfmk7.3/   osfmk/               f8fee21   OSF Mach Kernel 7.3, from MkLinux DR3.  Verbatim.
+	lites/      osfmk/src/lites/     e31a69d   Lites, the CMU/HUT 4.4BSD-Lite single server.  Verbatim.
+	bsd/        not yet imported               the 4.4BSD-Lite2 personality, from nmartin0/4.4BSD-Lite2.
+
+**Throughout `docs/`, `osfmk7.3/`, `lites/` and `bsd/` are the trees'
+names, not paths.** A path written inside a tree — `lites/server/serv/`,
+say — is relative to where that tree lives, given above. Lites lives
+inside the kernel's sandbox because that is where OSF built its own
+server; "Where the server lives, and why" below has the sources.
 
 All three run. That is the premise of the project and the reason the
-imports are verbatim: `git diff <import>..HEAD -- <dir>/` is the
-complete deviation record for each, and each must stay small enough to
+imports are verbatim: each has a one-command deviation record, given in
+`docs/provenance/pristine.md`, and each must stay small enough to
 read.
 
 ## Where the server lives, and why
