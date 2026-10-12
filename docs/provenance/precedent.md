@@ -279,6 +279,70 @@ this; in short:
   and writes no option headers. The other eight scripts with `#!` are
   run through `sh` and are left as imported.
 
+## What OSF booted from
+
+**UFS, on a disk labelled with OSF's vtoc.** The question arose because
+the bootstrap task, as imported, also reads ext2 and minix, and the
+first boot disk used ext2.
+
+The evidence, all of it OSF's:
+
+- *MK7.3 Release Notes*, §2.4.2.2: `disk_setup` partitions the disk
+  "using the vtoc utility" and creates "new filesystems with newfs".
+  §2.7.4, "Sample Disk Partition Table": a root, b paging, c entire
+  disk, d usr, and a `vtoc` listing with "alt ptr 15360 alt len 2048".
+  §2.5.3: the boot loader takes `disk(unit, partition)/kernel`, "partition
+  is the partition containing the root file system (… default is a)",
+  and loads `/mach_servers/bootstrap` from it.
+- *Optimizing Mach-based Systems by Server Co-location* (Condict,
+  Mitchell, Reynolds, OSF RI, August 1993), p. 17, describing boot
+  before the bootstrap task existed: the default pager, then the
+  bootstrap service, "uses a Mach version of the ufs code to lookup
+  /dev/<rootname>/mach_servers/paging_file" and loads
+  ".../mach_servers/startup". In the newer arrangement the same paper
+  moves "filesystem dependencies" to "the initial boot and the
+  bootstrap task".
+- *OSF-RI MK6.1 Release Notes*: the OSF/1 server's file systems are
+  "ufs, nfs, s5fs".
+- In this tree, `file_systems/ufs/` is CMU's and OSF's code — its
+  history is rpd's and af's, 1992 — and reads OSF/1's own UFS: a 16-bit
+  `d_namlen` (`ufs/defs.h`) and `FS_SEC_MAGIC`, OSF/1's secure variant.
+  The switch tables tell the rest. `HP700/fs_switch.c` and
+  `AT386/fs_switch.c` put `ufs_ops` first; `POWERMAC/fs_switch.c`, the
+  MkLinux machine, has no UFS at all, only minix, ext2, bext2 and HFS.
+  ext2fs and minixfs are MkLinux's additions for Linux disks.
+- `i386/AT386/bios_label.c` reads both a plain DOS partition table and,
+  under `VTOC_COMPAT` — on in this configuration — "old vtoc layed out
+  disks": an active DOS partition of type 99 with OSF's `evtoc` at
+  sector 29 within it.
+
+**Licences, which make this more than fidelity.** `minixfs/`'s
+`minix_ffs_compat.c`, `minix_ffs_compat.h` and `minix_fs.h` are under
+the GPL ("Copyright (C) 1994 Csizmazia Balazs … GNU General Public
+License"), and `minix_ffs_compat.o` was in `libsa_fs.a` and so in the
+bootstrap task; `dev` found the same at `19b0048`. `ext2fs/` carries
+OSF's and CMU's notices and no GPL text, but `ext2fs/ext2_fs.h` says it
+is "linux/include/linux/ext2_fs.h … from linux/include/linux/minix_fs.h,
+Copyright (C) 1991, 1992 Linus Torvalds" — `dev`'s "entirely GPL-free"
+is too strong. Neither is built for AT386 now; both stay in the tree as
+imported.
+
+**How the disk is made.** No tool writes OSF/1's UFS. `makefs` from
+NetBSD writes 4.4BSD's, whose directory entries split `d_namlen` into
+`d_type` and an 8-bit length; OSF's reader then finds no file. 4.4BSD
+kept the old format as an option, and `docs/tools/ufs-oldfmt.py`
+converts to it: directory entries, the 16-bit owner fields in each
+inode, and the two superblock fields that mark the format. Measured:
+the 4.4BSD image gives "cannot find configuration file"; converted, the
+same image boots to "(default_pager): started". `docs/tools/mkbootdisk.sh`
+writes the vtoc itself, from `struct evtoc` in `i386/AT386/disk.h`.
+
+**Still not OSF's:** the boot loader. OSF's is in the tree,
+`stand/AT386/boot/` — a primary boot in block 0 and a secondary that
+reads the file system and loads `/mach_kernel` and
+`/mach_servers/bootstrap` — and this project boots with QEMU's
+multiboot `-kernel` instead. `docs/deferred.md` §2 holds it.
+
 ## Where to look, in order
 
 1. **This tree itself** — any of the three subdirectories, and

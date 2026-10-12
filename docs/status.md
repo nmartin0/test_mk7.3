@@ -18,9 +18,9 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 | | |
 | --- | --- |
 | `mach_kernel.PRODUCTION` | 1,008,260 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
-| `bootstrap` | 212,464 bytes, same format; two PT_LOAD segments, R+X and R+W |
+| `bootstrap` | 203,052 bytes, same format; two PT_LOAD segments, R+X and R+W; reads UFS only |
 | errors | 0 |
-| vendor files modified | 12 in the kernel, all under `osfmk/src/mach_kernel`, with 302 insertions and 57 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
+| vendor files modified | 14 in `osfmk/`, 12 under `osfmk/src/mach_kernel` and 2 under `osfmk/src/file_systems/AT386`, with 317 insertions and 60 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
 | kernel text | 809,498 bytes |
 
 The kernel text was 818,058 after `5af8713` and 818,102 after
@@ -121,25 +121,31 @@ The kernel now probes hardware and initialises the VM system:
 
 	cd osfmk/src && build -here default_pager
 	sh docs/tools/mkbootdisk.sh disk.img \
-	    <obj>/default_pager/default_pager
-	qemu-system-i386 -icount shift=auto \
-	    -kernel mach_kernel.PRODUCTION -initrd bootstrap \
-	    -drive file=disk.img,format=raw,if=ide,index=0 \
-	    -m 64 -display none -no-reboot
+	    $MK_BUILD/obj/at386/default_pager/default_pager
+	sh docs/tools/boot.sh disk.img
 
-the screen ends, in under 15 seconds,
+the screen ends, in under 20 seconds under TCG,
 
 	(bootstrap): loading /dev/boot_device/mach_servers/default_pager
 	(bootstrap): started
 	(default_pager): started
 
-The disk is an MBR image with one ext2 partition; the kernel's own
-default boot device, `hd0s1`, finds it, with no boot argument and no
-kernel change (verdicts 27–31). `-icount shift=auto` is required under
-QEMU's TCG: without it the kernel takes each IDE interrupt seconds late
-and the same boot takes many minutes — `docs/method.md` §4, "Slow is
-not hung". Two driver messages appear and have not been looked at:
-"hdintr: interrupt w/controller not done." and "HD: false interrupt".
+The disk is laid out as OSF's MK7.3 laid out an i386 disk: a DOS
+partition of type 99 holding OSF's vtoc, partition a a UFS file system
+with `/mach_servers/` on it, b for paging. The bootstrap task reads only
+UFS: ext2fs and minixfs, MkLinux's additions, are no longer built.
+`docs/provenance/precedent.md`, "What OSF booted from". `mkbootdisk.sh`
+needs `makefs` (package `makefs`) and `python3`. The kernel's own
+default boot device resolves to unit 0, partition a, so no boot
+argument is needed.
+
+`boot.sh` uses KVM where `/dev/kvm` is usable and otherwise TCG with
+`-icount shift=auto`, which TCG requires: without it the kernel takes
+each IDE interrupt seconds late and the same boot takes many minutes —
+`docs/method.md` §4, "Slow is not hung". KVM has not been tried here;
+there is none in this environment. Two driver messages appear,
+"hdintr: interrupt w/controller not done." and "HD: false interrupt";
+`dev`'s `052a105` explains the second, and is the next commit.
 
 `name_server` is not on the disk: it does not build yet (verdict 31).
 
