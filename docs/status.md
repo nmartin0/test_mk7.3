@@ -21,12 +21,13 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 | `bootstrap` | 220,656 bytes, same format |
 | errors | 0 |
 | vendor files modified | 12 in the kernel, all under `osfmk/src/mach_kernel`, with 262 insertions and 56 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
-| kernel text | 809,290 bytes |
+| kernel text | 809,310 bytes |
 
 The kernel text was 818,058 after `5af8713` and 818,102 after
-`c964add`, whose `mods_count` guards added 44 bytes. It is 809,290 now
-that the GNU Hurd bootstrap graft and `kern/boot_script.c` are no
-longer compiled; "The boot" below.
+`c964add`, whose `mods_count` guards added 44 bytes; 809,290 once the
+GNU Hurd bootstrap graft and `kern/boot_script.c` were no longer
+compiled ("The boot" below); and 809,310 with
+`-fno-aggressive-loop-optimizations` in `CARGS` (verdict 25).
 
 ### Lites
 
@@ -140,10 +141,16 @@ mapped. Today's GNU ld separates read-only data by default; relinked
 with `-z noseparate-code`, the same objects make two segments, R+X and
 R+W, the two the loader handles. That is row 26.
 
-Two things are known to be next, from scratch builds not yet
-committed: row 25's defect — GCC collapsing `mig_init`'s loop so that
-nearly every kernel RPC returns `MIG_BAD_ID` — and row 26's segment.
-With both removed for the test, the task reaches its own prompt:
+**Kernel IPC works since verdict 25.** GCC had collapsed `mig_init`'s
+loop, so the kernel's MIG dispatch table, `mig_buckets`, held one
+routine per subsystem and every other kernel RPC answered
+`MIG_BAD_ID`. Read from the running kernel with gdb, 12 seconds into
+the boot: 8 of its 1,024 entries populated before, 196 after. The
+screen and the stopping point above do not change, because the task
+reads `.rodata` before it can show anything.
+
+Row 26's segment is the one thing known to be next. With it removed
+for the test, the task reaches its own prompt:
 
 	ERROR: bootstrap task cannot find configuration file, please make sure that
 	       your boot device and partition is correctly specified.
