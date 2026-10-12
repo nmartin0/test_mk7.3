@@ -117,11 +117,37 @@ The kernel now probes hardware and initialises the VM system:
 	battery clock configured
 	intnull(14)
 
-**OSF's bootstrap task runs to its own prompt.** Since verdicts 22–24
-the kernel starts OSF's bootstrap task, not the GNU Hurd servers
+**OSF's bootstrap task starts `default_pager`.** With a boot disk:
+
+	cd osfmk/src && build -here default_pager
+	sh docs/tools/mkbootdisk.sh disk.img \
+	    <obj>/default_pager/default_pager
+	qemu-system-i386 -icount shift=auto \
+	    -kernel mach_kernel.PRODUCTION -initrd bootstrap \
+	    -drive file=disk.img,format=raw,if=ide,index=0 \
+	    -m 64 -display none -no-reboot
+
+the screen ends, in under 15 seconds,
+
+	(bootstrap): loading /dev/boot_device/mach_servers/default_pager
+	(bootstrap): started
+	(default_pager): started
+
+The disk is an MBR image with one ext2 partition; the kernel's own
+default boot device, `hd0s1`, finds it, with no boot argument and no
+kernel change (verdicts 27–31). `-icount shift=auto` is required under
+QEMU's TCG: without it the kernel takes each IDE interrupt seconds late
+and the same boot takes many minutes — `docs/method.md` §4, "Slow is
+not hung". Two driver messages appear and have not been looked at:
+"hdintr: interrupt w/controller not done." and "HD: false interrupt".
+
+`name_server` is not on the disk: it does not build yet (verdict 31).
+
+**Without a disk, the task stops at its own prompt.** Since verdicts
+22–24 the kernel starts OSF's bootstrap task, not the GNU Hurd servers
 (`docs/deferred.md` §2, "The bootstrap fork"); since verdict 25 kernel
-IPC works; since verdict 26 the task's read-only data is mapped. The
-screen ends:
+IPC works; since verdict 26 the task's read-only data is mapped. With
+no disk attached the screen ends:
 
 	Looking for program sections
 	Theorical number of sections: 4
@@ -140,11 +166,8 @@ screen ends:
 
 	Configuration file (or 'builtin'): /dev/boot_device/mach_servers/bootstrap.conf
 
-40 page faults, no resets, the same in three boots out of three. The
-task is waiting at its prompt for a configuration file it cannot find,
-which is what `dev`'s next rows, 27 to 31, are about: the boot device,
-the environment, a floppy with `bootstrap.conf` on it, and then
-`name_server` and `default_pager`.
+40 page faults, no resets, the same in three boots out of three: the
+task waiting for a configuration file it cannot find.
 
 **How each step was measured.**
 

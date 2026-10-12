@@ -290,6 +290,37 @@ address is the one *after* the call.
 For anything timing- or hardware-shaped, a stub under QEMU settles it
 in minutes where reasoning does not.
 
+### Slow is not hung, and under TCG it may not be the guest at all
+
+Run QEMU with `-icount shift=auto` when the guest does device I/O and
+there is no KVM.  Without it, this kernel takes device interrupts
+seconds late.  Measured with the IDE boot disk: QEMU had each sector
+ready, and raised IRQ 14, at once; the guest took the interrupt 2 to 7
+seconds later, in every case traced, and in the one examined closely
+only just after a timer interrupt it had also been holding off.  `info
+irq` in the monitor, 30 seconds into the boot: 35 IDE interrupts
+without `-icount` (26 with single-threaded TCG), 507 with it.  `dev`'s
+floppy boot took 34 minutes, about 26 seconds per read, for what looks
+like the same reason, which it recorded as "the environment" without
+finding it.
+
+The likely mechanism, which fits every measurement but has not been
+proved in QEMU's source: the kernel's idle loop never halts.
+`idle_thread_continue()` alternates `splx(s)` and `splsched()`, so
+interrupts are enabled only from the `sti` at the end of `set_spl` to
+the `cli` at the start of the next `splclock` -- a few instructions,
+the first of them in `sti`'s one-instruction shadow.  Real hardware
+takes a pending interrupt as soon as the shadow ends.  TCG only checks
+at points where it leaves translated code, and the window can pass
+without one.  `-icount` makes TCG stop to account for time often
+enough to catch it.  `kern/sched_prim.c` has OSF's own hook for a
+halting idle loop, `machine_idle()` under `POWER_SAVE`, defined for no
+i386 configuration; `docs/deferred.md` §2 holds it.
+
+Two symptoms to recognise: a disk or floppy boot that "hangs" at a
+different place each time it is sampled, and an IRQ counter in `info
+irq` that rises far more slowly than the device was asked to work.
+
 ---
 
 ## 5. Delivery

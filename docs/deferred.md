@@ -331,6 +331,28 @@ and whether any of it is APSL or GPL — GCC is GPL as a tool, which is
 not the same as GPL code in this tree, and that distinction needs to
 be written down before a toolchain lands here.
 
+### A halting idle loop: `POWER_SAVE` and `machine_idle()`
+
+**Not needed yet; recorded because it is OSF's own hook.**
+`idle_thread_continue()` in `kern/sched_prim.c` never halts the CPU: it
+loops on `splx()`/`splsched()`, with interrupts enabled for a few
+instructions per pass. Under QEMU's TCG that makes the kernel take
+device interrupts seconds late, and the boot uses `-icount shift=auto`
+to compensate (`docs/method.md` §4, "Slow is not hung"). OSF left a
+hook for exactly this loop —
+
+	#if	POWER_SAVE
+		machine_idle(mycpu);
+	#endif /* POWER_SAVE */
+
+— with no `machine_idle()` for i386 and no configuration setting
+`POWER_SAVE`. An i386 `machine_idle()` would be `sti; hlt`, the idiom
+every emulator and CPU handles, and would also stop the idle CPU
+spinning at full power on real hardware. Not taken now because the
+emulator flag is configuration, outside the tree, and costs nothing;
+taken up if a run without `-icount`, on hardware or under KVM, needs
+it.
+
 ## 2a. Tooling defects, to fix in a later patch
 
 Found while auditing `nmartin0/test_mk7.3` `dev`'s build scripts.  The
