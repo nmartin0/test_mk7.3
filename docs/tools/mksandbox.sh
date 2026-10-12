@@ -251,6 +251,29 @@ replace setenv LDOPTS "-m elf_i386"
 # option '-m'".
 #
 replace setenv AT386_LDFLAGS "-m32"
+
+#
+# LDARGS: osf.std.mk line 342's site hook for links, appended after a
+# target's own LDFLAGS, as CARGS is for compiles.  It reaches both
+# links in build_world -- the bootstrap task, linked by gcc through
+# osf.prog.mk, and the kernel, linked by ld -- and default_pager's,
+# through osf.prog.mk, when that is built.
+# That is why the value is "-z noseparate-code" and not the gcc
+# spelling "-Wl,-z,noseparate-code", which ld rejects as an
+# unrecognized option; gcc passes -z to the linker itself.
+#
+# -z noseparate-code: today's GNU ld puts read-only data in segments of
+# its own by default (-z separate-code), so a program has four PT_LOAD
+# segments: the ELF headers, text, .rodata, data.  The kernel's loader
+# for the bootstrap task, do_bootstrap_compat() in kern/bootstrap.c,
+# maps only read+execute and read+write, so .rodata was never mapped
+# and the task faulted on its first read of it.  With this flag the
+# same objects link to two segments, R+X and R+W.  The loader also
+# learns read-only segments (verdict 26), for programs linked without
+# this; the flag keeps ours in the shape the loaders were written for.
+# The kernel links to two segments as well, and boots the same.
+#
+replace setenv LDARGS "-z noseparate-code"
 EOF
 
 # --- 3. a sandboxrc, from OSF's own template ---------------------------

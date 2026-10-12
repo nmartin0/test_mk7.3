@@ -17,17 +17,19 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 
 | | |
 | --- | --- |
-| `mach_kernel.PRODUCTION` | 1,021,600 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
-| `bootstrap` | 220,656 bytes, same format |
+| `mach_kernel.PRODUCTION` | 1,008,260 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
+| `bootstrap` | 212,464 bytes, same format; two PT_LOAD segments, R+X and R+W |
 | errors | 0 |
-| vendor files modified | 12 in the kernel, all under `osfmk/src/mach_kernel`, with 262 insertions and 56 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
-| kernel text | 809,310 bytes |
+| vendor files modified | 12 in the kernel, all under `osfmk/src/mach_kernel`, with 302 insertions and 57 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
+| kernel text | 809,498 bytes |
 
 The kernel text was 818,058 after `5af8713` and 818,102 after
 `c964add`, whose `mods_count` guards added 44 bytes; 809,290 once the
 GNU Hurd bootstrap graft and `kern/boot_script.c` were no longer
-compiled ("The boot" below); and 809,310 with
-`-fno-aggressive-loop-optimizations` in `CARGS` (verdict 25).
+compiled ("The boot" below); 809,310 with
+`-fno-aggressive-loop-optimizations` in `CARGS` (verdict 25); and
+809,498 linked with `-z noseparate-code` (verdict 26), which puts
+`.rodata` in the text segment, so `size` counts it there.
 
 ### Lites
 
@@ -115,47 +117,54 @@ The kernel now probes hardware and initialises the VM system:
 	battery clock configured
 	intnull(14)
 
-**Since verdicts 22–24 the kernel starts OSF's bootstrap task**, not
-the GNU Hurd servers; `docs/deferred.md` §2, "The bootstrap fork". The
-screen ends at the ELF scan of the boot module,
+**OSF's bootstrap task runs to its own prompt.** Since verdicts 22–24
+the kernel starts OSF's bootstrap task, not the GNU Hurd servers
+(`docs/deferred.md` §2, "The bootstrap fork"); since verdict 25 kernel
+IPC works; since verdict 26 the task's read-only data is mapped. The
+screen ends:
 
 	Looking for program sections
-	Found PT_LOAD region with unknown flags
+	Theorical number of sections: 4
+	Loop
 	Found text region
-	Found PT_LOAD region with unknown flags
+	Loop
 	Found data region
+	Loop
 	Found unknown section: 0x4
+	Loop
 	Found unknown section: 0x6474e551
 	I've found: 2 sections
-
-and the bootstrap task then runs in user mode — crt0, `mach_init`,
-`host_page_size`, `mach_init_ports` — and stops in
-`bootstrap_arguments` on its first read of `.rodata`, at `0x08069ca0`.
-13 page faults, no resets, the same in three boots out of three.
-
-The two "unknown flags" lines are why. The boot module has two
-read-only PT_LOAD segments — the ELF header with
-`.note.gnu.build-id`, and `.rodata` with `.eh_frame` — and the kernel's
-loader maps only read+execute and read+write, so `.rodata` is never
-mapped. Today's GNU ld separates read-only data by default; relinked
-with `-z noseparate-code`, the same objects make two segments, R+X and
-R+W, the two the loader handles. That is row 26.
-
-**Kernel IPC works since verdict 25.** GCC had collapsed `mig_init`'s
-loop, so the kernel's MIG dispatch table, `mig_buckets`, held one
-routine per subsystem and every other kernel RPC answered
-`MIG_BAD_ID`. Read from the running kernel with gdb, 12 seconds into
-the boot: 8 of its 1,024 entries populated before, 196 after. The
-screen and the stopping point above do not change, because the task
-reads `.rodata` before it can show anything.
-
-Row 26's segment is the one thing known to be next. With it removed
-for the test, the task reaches its own prompt:
 
 	ERROR: bootstrap task cannot find configuration file, please make sure that
 	       your boot device and partition is correctly specified.
 
 	Configuration file (or 'builtin'): /dev/boot_device/mach_servers/bootstrap.conf
+
+40 page faults, no resets, the same in three boots out of three. The
+task is waiting at its prompt for a configuration file it cannot find,
+which is what `dev`'s next rows, 27 to 31, are about: the boot device,
+the environment, a floppy with `bootstrap.conf` on it, and then
+`name_server` and `default_pager`.
+
+**How each step was measured.**
+
+- *Verdicts 22–24.* Without kernel IPC or `.rodata`, the task ran crt0,
+  `mach_init`, `host_page_size` and `mach_init_ports` and stopped in
+  `bootstrap_arguments` on its first read of `.rodata`, `0x08069ca0`:
+  13 page faults, the same in three boots.
+- *Verdict 25.* GCC had collapsed `mig_init`'s loop, so the kernel's MIG
+  dispatch table, `mig_buckets`, held one routine per subsystem and
+  every other kernel RPC answered `MIG_BAD_ID`. Read from the running
+  kernel with gdb, 12 seconds into the boot: 8 of its 1,024 entries
+  populated before, 196 after. The screen did not change, because the
+  task read `.rodata` before it could show anything.
+- *Verdict 26.* The boot module had two read-only PT_LOAD segments, the
+  ELF headers and `.rodata`, reported as "unknown flags" and never
+  mapped. Linked with `-z noseparate-code` it has two segments, R+X and
+  R+W, and the screen above follows. The loader also maps read-only
+  segments now: a bootstrap linked the default way, with four PT_LOAD
+  segments, reaches the same prompt, its scan reading "Found read-only
+  region" twice and "I've found: 4 sections".
 
 What follows is the boot as it was until then, on the graft's path.
 It loaded the boot module, parsed its ELF, created the task, resumed
