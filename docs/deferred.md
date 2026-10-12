@@ -143,7 +143,8 @@ neither OSF's server nor Lites used.
 ### The bootstrap fork: Hurd or OSF
 
 **This is where the boot currently stops, so it is deferred only until
-the build driver exists.**
+the server builds.** The build entry exists — `build -here lites` —
+and stops at Lites' own source; `docs/status.md`, "The build".
 
 As published, this tree does not boot the way Mach does. Verified
 here, in our own copy:
@@ -170,11 +171,11 @@ further; it needs a different second task, which is Tier 0's "one
 build drives all three".
 
 **Deferred because** the choice is not ours to make yet. Switching to
-`bootstrap_create_old()` means having something for it to load, and
-that is the build driver. `nmartin0/test_mk7.3` `dev` commits
-`c1620a0` and `856290c` put the old path behind a flag; they are
-ahead of us in the walk and should be read when the driver lands, not
-before.
+`bootstrap_create_old()` means having something for it to load: the
+build driver, which now exists, and a server it builds, which does not
+yet. `nmartin0/test_mk7.3` `dev` commits `c1620a0` and `856290c` put
+the old path behind a flag; they are ahead of us in the walk and
+should be read when the server links, not before.
 
 **It also qualifies a claim this branch has already made.** `752cba4`
 corrects `parse_multiboot`'s unbounded module reads and files them in
@@ -255,6 +256,74 @@ would be worthwhile". They did not do it.
 
 **Deferred to Tier 2.** Recorded so it is not rediscovered as a
 surprise when the collocation numbers come in lower than hoped.
+
+### Lites' ODE build (option A)
+
+**Not chosen for now, and not refused.** Lites is built under ODE by
+one Makefile that runs its own `configure` build
+(`docs/provenance/precedent.md`, "How Lites meets ODE"). The
+alternative was to revive the CMU ODE build Lites also carries, which
+is the closer likeness to OSF's `src/osf1_server/conf/AT386/template.mk`.
+
+**Why it was not taken first:** it is the most new code inside Lites,
+it re-creates a build Lites' authors had left before they ran it on
+OSFMK, and B reaches a running system sooner. The maintainer, choosing
+B on 11 October 2026: "we might revisit A in the future".
+
+**What it would take**, measured rather than guessed:
+
+- `server/conf/MASTER` and `i386/MASTER`: OSFMK's `config` rejects
+  `conftype "i386"`; `machine "i386"` and `cpu "i386"` are what it
+  takes, and with that change alone it writes a 605-line ODE Makefile
+  with 150 objects and 71 option headers.
+- `server/conf/files` and `MASTER`: forward-port `osfmach3` and its
+  `makeoptions`, and the 22 sources only the configure build has
+  (ext2fs 10, msdosfs 6, minixfs 3, `serv/cprocs.c`,
+  `serv/synch_prim.c`, `conf/param.c`); reconcile the two it has that
+  the configure build does not (`../conf/param.c`,
+  `serv/notify_interface.c`).
+- ODE Makefiles for `include/`, `liblites/`, `emulator/`, `bin/` and
+  the top, none of which has one.
+- `gensym.awk` and Lites' MIG rules as ODE rules; OSFMK's `osf.osc.mk`
+  already has MIG rules.
+
+**What would make it worth revisiting:** wanting the server to build
+the way OSF's did down to the configuration file — for instance when
+Tier 1 item 1 builds two flavours, user and collocated, from one
+`conf/`, as OSF's `SERVER_CONFIG` did.
+
+### The toolchain: era compilers, and GCC with Mach patches
+
+**Recorded now, at the maintainer's request, for later.** The build
+uses the host's GCC 13.3 with flags restoring the older behaviour
+the code assumes (`CARGS` in `docs/tools/mksandbox.sh`). The
+maintainer notes that several GCC 4 releases carried patches for Mach
+targets, and that the canonical patched GCC and binutils for OSFMK
+should eventually be found and used.
+
+What this build already shows about compiler era, from the first
+`build -here lites`:
+
+- `conf/gensym.awk` writes a string literal across lines, which the
+  preprocessor stopped accepting in **GCC 3.3**: "The preprocessor no
+  longer accepts multi-line string literals. They were deprecated in
+  3.0, 3.1, and 3.2." (gcc.gnu.org/gcc-3.3/changes.html). A GCC 4
+  would reject it too.
+- `serv/user_copy.c:218`, "lvalue required as increment operand", is
+  a cast used as an lvalue. That GNU extension was removed in the GCC
+  4 series; the release that removed it has not yet been checked
+  against GCC's notes.
+- `kern/kern_sig.c`, five "pointers are not permitted as case values":
+  when GCC began rejecting these is not yet established.
+
+So a GCC 4 is not by itself a cure for what Lites' 1995 sources
+assume, and the toolchain question is separate from the source fixes:
+which compiler OSF used (the `nmk18b9` sandbox's
+`link/tools/at386/elf/gcc` in Lites' `conf/Makerules` is one name to
+start from), which Mach-patched GCCs exist and what their patches do,
+and whether any of it is APSL or GPL — GCC is GPL as a tool, which is
+not the same as GPL code in this tree, and that distinction needs to
+be written down before a toolchain lands here.
 
 ## 2a. Tooling defects, to fix in a later patch
 

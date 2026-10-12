@@ -15,7 +15,15 @@ One command per tree.  Lites lives inside the kernel's sandbox at
 `src/osf1_server` -- so the kernel's record excludes it, and the
 server's record compares its import's tree directly against where it
 lives now.  Both were run when Lites moved: the first shows the 11
-kernel files, all under `osfmk/src/mach_kernel`; the second is empty.
+kernel files, all under `osfmk/src/mach_kernel`; the second was empty.
+
+The second now shows four entries and no changed source line: CMU's
+`Makeconf` deleted, the ODE `Makefile` that runs Lites' own build
+added, and mode 644 to 755 on `conf/config.guess` and
+`conf/move-if-change`.  `docs/provenance/precedent.md`, "How Lites
+meets ODE", has the reason for each; the Makefile is level 2 of the
+order below, a build change, and carries an AI-ONLY NOTE as the
+kernel's `template.mk` change does.
 
 That is the deviation record. "We changed two files" becomes something
 a reader can verify instead of a claim in a commit message. It only

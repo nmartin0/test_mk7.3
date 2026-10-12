@@ -20,8 +20,56 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 | `mach_kernel.PRODUCTION` | 1,021,600 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 220,656 bytes, same format |
 | errors | 0 |
-| vendor files modified | 11 in the kernel, all under `osfmk/src/mach_kernel`, with 226 insertions and 49 deletions against `f8fee21`; none in Lites, at `osfmk/src/lites`, against `e31a69d` |
-| kernel text | 818,058 bytes |
+| vendor files modified | 11 in the kernel, all under `osfmk/src/mach_kernel`, with 226 insertions and 49 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
+| kernel text | 818,102 bytes |
+
+The kernel text was 818,058 here until this table was corrected; that
+was the figure after `2508bd3` and before `752cba4`, whose
+`mods_count` guards added 44 bytes.
+
+### Lites
+
+Built separately, after `build_world`, as OSF's step 8 built its
+server:
+
+	cd osfmk/src && build -here lites
+
+`osfmk/src/lites/Makefile` runs Lites' own `configure` and GNU make in
+`obj/at386/lites/STD+WS+osfmach3/`, with the sandbox's compiler, MIG
+and export area; `docs/provenance/precedent.md`, "How Lites meets
+ODE". The line is not yet in `build_world`, and goes in when it
+succeeds.
+
+| | |
+| --- | --- |
+| configure | succeeds; server configuration `STD+WS+osfmach3` selects 157 of `conf/files`' 289 sources |
+| `include/`, `liblites/` | build; `liblites.a` and `liblites_p.a` |
+| `server/` | stops; 145 objects compiled, with `GMAKE="gmake -k"` |
+| `emulator/`, `bin/` | not reached |
+| kernel and bootstrap | unchanged: 818,102 bytes of text, 220,656 bytes |
+
+What stops it, every error, from a clean object directory:
+
+| where | what | kind |
+|---|---|---|
+| `conf/gensym.awk` → `bsd_types_gen.symc` | 22 errors: a string literal written across lines | compiler era |
+| ← that | `bsd_types_gen.h` missing in `bsd_types.defs`, `bsd_types.h`, `server_exec.c`, `ux_server_loop.c`, and `bsd_1_server.h` in `serv_syscalls.c` | follows from the first |
+| `kern/kern_sig.c:1071-1219` | 5, pointers as case values | compiler era |
+| `serv/user_copy.c:218` | a cast used as an lvalue | compiler era |
+| `serv/device_reply_hdlr.c:91` | `mig_reply_header_t`; OSFMK has `mig_reply_error_t` | OSFMK interface |
+| `serv/xmm_interface.c:113,115` | `memory_object_attr_info` has no `object_ready`, `may_cache` | OSFMK interface |
+| `serv/vn_pager_misc.c:400` | `memory_object_behave_info` has no `write_completions` | OSFMK interface |
+
+`dev`'s `tools/lites/lites-osfmk73.patch` touches `gensym.awk`,
+`kern_sig.c`, `user_copy.c`, `xmm_interface.c` and `vn_pager_misc.c`,
+so the verdict walk reaches a fix for all but `device_reply_hdlr.c`.
+Those come as their own commits, as the walk reaches them, not here.
+Two more are known to be ahead, both found by `dev` first. The link:
+`server/Makerules` names `-lthreads -lmach_sa` (or `-lcthreadsZ
+-lmachZ -lsa_machZ` under `OSF_ENVIRONMENT`), and this export area has
+`libcthreads`, `libmach` and `libsa_mach`. And `-Ulinux`: `-std=gnu89`,
+which `CARGS` passes, predefines `linux`, and Lites tests it
+(`dev`'s `ec33ce7`).
 
 Reproduced four times: during the walk, from a clean clone with the
 changes copied in, from the patch applied to a clean clone, and from

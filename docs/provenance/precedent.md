@@ -30,11 +30,12 @@ read.
 
 The server is a peer of the microkernel **inside the same source tree**:
 a component directory of `osfmk/src/`, beside `mach_kernel/`,
-`bootstrap/`, `default_pager/` and `mach_services/`, configured by its
-own `conf/<MACHINE>/` the way `mach_kernel` is, built by the same ODE
-`build` after `mach_services`, and installed in `/mach_servers/` with
-`startup` pointing at it. For this project that directory is
-`osfmk/src/lites/`.
+`bootstrap/`, `default_pager/` and `mach_services/`, built by the same
+ODE `build` after `mach_services`, and installed in `/mach_servers/`
+with `startup` pointing at it. For this project that directory is
+`osfmk/src/lites/`. OSF configured its server with its own
+`conf/<MACHINE>/`, the way `mach_kernel` is; Lites is configured by its
+own `configure`, run by ODE — "How Lites meets ODE" below has why.
 
 That is OSF's own arrangement for OSF/1 on MK, stated twice in OSF's
 release notes, and it is CMU's arrangement one level up.
@@ -140,7 +141,147 @@ Lites out to the top level, beside `osfmk/`, on the strength of CMU's
 mapped one level too high — `osfmk/src/` corresponds to CMU's `src/`,
 not to its `mk` collection — and DR3's sibling was generalised from an
 exception. OSF's release notes, read after that commit landed, settle
-it. The commit that follows this one moves Lites to `osfmk/src/lites/`.
+it. `97b5ea4` moved Lites to `osfmk/src/lites/`.
+
+## How Lites meets ODE
+
+`build -here lites` builds Lites. `osfmk/src/lites/Makefile`, the one
+file added for it, is an ODE Makefile that runs **Lites' own
+`configure` and GNU make** in the object directory, against the
+sandbox's compiler, MIG and export area. Lites' older ODE build was not
+revived. Both were tested before either was written.
+
+### What Lites carries
+
+Two build descriptions, of different ages:
+
+- **CMU ODE**, `Makeconf` at the top and `server/conf/` (`MASTER`,
+  `files` in OSF's dialect, `template.mk` by Mary Thompson and Johannes
+  Helander, 1992 and 1994, and the `Makefile.config` that composes a
+  configuration). Only the server has one; `include/`, `liblites/`,
+  `emulator/` and `bin/` have no ODE Makefile at all.
+- **autoconf and GNU make**, `configure` from `conf/configure.in`, with
+  `conf/MASTER`, `conf/files` (the `fileif` dialect) and a `Makefile.in`
+  and `Makerules` per directory. Helander's `doc/building` documents
+  it: "run configure; gmake; gmake install".
+
+The second is the one that knows about this kernel. `osfmach3` —
+`options osfmach3 OSFMACH3 1`, with `-DOSF_LEDGERS=1 -DUNTYPED_IPC=1`,
+selecting the `bootstrap_ports()` handshake in `server_init.c` and
+OSFMK code paths in about twenty server files — is in `conf/MASTER`
+and nowhere in `server/conf/`. The configure build also has 22 sources
+the ODE one lacks, among them ext2fs, msdosfs and minixfs. The ODE
+configuration was abandoned before Lites ran on OSFMK.
+
+And the configure build was used against an OSF sandbox by the people
+who wrote it. `conf/Makerules`, under `###### OSF STUFF #####`:
+
+	ifdef OSF_ENVIRONMENT
+	LD = /afs/gr.osf.org/users/guest/sbox/nmk18b9/link/tools/at386/elf/ld -T ...
+	CC = /afs/gr.osf.org/users/guest/sbox/nmk18b9/link/tools/at386/elf/gcc -B...
+
+— an ODE sandbox at OSF Grenoble, `nmk18b9`, its `link/tools/` the
+same shape as this tree's `osfmk/link/tools/`. That is the arrangement
+this file reproduces: Lites' build, the sandbox's tools.
+
+### What was measured
+
+- **Lites' `Makeconf` makes it a separate ODE collection, and that
+  fails here.** With it present, `build -here lites` stops at once:
+  `No such directory: ../obj/at386/lites` — ODE's make takes
+  `osfmk/src/lites/` as the top of a tree and resolves the object
+  directory from there. With it absent, ODE treats Lites as a component
+  like `mach_kernel`: objects under `obj/at386/lites`, `RULES_MK`,
+  `EXPORTBASE` and `TARGET_MACHINE=AT386` all set. No other component
+  under `osfmk/src` has a `Makeconf`. It is CMU's convention — "Each
+  collection contains one Makeconf now, at top-level" — for a tree
+  where `lites` would be a collection rather than a component.
+- **OSFMK's `config` accepts `server/conf`** once its header is
+  translated (`conftype "i386"` to `machine` and `cpu`, which is what
+  OSFMK's `config` requires), and writes a 605-line ODE Makefile with
+  150 objects. So reviving it is possible.
+- **The configure build, against the export area, compiles 144 of the
+  server's objects before stopping** by hand, and 145 through ODE,
+  where MIG also runs. Of the first attempt's 146 errors, 108 were
+  Lites' own two-argument `free()` and three-argument `malloc()`
+  meeting a compiler with built-ins, and vanished with `-fno-builtin`,
+  which every compile in this sandbox already carries (`osf.gcc.mk`
+  line 90's `BASE_CC`, and `ANSI_CC` in `docs/tools/mksandbox.sh`).
+
+### The options, and the choice
+
+**A. Revive the ODE build.** Forward-port `osfmach3`, the filesystem
+options and the 22 sources into `server/conf`; write ODE Makefiles for
+`include/`, `liblites/`, `emulator/`, `bin/` and the top; express
+`gensym.awk` and the MIG rules as ODE rules. This is the closer
+likeness to OSF's own `src/osf1_server/conf/AT386/template.mk`. It is
+also the most new code inside Lites, re-creating a build its authors
+had left, and every later Lites change would have to be made twice or
+the two would drift.
+
+**B. One ODE Makefile that runs Lites' configure build.** OSF's step 8
+keeps its shape — `build -here` inside the sandbox — and inside Lites
+the build is the one its authors used on OSF's kernel. One file added,
+one removed.
+
+**C. A driver in `docs/tools/`, outside `build_world`.** Contrary to
+OSF's release notes, which build the server with the same driver as
+everything else. Listed for completeness.
+
+**B was chosen**, by the maintainer on 11 October 2026: it keeps OSF's
+build entry, changes least inside Lites, and is the shortest route to
+a running system. **A is not refused.** It is the more faithful copy
+of OSF's own server layout and may be revisited; `docs/deferred.md`
+§2, "Lites' ODE build", holds it with what it would take.
+
+### What B needed, and why each piece
+
+The comment at the top of `osfmk/src/lites/Makefile` carries all of
+this; in short:
+
+- **`Makeconf` removed**, for the reason measured above. Its defaults
+  were `LITES_CONFIG=STD+WS+DEBUG` and `VERSION=LITES`; `VERSION` is
+  read only by `server/conf/template.mk`, and the configuration default
+  moves into the Makefile as `STD+WS+osfmach3` — configure's own
+  default plus this kernel's option.
+- **The cross tools by their target names.** configure runs the target
+  preprocessor itself, for the server configuration, before any
+  Makefile exists, so tools cannot be supplied later on the make line.
+  Lites expects them installed as `i386-mach-gcc` and so on
+  (`doc/README.lites-1.1.u1`, "the i386-mach cross-build tools");
+  `OSF_ENVIRONMENT` pointed at the sandbox's own. The Makefile writes
+  one-line wrappers into the object directory, each an `exec` of what
+  the sandbox uses — `${_CC_} ${CARGS}`, `${_LD_} ${LDOPTS}`,
+  `${_AR_}`, `${_RANLIB_}`.
+- **`<stdarg.h>` from `sa_mach`**, added after all of Lites' include
+  directories with `-idirafter`. `osc/Buildconf` line 134 gives every
+  Mach task `-I…/include -I…/include/sa_mach`; the exported
+  `mach_init.h` includes `<stdarg.h>`. `dev`'s `0b9c704` reached the
+  same answer independently ("the way upstream does it").
+- **MIG on the gmake line.** Lites' Makerules builds
+  `MIG := mig -cc "${CPP}"` for the CMU and Utah driver; OSF's driver
+  spells that `-cpp` and passes unknown options to the preprocessor.
+  `MIG="${_MIG_} -cpp i386-mach-gcc"` overrides the one line's result,
+  and `MIGCOM` goes with it because Makerules reassigns it empty.
+  `dev` translated the option in a wrapper, `mig-shim.sh`; a
+  command-line variable does the same without a script.
+- **`--prefix` inside the object directory.** Lites puts
+  `${prefix}/include` on every compile; the default, `/usr/local`,
+  put the host's headers on a `-nostdinc` build.
+- **`INCDIRS`, `LIBDIRS` and `MAKEFLAGS` cleared** for gmake. Buildconf
+  exports the first two as ready-made `-I`/`-L` strings, and Lites'
+  Makerules uses the same names for bare lists it prefixes itself,
+  producing `-I-I/…`.
+- **A subdirectory per configuration**, `obj/at386/lites/<config>/`,
+  as the kernel has `PRODUCTION/`. Run in the object directory itself,
+  configure's generated `Makefile` is read by ODE's make in preference
+  to the source one, and the second build fails.
+- **Two execute bits restored**, on `conf/config.guess` and
+  `conf/move-if-change`. The import carries all 761 Lites files as
+  mode 644; these are the two the configure build runs by path rather
+  than through `sh`, and without them configure cannot guess the host
+  and writes no option headers. The other eight scripts with `#!` are
+  run through `sh` and are left as imported.
 
 ## Where to look, in order
 
