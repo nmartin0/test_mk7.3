@@ -87,7 +87,7 @@ first.
 
 | # | commit | subject | verdict | reasoning |
 |---|---|---|---|---|
-| 1 | `4b29812` | first commit | in base | MkLinux DR3 verbatim, confirmed byte-identical against `slp/osfmk-mklinux`, an independent repository. Ancestor of `dev3` via `f8fee21`. Message is two lines with no provenance, superseded by `f8fee21`'s. |
+| 1 | `4b29812` | first commit | in base | MkLinux DR3 verbatim, confirmed byte-identical against `slp/osfmk-mklinux`, an independent repository. Ancestor of `dev3` via `f8fee21`. Message is two lines with no provenance, superseded by `f8fee21`'s. **Corrected 12 October 2026:** `slp/osfmk-mklinux` is the import's source, not independent of it, and its last commit carries slp's 2011–2012 changes; the import is not DR3 verbatim. `docs/provenance/precedent.md`, "Where the two imports came from". |
 | 2 | `f8fee21` | Import OSF Mach Kernel 7.3 verbatim | in base | 2,998 additions, zero deletions: it adds a second copy rather than moving the first, so `dev` carries the kernel twice from here on. `dev3` keeps one. |
 | 3 | `6b72de1` | Add build environment, agent rules, principles | adopt reworked | Tested: its `bootstrap-ode.sh` builds `make` alone, as its message says. Its seven Buildconf claims all verified against our tree. Docs declined — they arrive verbatim in `docs/reference/`. Script folded into `docs/tools/bootstrap-ode.sh`. |
 | 4 | `ee6f9fd` | Build the ODE toolset and prepare the sandbox | adopt reworked | Tested: builds six tools, not `md`, exactly as its message says. `ar crl` failure on binutils 2.42 reproduced directly. Folded into the same commit; its `md` deferral is corrected by commit 5. |

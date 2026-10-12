@@ -11,8 +11,8 @@ first thing to establish before looking anywhere.
 ## The three trees
 
 	name        where it is          import    what
-	osfmk7.3/   osfmk/               f8fee21   OSF Mach Kernel 7.3, from MkLinux DR3.  Verbatim.
-	lites/      osfmk/src/lites/     e31a69d   Lites, the CMU/HUT 4.4BSD-Lite single server.  Verbatim.
+	osfmk7.3/   osfmk/               f8fee21   OSF Mach Kernel 7.3, from MkLinux DR3, as slp/osfmk-mklinux had it in 2012.
+	lites/      osfmk/src/lites/     e31a69d   Lites 1.1.u3, the CMU/HUT 4.4BSD-Lite single server, as xMach's CVS had it in 2000.
 	bsd/        not yet imported               the 4.4BSD-Lite2 personality, from nmartin0/4.4BSD-Lite2.
 
 **Throughout `docs/`, `osfmk7.3/`, `lites/` and `bsd/` are the trees'
@@ -25,6 +25,163 @@ All three run. That is the premise of the project and the reason the
 imports are verbatim: each has a one-command deviation record, given in
 `docs/provenance/pristine.md`, and each must stay small enough to
 read.
+
+**Neither import is its upstream's release, corrected 12 October 2026.**
+Each is verbatim from the copy it was taken from, and each of those
+copies had been changed by an intermediate project. "Where the two
+imports came from", next, has the evidence; `docs/roadmap.md`,
+"Intermediate goal", milestone 0, restores the releases.
+
+## Where the two imports came from
+
+**`osfmk7.3/` is `slp/osfmk-mklinux` at its last commit, `d4d387a`
+(3 November 2012)**, Sergio López's "OSF Mach and MkLinux conservation
+project" on GitHub. Our `osfmk/` at `4b29812`, `f8fee21` and `918a874`
+has git tree `10ca4d13231745f33d052c271071142f7b0687b1`, the same tree
+as `d4d387a:osfmk`; nmartin0/osfmk7.3 is a one-commit copy of it with
+the Linux server, `mklinux/`, left out. Verdict 1 called slp's
+repository "an independent repository" that confirmed the import. It
+is the import's source, so it confirms nothing about DR3.
+
+slp's repository has nineteen commits. The first, `0f6f7e6`
+(4 January 2011, "Initial commit"), is the nearest to MkLinux DR3 that
+can be read: no "multiboot", "GRUB" or "boot_script" anywhere in its
+`osfmk/`. It is not untouched either. Its `i386/start.s` puts the
+`#include <i386/AT386/asm_startup.h>` block -- the code that takes
+`mach_boot`'s arguments off the stack and moves the bootstrap image
+-- inside `#if 0`, and the editor's backup beside it, `start.s~`,
+differs from it in exactly those two lines. So the original survives in
+the commit itself. The other eighteen commits, in order:
+
+	18c9d31  .s renamed .S; start.S gains a multiboot header and entry
+	81429d0, 0d8ebab  PCI disabled for i386
+	2913827  "register" -> "register int" in eight drivers
+	f4fa636  minor fixes: rtclock.c, at386_scsi.c, template.mk
+	4df2e7d  config and migcom sources and prebuilt binaries
+	364472d  assym.s -> assym.S
+	444954a  multiboot (GRUB): model_dep.c, and do_bootstrap_compat()'s
+	         loader_info code replaced by an ELF PT_LOAD parser
+	7e81018  hd.c: "Workaround to be able to use ATA devices under QEMU"
+	9335f94  more kernel virtual memory (mach/i386/vm_param.h)
+	090a2dc  assembler comments in libsa_mach
+	af5babc  i386/multiboot.h (Utah) and mach/elf.h
+	ebdad63  ext2_dir_entry updated
+	8105dd7  parse_arguments() changed
+	63279d3  the GNU Hurd graft: kern/boot_script.[ch], exec_load(),
+	         exec_map(), set_user_regs(), build_args_and_stack(), the
+	         new bootstrap_create(); OSF's renamed *_old behind #if 0
+	55c7c1c  the Linux server's Makefiles (mklinux/, not in our import)
+	44e8969  usimple lock check commented out in kern/lock.c
+	d4d387a  Page Global Extensions for i386
+
+`stand/`, `i386/AT386/asm_startup.h`, `conf.c`, `autoconf.c` and
+`mach/boot_info.h` are as `0f6f7e6` has them.
+
+**`lites/` is xMach's SourceForge CVS module (`/cvsroot/xmach/lites`)
+as of late 2000**, not Utah's release. 78 files carry
+`$Header: /cvsroot/xmach/lites/...`; the CVS logs show the import by
+`xmach` on 6 May 2000 and changes by `welchd` in October and November
+2000. Utah's last release, `lites-1.1.u3.tar.gz` (30 March 1996), has
+892 files; ours has 761. 445 are byte-identical, 308 differ, and of
+those 264 differ only in CVS keyword and log lines. xMach removed 139
+files -- the alpha, mips, ns532 and parisc ports, Lites' old CMU
+Makefiles, `conf/configure`, Utah's `makefile` -- and changed 44:
+dynamically linked Linux ELF binaries, a devfs, `ostype` "xMach", Linux
+2.4 bitops in ext2fs, `configure` regenerated with autoconf 2.13, and
+generated `conf/Makeconf` and `conf/Makevar` committed by mistake.
+None of the 28 files with `OSFMACH3` code differs in that code.
+
+The tarball used for comparison is `github.com/ryanwoodsmall/lites`'s,
+SHA-256 `f81eab46e47786a6db7217aab6d3b29534ff24a8314a889e8e249568e7042c93`.
+It is 1,763,728 bytes, the size `ftp.lip6.fr/pub/mach/mach4/mach/lites/`
+lists for it, 29 March 1996, and xMach's import of 2000 agrees with its
+content file for file. Its seven scripts are mode 0775, which would
+make our own mode change on `conf/config.guess` and
+`conf/move-if-change` unnecessary.
+
+## What OSF's running system was
+
+What the intermediate goal in `docs/roadmap.md` reconstructs. OSF's own
+words first; where OSF said nothing, Lites' authors'.
+
+**The parts, and where they were installed.** MK7.3 Release Notes
+§2.5.2 lists them: primary bootstrap `/stand/boot`, secondary
+bootstrap `/mach_boot`, bootstrap task `/mach_servers/bootstrap`,
+microkernel `/mach_kernel`, default pager
+`/mach_servers/default_pager`, name server `/mach_servers/name_server`,
+"MK Server" `/mach_servers/startup`. The boot loaders' own code
+disagrees with the notes on one path: `stand/AT386/boot/primary/boot.c`
+loads `/stand/mach_boot`, and `primary/README` says "The default is
+/stand/mach_boot".
+
+**How it started.** The primary boot, in the first 8 KB of the disk,
+loads `mach_boot`; `mach_boot` takes `boot: [<kernel>] [flags] [--]
+[<bootstrap>] [flags]`, with `hd(unit,partition)` device names, and
+loads `/mach_kernel` and then `/mach_servers/bootstrap`
+(`stand/AT386/boot/secondary/README`; Release Notes §2.5.3). The
+bootstrap task reads `/dev/boot_device/mach_servers/bootstrap.conf`.
+OSF shipped `bootstrap/bootstrap.template` as that file:
+
+	name_server name_server
+	default_pager default_pager
+	startup startup
+
+with the comment that the default pager takes "a paging device name"
+and the server -- "osf1_server (conventionally called "startup")" --
+takes "-s (single-user), -a (prompt for root device), and a root file
+system name (ex: hd0a)". `bootstrap.c`'s built-in fallback is the same
+three with `unix startup -s`. §2.5.3's example for an in-kernel server:
+
+	name_server /mach_servers/name_server
+	def_pager /mach_servers/default_pager sd0b
+	-k startup /mach_servers/osf1_server.INK sd0a
+
+**Paging is a partition.** `default_pager` takes `-v`, `cl=N` and Mach
+device names (`default_pager.c`); §2.7.3 gives the partition on its
+`bootstrap.conf` line or as a `sw` entry in `/etc/fstab`, and §2.7.4
+makes b the paging partition. MK6.1's paging file is gone.
+
+**No mach_init.** *Optimizing Mach-based Systems by Server
+Co-location*: "The OSF/1 server runs /sbin/init. There is no need for
+mach_init as the service server is already running in the bootstrap
+task and the netname service is already running as well." Lites'
+`doc/README` says the same from its side: "mach_init may be replaced
+by a symlink to /sbin/init if a Mach name server is not used" -- and
+here `name_server` is that server.
+
+**What OSF did not say: how to run Lites on it.** Lites has had OSF MK
+code since 1.1 (March 1995; `OSFMACH3` in 28 files, and `conf/Makerules`
+pointing at an OSF Grenoble sandbox, `nmk18b9`), but no document in any
+Lites release says how to boot it on OSF's kernel. With no arguments,
+its `server_init.c` uses `-s hd0a /dev/hd0a/mach_servers`. The
+userland its documents name is NetBSD 1.0's or FreeBSD 2.0's:
+`doc/README` ("NetBSD, FreeBSD, UX, Linux, and 386BSD binaries are
+supported"),
+`doc/README.lites-1.1.u1` (a NetBSD 1.0 `/etc/ttys`) and
+`doc/install.freebsd`. Helander's thesis (1994) reports Lites
+"self-hosting on the i386", compiling with the host BSD's own gcc.
+
+**Network.** §2.2.7 supports SMC WD8003/8013 and DEC DE435/DE450
+boards, configured with `net_start <address> wd0|tu0 <netmask>`
+(§2.4.2.3). Neither board is emulated by QEMU, and `tu`'s driver is not
+in this tree (only `if_tu_entries.h`). The PRODUCTION configuration
+also builds an NE2000 driver, `ne` (`conf/AT386/config.devices`, under
+"MITCHEM"), which matches QEMU's `ne2k_isa` -- with two defects: its
+`autoconf.c` entry installs `at3c501intr` as its interrupt handler, and
+`if_ne.c`'s odd-length copies index an `int *` by bytes. Lites runs
+4.4BSD's TCP/IP stack in the server and opens an interface by its Mach
+device name (`server/serv/ether_io.c`, `iface_find()`).
+
+**How OSF built it.** Natively, on "a DEC PC/AT class machine running
+MK7.2 or later" (§2.5.2), with binaries of "the FSF gcc and the ODE
+minimal tools set" on the tape's sixth volume; the host supplies `cc`,
+`lex`, `yacc`, `libc.a`, `libl.a` and `libln.a`. §1.2.3: gcc 2.7.1 "is
+the version of 'gcc' that has been used with MK7.2 and MK7.3".
+`osc/Buildconf` says `GCC_LATEST 2_7_1`, and `2_7_2_1` on a Linux host.
+FSF GCC's `config/i386/osfelf.h`, "Intel 386 (OSF/1 with ELF)",
+predefines `__NO_UNDERSCORES__`, which `Buildconf` adds by hand for
+Linux. GCC 3.1 declared the OSF/1 i386 targets obsolete; no later GCC
+has them.
 
 ## Where the server lives, and why
 
