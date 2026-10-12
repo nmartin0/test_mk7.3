@@ -142,9 +142,19 @@ neither OSF's server nor Lites used.
 
 ### The bootstrap fork: Hurd or OSF
 
-**This is where the boot currently stops, so it is deferred only until
-the server builds.** The build entry exists — `build -here lites` —
-and stops at Lites' own source; `docs/status.md`, "The build".
+**Decided, 12 October 2026: OSF.** The kernel starts OSF's bootstrap
+task again, through OSF's `bootstrap_create()` and `user_bootstrap()`
+under their own names; the graft's functions stay in
+`kern/bootstrap.c` behind `#if 0 /* GNU Hurd bootstrap graft */`, and
+`conf/files` no longer builds GNU Mach's `kern/boot_script.c`. Taken
+in the verdict walk as rows 22–24, `dev`'s `c1620a0`, `856290c` and
+`8a15d03`, reworked; `docs/provenance/verdicts.md` has the three
+shapes considered and why this one. The deferral below said to wait
+for the server to link. That was too strict: the bootstrap task, and
+the `name_server` and `default_pager` it starts, are OSF's own and
+need nothing from Lites.
+
+The section is kept as it was written, because it is the evidence.
 
 As published, this tree does not boot the way Mach does. Verified
 here, in our own copy:

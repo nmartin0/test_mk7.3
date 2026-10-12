@@ -504,6 +504,13 @@ do_bootstrap_compat(void)
 #endif /* SYS_REBOOT_COMPAT */
 
 
+/*
+ * AI-ONLY NOTE: OSF's bootstrap path is restored; see the note above
+ * bootstrap_create() below.  From here to the matching #endif is the
+ * GNU Hurd graft's loader, exec_load() and exec_map(), used only by
+ * the graft's user_bootstrap().  Kept in the file, not compiled.
+ */
+#if 0	/* GNU Hurd bootstrap graft */
 static void
 exec_load(vm_offset_t start, vm_size_t size)
 {
@@ -666,6 +673,7 @@ exec_map(vm_offset_t start, vm_size_t size)
 	}
 	vm_object_deallocate(object);
 }
+#endif	/* GNU Hurd bootstrap graft */
 
 static vm_offset_t
 set_user_regs(vm_offset_t stack_base, vm_size_t stack_size, 
@@ -801,6 +809,7 @@ build_args_and_stack(char **argv, char **envp)
 	(void) copyout((char *)&zero, arg_pos, sizeof(char *));
 }
 
+#if 0	/* GNU Hurd bootstrap graft: its user_bootstrap() */
 struct user_bootstrap_info
 {
     vm_offset_t start;
@@ -866,10 +875,15 @@ user_bootstrap(void)
 	thread_bootstrap_return();
 	/*NOTREACHED*/
 }
+#endif	/* GNU Hurd bootstrap graft */
 
-#if 0
+/*
+ * AI-ONLY NOTE: OSF's user_bootstrap(), restored under its own name.
+ * The graft had renamed it user_bootstrap_old and put it behind #if 0;
+ * see the note above bootstrap_create() below.
+ */
 static void
-user_bootstrap_old(void)
+user_bootstrap(void)
 {
 	int	i;
 	struct region_desc *r;
@@ -994,6 +1008,25 @@ user_bootstrap_old(void)
 	 */  
 	set_bootstrap_args();
 #endif
+#if	defined(i386)
+	/*
+	 * AI-ONLY NOTE: the i386 arm of the hp_pa one above.  The task's
+	 * crt0 (mach_services/lib/libsa_mach) reads argc and argv off the
+	 * stack and runs mach_init only if argv[0] is non-null.
+	 * do_bootstrap_compat() points esp at STACK_PTR, marked XXX, and
+	 * puts nothing there, so on i386 the task never initialises.
+	 * build_args_and_stack(), in this file, lays out exactly the
+	 * frame crt0 reads and moves esp to it.  It must run before
+	 * thread_setstatus() below installs thread_state.
+	 */
+	{
+	    char	*bootstrap_argv[2];
+
+	    bootstrap_argv[0] = boot_args_buf;
+	    bootstrap_argv[1] = (char *) 0;
+	    build_args_and_stack(bootstrap_argv, (char **) 0);
+	}
+#endif	/* defined(i386) */
 
 	/*
 	 * set the bootstrap task thread state.
@@ -1009,7 +1042,6 @@ user_bootstrap_old(void)
 	thread_bootstrap_return();
 	/*NOTREACHED*/
 }
-#endif
 
 kern_return_t
 do_bootstrap_ports(
@@ -1140,6 +1172,7 @@ do_bootstrap_completed(
 
 void	load_info_print(void);
 
+#if 0	/* GNU Hurd bootstrap graft: its bootstrap_create() */
 extern struct multiboot_module *mb_module;
 
 void
@@ -1251,10 +1284,24 @@ bootstrap_create(void)
     /* XXX at this point, we could free all the memory used
        by the boot modules and the boot loader's descriptors and such.  */
 }
+#endif	/* GNU Hurd bootstrap graft */
 
-#if 0
+/*
+ * AI-ONLY NOTE: OSF's bootstrap path, restored.
+ *
+ * As published, this tree started the GNU Hurd servers ext2fs.static
+ * and exec.static: a graft had renamed OSF's bootstrap_create() and
+ * user_bootstrap() to bootstrap_create_old() and user_bootstrap_old(),
+ * put both behind #if 0, and written its own under the original names,
+ * driven by GNU Mach's kern/boot_script.c.  OSF's two functions take
+ * their names back here, and the call below to user_bootstrap is the
+ * one OSF wrote, now resolving to OSF's loader again.  The graft's
+ * functions stay in this file behind "#if 0 GNU Hurd bootstrap graft",
+ * and conf/files no longer builds kern/boot_script.c.
+ * docs/deferred.md section 2, "The bootstrap fork".
+ */
 void
-bootstrap_create_old(void)
+bootstrap_create(void)
 {
 	ipc_port_t	master_bootstrap_port;
 	task_t		bootstrap_task;
@@ -1300,7 +1347,6 @@ bootstrap_create_old(void)
 	kr = thread_resume(bootstrap_thr_act);
 	assert( kr == KERN_SUCCESS );
 }
-#endif
 
 #if	DEBUG
 void
@@ -1399,6 +1445,7 @@ move_bootstrap(void)
 	return boot_start + boot_size + load_info_size;
 }
 
+#if 0	/* GNU Hurd bootstrap graft: kern/boot_script.c's callbacks */
 void *
 boot_script_malloc (unsigned int size)
 {
@@ -1525,3 +1572,4 @@ boot_script_exec_cmd (vm_offset_t start, vm_size_t size, task_t task, char *path
 
   return 0;
 }
+#endif	/* GNU Hurd bootstrap graft */
