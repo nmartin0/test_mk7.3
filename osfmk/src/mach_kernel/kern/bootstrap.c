@@ -1008,25 +1008,6 @@ user_bootstrap(void)
 	 */  
 	set_bootstrap_args();
 #endif
-#if	defined(i386)
-	/*
-	 * AI-ONLY NOTE: the i386 arm of the hp_pa one above.  The task's
-	 * crt0 (mach_services/lib/libsa_mach) reads argc and argv off the
-	 * stack and runs mach_init only if argv[0] is non-null.
-	 * do_bootstrap_compat() points esp at STACK_PTR, marked XXX, and
-	 * puts nothing there, so on i386 the task never initialises.
-	 * build_args_and_stack(), in this file, lays out exactly the
-	 * frame crt0 reads and moves esp to it.  It must run before
-	 * thread_setstatus() below installs thread_state.
-	 */
-	{
-	    char	*bootstrap_argv[2];
-
-	    bootstrap_argv[0] = boot_args_buf;
-	    bootstrap_argv[1] = (char *) 0;
-	    build_args_and_stack(bootstrap_argv, (char **) 0);
-	}
-#endif	/* defined(i386) */
 
 	/*
 	 * set the bootstrap task thread state.

@@ -88,7 +88,7 @@ system needed.
 | what | the upstream's own evidence |
 |---|---|
 | `i386/AT386/model_dep.c`, `parse_multiboot` bounded by `mods_count` and `MULTIBOOT_MODS` | `i386/multiboot.h:102` "Valid only if MULTIBOOT_MODS is set in flags word above" and `:146` "the physical address of the first of 'mods_count' multiboot_module structures" — the header three files away states both constraints the code broke |
-| `kern/bootstrap.c`, OSF's `bootstrap_create()` and `user_bootstrap()` restored under their own names; the GNU Hurd graft's functions of those names behind `#if 0`; `conf/files` stops building `kern/boot_script.c` | The tree kept OSF's two functions as `bootstrap_create_old()` and `user_bootstrap_old()`, and the first still called the second by its original name, `thread_start(..., user_bootstrap)` — the wiring OSF wrote, recoverable from inside the file. The i386 `argc`/`argv` arm added to `user_bootstrap()` mirrors OSF's own `hp_pa` arm beside it and calls this file's `build_args_and_stack()`; no line was taken from another tree |
+| `kern/bootstrap.c`, OSF's `bootstrap_create()` and `user_bootstrap()` restored under their own names; the GNU Hurd graft's functions of those names behind `#if 0`; `conf/files` stops building `kern/boot_script.c` | The tree kept OSF's two functions as `bootstrap_create_old()` and `user_bootstrap_old()`, and the first still called the second by its original name, `thread_start(..., user_bootstrap)` — the wiring OSF wrote, recoverable from inside the file. No line was taken from another tree |
 
 **The first entry of this kind, and it was nearly filed as something
 weaker.** `dev`'s version of the same fix cites the multiboot
@@ -108,7 +108,10 @@ needed, but "upstream" there means the tree as published, not OSF's
 design. Where that distinction matters — and on this project it
 usually does — the row is not evidence about what OSF intended.
 
-**Two notes on the `bootstrap.c` row.** OSFMK 6.1 was read while
+**Three notes on the `bootstrap.c` row.** `set_user_regs()` and
+`build_args_and_stack()` are left compiled and are now uncalled: the
+graft's `user_bootstrap()` was their only caller, and whether they are
+OSF's or the graft's is not established. OSFMK 6.1 was read while
 checking it and not used: its `bootstrap.c` is a different design, and
 its notice differs from 7.3's — 6.1 adds that OSF's name not "be used
 in advertising or publicity pertaining to distribution of the software
