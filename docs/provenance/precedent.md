@@ -327,15 +327,70 @@ Copyright (C) 1991, 1992 Linus Torvalds" — `dev`'s "entirely GPL-free"
 is too strong. Neither is built for AT386 now; both stay in the tree as
 imported.
 
-**How the disk is made.** No tool writes OSF/1's UFS. `makefs` from
-NetBSD writes 4.4BSD's, whose directory entries split `d_namlen` into
-`d_type` and an 8-bit length; OSF's reader then finds no file. 4.4BSD
-kept the old format as an option, and `docs/tools/ufs-oldfmt.py`
-converts to it: directory entries, the 16-bit owner fields in each
-inode, and the two superblock fields that mark the format. Measured:
-the 4.4BSD image gives "cannot find configuration file"; converted, the
-same image boots to "(default_pager): started". `docs/tools/mkbootdisk.sh`
-writes the vtoc itself, from `struct evtoc` in `i386/AT386/disk.h`.
+**How the disk is made.** OSF made its disks on a running system.
+MK7.3 Release Notes §2.4.2.2: `disk_setup`, run "on the target
+machine", partitions with the `vtoc` utility and creates "new
+filesystems with newfs"; `mk_install` then extracts the release onto
+them. The boot floppies were made with `mkbootfloppies` on "MK7.X"
+(§2.4), and `stand/AT386/boot/secondary/README` gives the same steps by
+hand: `newfs fd0`, `mount /dev/fd0 /mnt`, `cp mach_boot /mnt`. Lites'
+`doc/install.freebsd` does the same on FreeBSD 2.0. None of those
+commands is in this tree, and the MK7.3 source distribution itself
+left out "those commands and libraries that are unchanged from the
+OSF/1 1.3 release" (§2.5.1).
+
+No BSD tool from before 4.4BSD fills a file system without mounting it.
+Checked in the Unix history repository's tags:
+
+- `newfs` in Net/2 and in 386BSD 0.0 and 0.1 is one file (`mkfs.c`
+  6.18, 7/3/91, UCB licence). It writes the 4.3BSD-Reno format, whose
+  `struct fs` OSF's matches offset for offset (OSF/1 makes Reno's
+  `fs_state` a 56th `fs_sparecon`), but makes only an empty file
+  system on a device. 4.4BSD-Lite2's `newfs -O` writes the old
+  directories and inodes in 4.4BSD's superblock, which differs from
+  Reno's at its end: Reno's 55 spares hold `fs_contigsumsize`,
+  `fs_maxsymlinklen`, `fs_inodefmt` (−1) and `fs_maxfilesize`, and
+  `fs_state` moves from before `fs_qbmask` to after `fs_qfmask`, so
+  the two masks sit 4 bytes earlier than in Reno. 4.4BSD's kernel and
+  `fsck` recompute both masks for an old-format file system, marked
+  "XXX" (`ffs_vfsops.c`, `fsck/setup.c`).
+- `mkproto`, "appeared in 4.2BSD", filled a new file system from a
+  prototype file. Its source in 4.4BSD says "This module is believed to
+  contain source code proprietary to AT&T"; it is in 4.3BSD-Reno and
+  4.4BSD and absent from Net/2, 386BSD and 4.4BSD-Lite1 and Lite2,
+  whose `usr.sbin/Makefile` still lists it.
+- `fsdb` (4.3BSD-Reno, 4.4BSD) is an interactive debugger. FreeBSD 2.0
+  has `newfs` alone. `makefs` "appeared in NetBSD 1.6" (its manual,
+  HISTORY), in 2002.
+
+`makefs` writes the old format since NetBSD 11.0: "allow `version=0`
+4.3BSD FFS file systems to be created for compatible boot ROMs" (the
+11.0 announcement, 30 July 2026; commit `6952d6617dd`, tsutsui,
+10 January 2026, "for systems with ancient boot ROM requirements like
+LUNA"). FreeBSD's `makefs` takes version 1 or 2 only; Debian's and
+Ubuntu's `makefs` package is a 2019 snapshot. So
+`docs/tools/mknbmakefs.sh` builds NetBSD 11.0's, as NetBSD builds its
+own host tools on another system, and `docs/tools/mkbootdisk.sh` runs
+it with `-o version=0`. What it writes, read back: directory entries
+with a 16-bit `d_namlen` and no `d_type`; `fs_maxsymlinklen` 0;
+`fs_inodefmt` −1. Its superblock is 4.4BSD's, as Lite2's `newfs -O`
+writes it: OSF's `struct fs` would find `fs_qbmask` and `fs_qfmask` 4
+bytes off. OSF's reader uses neither — `blkoff()` and `fragroundup()`
+use `fs_bmask` and `fs_fmask` — and Lites recomputes them. It does not
+set the 16-bit owner fields at inode offsets 4 and 6, so every file
+reads as owned by root; OSF's reader ignores ownership. Measured: a
+4.4BSD-format image gives "cannot find configuration file"; the
+`version=0` image boots to "(default_pager): started".
+
+Until this commit a converter, `docs/tools/ufs-oldfmt.py`, rewrote a
+4.4BSD-format `makefs` image instead. Compared on the same files, the
+two images differ in 112 bytes: inode numbering order, the random
+`fs_id`, and two things the converter left from NetBSD's later UFS1
+(`FS_FLAGS_UPDATED` and the 64-bit size copies in the superblock),
+which a 4.3BSD file system does not have and `version=0` leaves zero.
+
+Making disks as OSF did — `newfs`, mount and copy, on the running
+system — waits for a server that can do it: `docs/deferred.md` §2.
 
 **Still not OSF's:** the boot loader. OSF's is in the tree,
 `stand/AT386/boot/` — a primary boot in block 0 and a secondary that
