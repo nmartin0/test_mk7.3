@@ -49,6 +49,15 @@
 #                 ${LITES_TARGET}-gcc, -ld and so on.
 #   GMAKE         Lites' build is GNU make (doc/building, "gmake").
 #                 Plain "make" inside an ODE build is ODE's make.
+#   LITES_AWK     original-awk, Kernighan's, the awk of 4.4BSD that
+#                 server/kern/vnode_if.sh was written for.  configure
+#                 takes AWK from the environment ("Let the user override
+#                 the test") and would otherwise choose mawk, which
+#                 refuses the script whole: its awk programs call a
+#                 bail() they never define, an error BWK awk reports
+#                 only if the call is reached, and it never is.  With
+#                 mawk, vnode_if.c holds no vop_*_desc and the server
+#                 does not link.
 #
 # THE CROSS TOOLS.  configure looks for the target's tools by name and
 # uses them itself -- its C preprocessor runs the server configuration
@@ -89,6 +98,17 @@
 # makefile's value, so the driver would run an empty migcom.  Lites'
 # own MIG rules and flags are unchanged.
 #
+# OSF_ENVIRONMENT is set on the gmake line.  It is Lites' own switch for
+# a build inside an OSF sandbox, written by its authors against OSF
+# Grenoble's nmk18b9: it names the sandbox's libraries for the server
+# and the emulator, and in an OSF sandbox the server takes its start
+# code from libsa_mach, entered at __start_mach, as every OSF server
+# does (docs/provenance/precedent.md, "How Lites meets ODE").  Its
+# block in conf/Makerules also points CC, LD, AR, RANLIB and SIZE at
+# Grenoble's tools, /afs/gr.osf.org/.../link/tools/at386/elf/; this
+# sandbox's are given on the gmake line in their place, as MIG is --
+# the same ${LITES_TARGET}-* commands configure already uses.
+#
 # One include directory is added, after all of Lites' own:
 # ${EXPORTBASE}/include/sa_mach.  osc/Buildconf line 134 gives every
 # Mach task in this sandbox
@@ -124,6 +144,7 @@
 
 LITES_CONFIG	?= STD+WS+osfmach3
 LITES_TARGET	?= i386-mach
+LITES_AWK	?= original-awk
 GMAKE		?= gmake
 
 _LITES_TOOLS_	= gcc ld ar ranlib strip size nm
@@ -155,7 +176,8 @@ ${_LITES_CROSS_}: ${ALWAYS}
 
 ${LITES_CONFIG}/config.status: ${_LITES_CROSS_} configure Makefile.in
 	${MAKEPATH} ${.TARGET}
-	${_LITES_CD_} ${.TARGET:H} && ${_LITES_PATH_} sh ${configure:P} \
+	${_LITES_CD_} ${.TARGET:H} && ${_LITES_PATH_} AWK=${LITES_AWK} \
+		sh ${configure:P} \
 		--target=${LITES_TARGET} \
 		--with-config=${LITES_CONFIG} \
 		--with-release=${EXPORTBASE} \
@@ -163,4 +185,8 @@ ${LITES_CONFIG}/config.status: ${_LITES_CROSS_} configure Makefile.in
 
 lites: ${LITES_CONFIG}/config.status ${ALWAYS}
 	${_LITES_CD_} ${LITES_CONFIG} && ${_LITES_PATH_} ${_LITES_ENV_} ${GMAKE} \
-		MIG="${_MIG_} -cpp ${LITES_TARGET}-gcc" MIGCOM="${MIGCOM}"
+		MIG="${_MIG_} -cpp ${LITES_TARGET}-gcc" MIGCOM="${MIGCOM}" \
+		OSF_ENVIRONMENT=1 \
+		CC="${LITES_TARGET}-gcc -pipe" LD=${LITES_TARGET}-ld \
+		AR=${LITES_TARGET}-ar RANLIB=${LITES_TARGET}-ranlib \
+		SIZE=${LITES_TARGET}-size

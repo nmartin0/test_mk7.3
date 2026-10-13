@@ -36,7 +36,12 @@ TARGET_CFLAGS += -pg
 TARGET_CPPFLAGS += -DGPROF
 else
 ifdef OSF_ENVIRONMENT
-LIBS = -llites ${LIBMACHID} ${LIBNETNAME} -lcthreadsZ -lmachZ -lsa_machZ
+# AI-ONLY NOTE: was "-lcthreadsZ -lmachZ -lsa_machZ", the libraries of
+# the 1995 OSF sandbox this branch was written for.  OSFMK 7.3 exports
+# libcthreads, libmach and libsa_mach, and links its own servers with
+# "-lcthreads -lmach -lsa_mach -lmach" (default_pager); libsa_mach
+# calls back into libmach.  Link-blocking.
+LIBS = -llites ${LIBMACHID} ${LIBNETNAME} -lcthreads -lmach -lsa_mach -lmach
 else
 LIBS = -llites ${LIBMACHID} ${LIBNETNAME} -lthreads -lmach_sa
 endif

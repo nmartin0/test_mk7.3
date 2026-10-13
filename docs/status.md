@@ -22,7 +22,7 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 assembler, which reads OSF's System V `/` comments; `mkhostbin.sh`
 builds `config` and `migcom` from OSF's sources. Both install into the
 sandbox's `tools_base`, outside the tree. The host needs `flex`, its
-32-bit library and `byacc`.
+32-bit library and `byacc`, and, for Lites, `original-awk`.
 
 | | |
 | --- | --- |
@@ -59,8 +59,9 @@ succeeds.
 | --- | --- |
 | configure | succeeds; server configuration `STD+WS+osfmach3` selects 150 of `conf/files`' 287 sources. xMach's copy selected 157: its `conf/i386/MASTER` added `extfs` and with it the seven `cd9660` sources |
 | `include/`, `liblites/` | build; `liblites.a` and `liblites_p.a` |
-| `server/` | compiles: all 151 objects, `vers.o` with them. The link stops (below) |
-| `emulator/`, `bin/` | not reached |
+| `server/` | builds: `startup.Lites.1.1.u3.STD+WS+osfmach3`, 883,308 bytes stripped, ELF 32-bit, entered at `__start_mach`, linked with OSFMK 7.3's `libcthreads`, `libmach` and `libsa_mach` |
+| `emulator/` | stops (below) |
+| `bin/` | not reached |
 | kernel and bootstrap | not affected by building Lites |
 
 What stops it, every error, from a clean object directory:
@@ -68,8 +69,7 @@ What stops it, every error, from a clean object directory:
 | where | what | kind |
 |---|---|---|
 | `conf/files:347` | `# Linux file systems`, a `#` comment in a file configure runs through the C preprocessor, reported as an invalid directive; the configuration is written all the same. xMach's copy has it as `/* */` | compiler era, harmless |
-| the server's link | `crt0-not-found`: `conf/Makerules` looks for a CMU `mach_crt0.o` or `lib/crt0.o` in the release; OSFMK 7.3 has its crt0 in `libsa_mach.a`, entered at `__start_mach` (`osf.gcc.mk` line 41), where Lites' `conf/i386/MASTER` asks for `-e __start` | OSFMK interface |
-| the server's link | `-lthreads -lmach_sa`, CMU's names; OSFMK 7.3 exports `libcthreads`, `libmach` and `libsa_mach`. `server/Makerules` and `emulator/Makerules` have an `OSF_ENVIRONMENT` branch naming OSF's of 1995, `-lcthreadsZ -lmachZ -lsa_machZ`, beside Grenoble's tool paths in `conf/Makerules` | OSFMK interface |
+| `emulator/i386/e_machinedep.c:39` | 21: `ATSYS_NAMES` pastes string literals with `##` (`include/sys/exec_file.h:48`) | compiler era |
 
 `serv/xmm_interface.c` is Utah's post-release copy of 5 May 1996,
 which implements `memory_object_data_return`, the call OSFMK's
@@ -81,8 +81,11 @@ The compiler-era errors are fixed -- `gensym.awk`, `newvers.sh`,
 `kern_sig.c`, `serv_syscalls.c`, `user_copy.c`, and a GNU make
 dependency in `server/Makerules` -- and so are OSFMK 7.3's changed
 names and messages in `xmm_interface.c`, `vn_pager_misc.c`,
-`device_reply_hdlr.c` and `ux_server_loop.c`. The link is next, and
-how Lites should name OSFMK's crt0 and libraries is the open choice.
+`device_reply_hdlr.c` and `ux_server_loop.c`. The server links:
+Lites' `OSF_ENVIRONMENT` names OSFMK 7.3's libraries and start code,
+the server supplies the `vprintf` OSFMK's libmach writes through, and
+configure runs Kernighan's awk (`docs/provenance/precedent.md`, "What
+B needed").
 One more is known to be ahead, found by `dev` first: `-Ulinux`.
 `-std=gnu89`, which `CARGS` passes, predefines `linux`, and Lites tests
 it (`dev`'s `ec33ce7`).
