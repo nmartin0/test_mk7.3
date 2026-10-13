@@ -459,6 +459,24 @@ this; in short:
   before `Makefile` (`ode/bin/make/main.c`), so this site's driver
   takes the name and the role of Utah's, and every CMU Makefile stays
   as shipped.
+- **`OSF_ENVIRONMENT`, brought to OSFMK 7.3** (13 October 2026,
+  chosen by the maintainer over keying it on `osfmach3` or faking a CMU
+  release). Lites has two switches for OSF's kernel: the `osfmach3`
+  configuration option, for the kernel's interfaces in C, and
+  `OSF_ENVIRONMENT`, for what an OSF sandbox provides -- its tools in
+  `conf/Makerules`, its libraries in `server/` and `emulator/Makerules`.
+  The link is the second's. Its libraries become 7.3's, and the server
+  takes its start code from `libsa_mach` at `__start_mach`, as
+  `osf.gcc.mk` links every standalone Mach program. The block's Grenoble
+  tool paths stay as written; the makefile gives this sandbox's on the
+  gmake line, as it gives MIG.
+- **Kernighan's awk.** configure prefers mawk, and mawk refuses
+  `server/kern/vnode_if.sh`'s awk programs whole, because they call a
+  `bail()` they never define; the awk 4.4BSD shipped, Kernighan's,
+  reports that only if the call is reached. With mawk the server links
+  with every `vop_*_desc` undefined. configure takes `AWK` from the
+  environment, and the makefile sets it, `LITES_AWK`, default
+  `original-awk`.
 
 ## What OSF booted from
 

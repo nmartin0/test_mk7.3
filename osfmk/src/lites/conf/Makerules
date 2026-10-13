@@ -100,9 +100,19 @@ MIG := ${MIG} -migcom ${MIGCOM}
 endif
 MIG := ${MIG} -cc "${CPP}"
 
+# AI-ONLY NOTE: in an OSF sandbox, crt0 is not a file of its own.
+# OSFMK 7.3 builds it into libsa_mach.a and enters every standalone
+# Mach program at __start_mach; osf.gcc.mk line 41 links them with
+# "-e __start_mach -u __start_mach" and no start file, and the server's
+# link line, which puts CRT0 after TARGET_LDFLAGS' "-e __start", ends
+# with that entry.  Only the server links CRT0.  Link-blocking.
+ifdef OSF_ENVIRONMENT
+CRT0 := -u __start_mach -e __start_mach
+else
 # crt0.o might have different names. Try a few and default to an invalid name.
 CRT0 := $(wildcard ${INSTALL_LIBDIR}/mach[-_]crt0.o ${MACH_RELEASE_DIR}/lib/crt0.o ${MACH_RELEASE_DIR}/ccs/lib/crt0.o)
 CRT0 := $(firstword ${CRT0} crt0-not-found)
+endif
 # libgcc is needed by all programs compiled by gcc.
 LIBGCC := $(shell ${TARGET_CC} -print-libgcc-file-name)
 

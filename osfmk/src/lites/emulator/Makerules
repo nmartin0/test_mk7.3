@@ -37,7 +37,9 @@ INCDIRS += ${SRCDIR}/emulator ../server
 LIBS = -llites -lthreads -lmach_sa ${TARGET_LIBS} ${LIBGCC}
 ### XXX OSF
 ifdef OSF_ENVIRONMENT
-LIBS = -llites -lcthreadsZ -lmachZ -lsa_machZ ${TARGET_LIBS} ${LIBGCC}
+# AI-ONLY NOTE: was "-lcthreadsZ -lmachZ -lsa_machZ", as in
+# server/Makerules, where the reason is.  Link-blocking.
+LIBS = -llites -lcthreads -lmach -lsa_mach -lmach ${TARGET_LIBS} ${LIBGCC}
 LIBDEPS = ../liblites/liblites.a
 endif
 

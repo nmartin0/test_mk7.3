@@ -372,6 +372,31 @@ void printf(const char *fmt, ...)
 	consintr = savintr;		/* reenable interrupts */
 }
 
+#if OSFMACH3
+/*
+ * AI-ONLY NOTE: printf's body for a va_list, for OSFMK 7.3's libmach.
+ * Its fprintf_stderr, which libcthreads calls for stack warnings,
+ * writes through vprintf unless the program sets vprintf_stderr_func
+ * (mach_init.h), and a program that brings no vprintf gets libsa_mach's
+ * printf.o for it -- with a second sprintf, and through usleep a second
+ * sleep, beside the server's own.  Lites already pairs vsprintf with
+ * sprintf below; this pairs vprintf with printf, so that libmach's
+ * messages reach the server's console as its own do.  Link-blocking.
+ */
+int vprintf(const char *fmt, va_list ap)
+{
+	register int savintr;
+
+	savintr = consintr;		/* disable interrupts */
+	consintr = 0;
+	kprintf(fmt, TOCONS | TOLOG, NULL, ap);
+	if (!panicstr)
+		logwakeup();
+	consintr = savintr;		/* reenable interrupts */
+	return 0;
+}
+#endif /* OSFMACH3 */
+
 /*
  * Scaled down version of printf(3).
  *
