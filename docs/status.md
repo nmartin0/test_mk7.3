@@ -181,16 +181,21 @@ nodes, the console getty on. Lites' device numbers are NetBSD's, so
 NetBSD's nodes are right as made: `wd0a` is Lites' `hd0a`. The disk:
 
 	sh docs/tools/mklitesroot.sh root <sets>	# as root
-	ROOT_TREE=root ROOT_MB=40 BOOTSTRAP_CONF=bootstrap.conf \
+	ROOT_TREE=root ROOT_MB=40 PAGING_MB=64 BOOTSTRAP_CONF=bootstrap.conf \
 	    sh docs/tools/mkbootdisk.sh disk.img default_pager startup emulator
 
 with `startup` and `emulator` the files `build -here lites` makes,
 and `bootstrap.conf`
 
-	default_pager default_pager
+	default_pager default_pager hd0b
 	startup startup hd0a /dev/hd0a/mach_servers
 
-(`startup startup -s hd0a ...` for single-user). The last argument
+(`startup startup -s hd0a ...` for single-user). `hd0b`, partition b,
+is the paging space, as the Release Notes' example gives it
+(`def_pager /mach_servers/default_pager sd0b`); without it there is
+none (S-2). A 40 MB root is one cylinder group; `mkbootdisk.sh` stops
+at more (S-1), and larger disks are made with `newfs` on the running
+system. The last argument
 is the server directory, which `parse_arguments()` in
 `server/serv/server_init.c` takes as "server_dir_name (3.0 style)".
 CMU's bootstrap passed it; OSF's passes only what `bootstrap.conf`
@@ -234,8 +239,9 @@ mach_init should be taken from USER").
 under Lites that forks, waits and runs correctly; files, pipes, `tar`
 and a 10 MB `dd` work; NetBSD's `newfs` makes a 100 MB file system on
 a second disk. Not yet stable: a root `makefs` lays out in more than
-one cylinder group crashes `fsck` and, on a write, the server (S-1);
-`default_pager` has no paging space unless given `hd0b` (S-2); every
+one cylinder group crashes `fsck` and, on a write, the server (S-1,
+now refused by `mkbootdisk.sh`); `default_pager` has no paging space
+unless given `hd0b` (S-2, now `mkbootdisk.sh`'s default); every
 bad access becomes SIGBUS (S-3, S-4); `timed` dies (S-5). Where Lites
 differs from the OSF/1 server the MK7.3 documents describe is in the
 same file, O-1 to O-10.

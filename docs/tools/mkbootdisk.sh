@@ -32,13 +32,25 @@
 #   /mach_servers/bootstrap.conf    one "<name> <name>" line per server
 #   /mach_servers/<server>...       the files given, by basename
 #
+# default_pager's line names partition b as its paging device,
+# "default_pager default_pager hd0b", as the MK7.3 Release Notes'
+# example does ("def_pager /mach_servers/default_pager sd0b") and
+# bootstrap.template says it may ("the default_pager can taking a
+# paging device name"); without one it has no paging space at all.
+# PAGING_DEV=<name> names another, for a disk that is not hd0.
+#
 # BOOTSTRAP_CONF=<file> uses that file as bootstrap.conf instead.
 # ROOT_TREE=<dir> puts the tree in <dir> on the file system first --
 # a whole root, such as docs/tools/mklitesroot.sh makes for Lites --
 # with owners, modes, device nodes and symbolic links kept; run as
 # root for those.  The servers and bootstrap.conf go in on top.
 # ROOT_MB sets partition a's size, default 16; PAGING_MB partition b's,
-# default 16.
+# default 16.  Partition a must fit in one cylinder group, about 40 MB
+# at the inode density used here: makefs lays out a larger file system
+# in groups that NetBSD 1.0's fsck and Lites' file system code fail on
+# (docs/deferred.md, S-1), so the script stops.  Larger file systems
+# are made with newfs on the running system, as OSF made its own
+# (MK7.3 Release Notes 2.4.2.2).
 #
 # Boot with docs/tools/boot.sh.
 #
@@ -81,7 +93,11 @@ if [ -n "${BOOTSTRAP_CONF:-}" ]; then
 else
 	for f in "$@"; do
 		n=$(basename "$f")
-		printf '%s %s\n' "$n" "$n"
+		if [ "$n" = default_pager ]; then
+			printf '%s %s %s\n' "$n" "$n" "${PAGING_DEV:-hd0b}"
+		else
+			printf '%s %s\n' "$n" "$n"
+		fi
 	done > "$TMP/root/mach_servers/bootstrap.conf"
 fi
 
@@ -89,9 +105,20 @@ fi
 # d_namlen and no d_type (file_systems/ufs/defs.h), and fs_maxsymlinklen
 # 0 and fs_inodefmt FS_42INODEFMT, so a 4.4BSD reader (Lites) reads it
 # as the old format too.  8 KB blocks and 1 KB fragments: OSF's reader
-# takes blocks up to MAXBSIZE, 8192 (file_systems/ufs/fs.h).
-"$NBMAKEFS" -t ffs -o version=0,bsize=8192,fsize=1024 \
+# takes blocks up to MAXBSIZE, 8192 (file_systems/ufs/fs.h).  One
+# inode per 4096 bytes, newfs's own default (NFPI 4 fragments per
+# inode, newfs.c); makefs alone gives only as many inodes as the tree
+# needs, and the running system runs out at the first files it makes.
+"$NBMAKEFS" -t ffs -o version=0,bsize=8192,fsize=1024,density=4096 \
 	-s $((A_SIZE * 512)) "$TMP/a.img" "$TMP/root" >/dev/null
+NCG=$(python3 -c 'import struct,sys
+f=open(sys.argv[1],"rb"); f.seek(8192+44); print(struct.unpack("<i",f.read(4))[0])' "$TMP/a.img")
+[ "$NCG" -eq 1 ] || {
+	echo "ROOT_MB=$ROOT_MB makes $NCG cylinder groups; makefs's layout of" \
+	     "more than one fails under NetBSD 1.0's fsck and Lites" \
+	     "(docs/deferred.md, S-1).  Use a smaller ROOT_MB, and newfs" \
+	     "on the running system for larger file systems." >&2
+	exit 1; }
 
 # The label: MBR, vtoc and alternates table.  The vtoc's geometry is
 # nominal -- 16 heads, 63 sectors -- since every address in it is a

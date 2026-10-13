@@ -499,9 +499,10 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   is not yet found -- a one-group file system has the same fields and
   works.
   **To do**: keep the host-made root to one cylinder group and make
-  every other disk with `newfs` on the running system, as OSF did; and
-  separately, Lites must not die on a bad file system (a server
-  robustness defect, cause not yet found).
+  every other disk with `newfs` on the running system, as OSF did --
+  `mkbootdisk.sh` now stops at more than one group, and makes inodes at
+  `newfs`'s density -- and separately, Lites must not die on a bad file
+  system (a server robustness defect, cause not yet found).
 - **S-2. No paging space unless `default_pager` is given one.** Without
   an argument it starts with none, and under `cc` the screen fills with
   "(default pager): ps_allocate_cluster: no space in available paging
@@ -510,8 +511,9 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   Notes' example, `def_pager /mach_servers/default_pager sd0b`, and of
   `bootstrap.template` ("the default_pager can taking a paging device
   name") -- prints "(default_pager): added device hd0b". This is O-8
-  below, and it is required, not optional. **To do**: configuration
-  only, in `mkbootdisk.sh`'s Lites example and `docs/status.md`.
+  below, and it is required, not optional. **Done** in configuration:
+  `mkbootdisk.sh` writes `default_pager default_pager hd0b`
+  (`PAGING_DEV` for another), and `docs/status.md`'s example has it.
 - **S-3. Every bad access is SIGBUS, and its address is lost.** Lites'
   `catch_exception_raise` (`server/serv/ux_exception.c`) has CMU's
   arguments, `(exception, code, subcode)`; OSFMK 7.3's `exc.defs`
