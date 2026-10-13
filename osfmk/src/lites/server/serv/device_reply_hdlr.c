@@ -84,7 +84,17 @@ device_reply_loop()
 	 * We KNOW that none of these messages have replies...
 	 */
 
+#if OSFMACH3
+	/*
+	 * AI-ONLY NOTE: CMU's MIG calls the reply-with-return-code
+	 * message mig_reply_header_t; OSFMK's mach/mig_errors.h calls
+	 * the same thing mig_reply_error_t and has no other name for
+	 * it.  Compile-blocking.
+	 */
+	mig_reply_error_t	rep_rep_msg;
+#else
 	mig_reply_header_t	rep_rep_msg;
+#endif
 
 	system_proc(&p, "DeviceReply");
 
