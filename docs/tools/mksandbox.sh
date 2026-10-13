@@ -255,7 +255,19 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # declared inline; "inline" itself is still honoured, as GCC 2.7 did.
 # The kernel's text shrinks from 809,426 to 777,345 bytes.
 #
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -Wno-error=overflow -Wno-endif-labels"
+# -fno-omit-frame-pointer: REQUIRED, for the same reason again: GCC
+# 2.7's -O2 kept the frame pointer on i386 -- its manual: "-O also
+# turns on -fomit-frame-pointer on machines where doing so does not
+# interfere with debugging", and on i386 it does -- and GCC 13's -O2
+# omits it.  Lites' emulator forks with emul_save_state
+# (emulator/i386/emul_misc_asm.s), a setjmp that saves %esp while the
+# return address is still on it; the child resumes at that address
+# with %esp 4 bytes low.  Code addressing its locals from %ebp, as GCC
+# 2.7's did, is unaffected; GCC 13's addressed them from %esp, so the
+# child of e_fork_call read its arguments 4 bytes off and never
+# reached child_init: NetBSD's init forked its shell, which never ran.
+#
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -fno-omit-frame-pointer -Wno-error=overflow -Wno-endif-labels"
 
 #
 # NO_STRICT_ANSI: a hook osf.gcc.mk line 94 provides --
