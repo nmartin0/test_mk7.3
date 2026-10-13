@@ -229,6 +229,17 @@ Also on the way: `timed` dies of a bus error; `savecore` and
 on `/dev/mem`, as Lites' `doc/README` says it will ("ps, top, w,
 mach_init should be taken from USER").
 
+**How far it holds** (`docs/deferred.md`, "Stability, as measured on
+13 October 2026"): NetBSD 1.0's `cc` compiles and links a program
+under Lites that forks, waits and runs correctly; files, pipes, `tar`
+and a 10 MB `dd` work; NetBSD's `newfs` makes a 100 MB file system on
+a second disk. Not yet stable: a root `makefs` lays out in more than
+one cylinder group crashes `fsck` and, on a write, the server (S-1);
+`default_pager` has no paging space unless given `hd0b` (S-2); every
+bad access becomes SIGBUS (S-3, S-4); `timed` dies (S-5). Where Lites
+differs from the OSF/1 server the MK7.3 documents describe is in the
+same file, O-1 to O-10.
+
 `name_server` is not on the disk: it does not build yet (verdict 31).
 OSF's `bootstrap.template` starts it before `default_pager`.
 
