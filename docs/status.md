@@ -174,39 +174,72 @@ there is none in this environment. Two driver messages appear,
 
 `name_server` is not on the disk: it does not build yet (verdict 31).
 
-**Lites starts.** With the server and emulator `build -here lites`
-makes, as `/mach_servers/startup` and `/mach_servers/emulator`, and
+**Lites runs NetBSD 1.0's userland, as far as a login prompt.** The
+root is NetBSD 1.0's i386 `base` and `etc` sets, set up as Lites' own
+install notes say (`osfmk/src/lites/doc/README.lites-1.1.u1`,
+"Installing Lites on the x86"): `/mach_servers/mach_init` a symbolic
+link to `/sbin/init`, `/dev` from NetBSD's `MAKEDEV all` and Lites'
+`time` and `timezone` nodes, the console getty on. Lites' device
+numbers are NetBSD's, so NetBSD's nodes are right as made: `wd0a` is
+Lites' `hd0a`. The disk:
+
+	sh docs/tools/mklitesroot.sh root <sets>	# as root
+	ROOT_TREE=root ROOT_MB=40 BOOTSTRAP_CONF=bootstrap.conf \
+	    sh docs/tools/mkbootdisk.sh disk.img default_pager startup emulator
+
+with `startup` and `emulator` the files `build -here lites` makes,
+and `bootstrap.conf`
 
 	default_pager default_pager
-	startup startup -s hd0a
+	startup startup -s hd0a /dev/hd0a/mach_servers
 
-as `bootstrap.conf` (`BOOTSTRAP_CONF` for `mkbootdisk.sh`), the screen
-continues past `(default_pager): started`:
+The last argument is the server directory, which `parse_arguments()`
+in `server/serv/server_init.c` takes as "server_dir_name (3.0
+style)". Without it Lites derives one from its own name, which OSF's
+bootstrap gives as `/dev/boot_device/mach_servers/startup`, a path in
+the bootstrap's name space, not on the root, and the first program
+is not found (`xc002`, as before).
 
-	(lites): WARNING! no server directory specified.
-	(lites): path(/dev/hd0a/dev/boot_device/mach_servers) derived from root
-	(lites): server_dir(/dev/boot_device/mach_servers) on root.
-	(lites): emulator_path(/dev/boot_device/mach_servers/emulator)
-	(lites): init_program(/dev/boot_device/mach_servers/mach_init)
-	Lites VERSION(Lites.1.1.u3): ... STD+WS+osfmach3 (vm)
-	Copyright (c) 1982, 1986, 1989, 1991, 1993 ...
-	Base is Mon Oct 12 20:14:56 2026
-	Time is set to Sun Oct 11 20:15:0 2026
-	timer: 4 timeouts adjusted by 0.720000 seconds
-	panic: first program (/dev/boot_device/mach_servers/mach_init) exec failed: xc002 (os/unix) file or directory does not exist
-	panic: init died
+With it, `/sbin/init` starts, as pid 1, with `-s`; the screen shows
 
-It has mounted partition a, an FFS root, read its time, and then
-panics, as it must with no userland: there is no `mach_init` to run
-as the first program, and the reap of the dead init panics again.
-Until automatic inlining was turned off the screen showed "panic:"
-and three bytes of garbage: GCC had inlined `printf` into `panic`, and
-the era's `va_start`, address arithmetic on the last argument, read
-arguments that were never stored (`docs/tools/mksandbox.sh`, `CARGS`).
-Both panics were first caught with gdb on QEMU's stub, at `panic`'s
-address, which is how the arguments were known to be right.
-The next thing is a userland, NetBSD 1.0's, and `mach_init` linked
-to its `/sbin/init`.
+	init: wait for single-user shell failed: No child processes; restarting
+	Enter pathname of shell or RETURN for sh: init: can't get /dev/console for controlling terminal: Operation not permitted
+
+then `/etc/rc` -- `fsck` of `/dev/rwd0a`, the network, `portmap`,
+`syslogd`, `cron`, `inetd` -- and
+
+	Lites/i386 (myname.my.domain) (console)
+
+	login:
+
+`root` logs in; `login` reports "ROOT LOGIN (root) ON console" and
+`tset` asks for the terminal type. Also on the way: `timed` dies of a
+bus error; `savecore` and `kvm_mkdb` find no `/netbsd`, as there is
+none; and from the second boot "/ was not properly dismounted".
+
+**Open: Lites hides pid 2.** `wait4()` in `server/kern/kern_exit.c`
+skips pid 2 when the caller is pid 1, unless it is dead or stopped:
+
+	 * Under lites, mach_init (pid 2) is a child of BSD init (1).
+	 ...  For now we just
+	 * pretend mach_init isn't there (unless it has died or is
+	 * traced and stopped).
+
+That is right for USER's `mach_init`, which runs as pid 1, forks,
+and stays as pid 2 while pid 1 becomes `/sbin/init`. With the link
+the same notes offer instead, `init` is pid 1 and its own first child
+is pid 2 -- the single-user shell with `-s`, `/etc/rc` without -- and
+`init` cannot wait for it. Without `-s` the screen shows "wait for
+/bin/sh on /etc/rc failed: No child processes; going to single user
+mode", `/etc/rc` runs on regardless, and no login prompt comes. That
+this is the whole of it was shown with a two-line shell script as
+`mach_init` that puts a sleeping process in pid 2 and execs
+`/sbin/init`: then the boot is clean, `root` logs in to a `#` prompt,
+`uname -a` prints "Lites myname.my.domain Lites.1.1.u3 Lites.1.1.u3
+STD+WS+osfmach3 i386" and `df` shows `/dev/wd0a` mounted on `/`;
+`ps` fails on `/dev/mem`, as Lites' `doc/README` says NetBSD's will
+("ps, top, w, mach_init should be taken from USER"). The script is
+not in the tree; which way to fill pid 2 is not decided.
 
 **Without a disk, the task stops at its own prompt.** Since verdicts
 22–24 the kernel starts OSF's bootstrap task, not the GNU Hurd servers
