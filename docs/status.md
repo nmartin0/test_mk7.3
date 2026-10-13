@@ -60,16 +60,16 @@ succeeds.
 | configure | succeeds; server configuration `STD+WS+osfmach3` selects 150 of `conf/files`' 287 sources. xMach's copy selected 157: its `conf/i386/MASTER` added `extfs` and with it the seven `cd9660` sources |
 | `include/`, `liblites/` | build; `liblites.a` and `liblites_p.a` |
 | `server/` | builds: `startup.Lites.1.1.u3.STD+WS+osfmach3`, 883,308 bytes stripped, ELF 32-bit, entered at `__start_mach`, linked with OSFMK 7.3's `libcthreads`, `libmach` and `libsa_mach` |
-| `emulator/` | stops (below) |
-| `bin/` | not reached |
+| `emulator/` | builds: `emulator.Lites.1.1.u3`, 220,867 bytes of text, linked at `0xa0001000` by `emulator_base` |
+| `bin/` | nothing to build in this configuration |
 | kernel and bootstrap | not affected by building Lites |
 
-What stops it, every error, from a clean object directory:
+`build -here lites` completes. What it reports, from a clean object
+directory:
 
 | where | what | kind |
 |---|---|---|
 | `conf/files:347` | `# Linux file systems`, a `#` comment in a file configure runs through the C preprocessor, reported as an invalid directive; the configuration is written all the same. xMach's copy has it as `/* */` | compiler era, harmless |
-| `emulator/i386/e_machinedep.c:39` | 21: `ATSYS_NAMES` pastes string literals with `##` (`include/sys/exec_file.h:48`) | compiler era |
 
 `serv/xmm_interface.c` is Utah's post-release copy of 5 May 1996,
 which implements `memory_object_data_return`, the call OSFMK's
@@ -85,10 +85,15 @@ names and messages in `xmm_interface.c`, `vn_pager_misc.c`,
 Lites' `OSF_ENVIRONMENT` names OSFMK 7.3's libraries and start code,
 the server supplies the `vprintf` OSFMK's libmach writes through, and
 configure runs Kernighan's awk (`docs/provenance/precedent.md`, "What
-B needed").
-One more is known to be ahead, found by `dev` first: `-Ulinux`.
-`-std=gnu89`, which `CARGS` passes, predefines `linux`, and Lites tests
-it (`dev`'s `ec33ce7`).
+B needed"). The emulator builds once `ATSYS_NAMES` stops pasting
+string literals and `mach_init` is called as OSFMK 7.3 exports it.
+`dev`'s `-Ulinux` (`ec33ce7`) is not needed here: `-std=gnu89`, which
+`CARGS` passes, predefines `linux`, but in Utah's release the one place
+the server tests it is `ufs/ext2fs/ext2_linux_ialloc.c`, which this
+configuration does not compile. `emulator/programs/emulator_base.c`
+tests it too, as a host program, to pick the linker's options; on this
+Linux host it takes the branch its authors wrote for one, whose
+`-qmagic` GNU ld ignores ("Ignored for Linux compatibility").
 
 Measured from a clean clone at each commit, with `GMAKE="gmake -k"`.
 

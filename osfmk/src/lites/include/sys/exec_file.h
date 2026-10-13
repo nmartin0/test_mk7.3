@@ -45,13 +45,21 @@ typedef enum binary_type {
     } binary_type_t;
 
 /* Names for the above (for @bin expansion) */
+/*
+ * AI-ONLY NOTE: "m "bad"" where Utah wrote "m ## "bad"", and so for each.
+ * ## pastes tokens, and two string literals do not paste into one;
+ * GCC 2.7's preprocessor let it pass, current GCC refuses.  Adjacent
+ * string literals concatenate without it, so "i386_" "bad" is still
+ * "i386_bad".  From test_mk7.3 dev's tools/lites/lites-osfmk73.patch.
+ * Compile-blocking.
+ */
 #define ATSYS_NAMES(m) \
-    m ## "bad", m ## "lites", m ## "lites", m ## "lites", m ## "lites", \
-    m ## "lites", \
-    m ## "bnr", m ## "netbsd", m ## "freebsd", m ## "ux", \
-    "script", m ## "isc4", m ## "linux", m ## "linux", m ## "linux", \
-    m ## "ultrix", m ## "riscos", m ## "hpbsd", m ## "hpux", m ## "hpkludge", \
-    m ## "hpelf", m ## "osf1"
+    m "bad", m "lites", m "lites", m "lites", m "lites", \
+    m "lites", \
+    m "bnr", m "netbsd", m "freebsd", m "ux", \
+    "script", m "isc4", m "linux", m "linux", m "linux", \
+    m "ultrix", m "riscos", m "hpbsd", m "hpux", m "hpkludge", \
+    m "hpelf", m "osf1"
 
 union exec_data {
 	unsigned short	short_magic;
