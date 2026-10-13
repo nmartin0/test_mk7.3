@@ -88,7 +88,7 @@ system needed.
 | what | the upstream's own evidence |
 |---|---|
 | `i386/AT386/model_dep.c`, `parse_multiboot` bounded by `mods_count` and `MULTIBOOT_MODS` | `i386/multiboot.h:102` "Valid only if MULTIBOOT_MODS is set in flags word above" and `:146` "the physical address of the first of 'mods_count' multiboot_module structures" — the header three files away states both constraints the code broke |
-| `kern/bootstrap.c`, OSF's `bootstrap_create()` and `user_bootstrap()` restored under their own names; the GNU Hurd graft's functions of those names behind `#if 0`; `conf/files` stops building `kern/boot_script.c` | The tree kept OSF's two functions as `bootstrap_create_old()` and `user_bootstrap_old()`, and the first still called the second by its original name, `thread_start(..., user_bootstrap)` — the wiring OSF wrote, recoverable from inside the file. No line was taken from another tree |
+| `kern/bootstrap.c`, OSF's `bootstrap_create()` and `user_bootstrap()` restored under their own names; the GNU Hurd graft's functions of those names behind `#if 0`; `conf/files` stops building `kern/boot_script.c`. *Superseded 13 October 2026:* the graft is deleted, not fenced -- `slp/osfmk-mklinux`'s `63279d3`, verdict in `verdicts.md`, "slp's eighteen commits"; the two names are DR3's own again | The tree kept OSF's two functions as `bootstrap_create_old()` and `user_bootstrap_old()`, and the first still called the second by its original name, `thread_start(..., user_bootstrap)` — the wiring OSF wrote, recoverable from inside the file. No line was taken from another tree |
 
 **The first entry of this kind, and it was nearly filed as something
 weaker.** `dev`'s version of the same fix cites the multiboot
@@ -109,7 +109,8 @@ design. Where that distinction matters — and on this project it
 usually does — the row is not evidence about what OSF intended.
 
 **Three notes on the `bootstrap.c` row.** `set_user_regs()` and
-`build_args_and_stack()` are left compiled and are now uncalled: the
+`build_args_and_stack()` were left compiled and uncalled (deleted with
+the rest of the graft, 13 October 2026): the
 graft's `user_bootstrap()` was their only caller, and whether they are
 OSF's or the graft's is not established. *Established 12 October 2026:
 the graft's.* Neither is in `slp/osfmk-mklinux`'s first commit,
@@ -124,10 +125,10 @@ its notice differs from 7.3's — 6.1 adds that OSF's name not "be used
 in advertising or publicity pertaining to distribution of the software
 without specific, written prior permission", a clause 7.3's notice
 does not have, so 6.1 lines grafted into a 7.3 file would bring that
-condition with them. And `kern/boot_script.c`, which is no longer
-built, is GNU Mach's ("Written by Shantanu Goel") and carries no
-licence notice of its own; it stays in the tree as imported, and
-whether it may be carried at all is not settled here.
+condition with them. And `kern/boot_script.c`, no longer built and
+since deleted, is GNU Mach's ("Written by Shantanu Goel") and carries no
+licence notice of its own; it stayed in the tree as imported until
+the graft was deleted, which settles whether it may be carried.
 
 ## B -- corrected following another tree's line
 
