@@ -76,6 +76,11 @@ What stops it, every error, from a clean object directory:
 | `serv/xmm_interface.c:109,111` | `memory_object_attr_info` has no `object_ready`, `may_cache` | OSFMK interface |
 | `serv/vn_pager_misc.c:396` | `memory_object_behave_info` has no `write_completions` | OSFMK interface |
 
+`serv/xmm_interface.c` is Utah's post-release copy of 5 May 1996,
+which implements `memory_object_data_return`, the call OSFMK's
+pageout makes; the release's panics there (`docs/provenance/imports.md`,
+kind F). It stops on the same two lines as the release's.
+
 `dev`'s `tools/lites/lites-osfmk73.patch` touches `gensym.awk`,
 `kern_sig.c`, `user_copy.c`, `xmm_interface.c` and `vn_pager_misc.c`,
 so the verdict walk reaches a fix for all but `device_reply_hdlr.c`.

@@ -438,58 +438,9 @@ kern_return_t seqnos_memory_object_data_write (
 	vm_offset_t data,
 	vm_size_t length)
 {
-	struct vnode *vn;
-	vn_pager_t pager;
-	kern_return_t kr;
-	int error;
-	struct ucred *cred;
-	int resid;
-	vm_size_t wlen = length;
-
-	XMM_START_SERVER();
-	DEBUG_PRINT(("seqnos_memory_object_data_write(x%x o=x%x l=x%x) start\n",
-		     memory_object, offset, length));
-	vn = port_to_vnode_lookup(memory_object, seqno);
-	unix_master();		/* XXX */
-	pager = vn->v_vmdata;
-
-	if (!vn || !pager)
-	    panic("seqnos_memory_object_data_write");
-	assert(MACH_PORT_VALID(pager->control_port));
-	assert(pager->control_port == memory_control);
-	assert(pager->page_size == length);
-
-	assert (vn->v_cache_state == VC_MO_WRITE
-		|| vn->v_cache_state == VC_MO_CLEANING);
-
-	cred = p->p_ucred;
-
-	/* 
-	 * Writing does not do boundary checking but instead enlarges
-	 * the file. So we do the boundary checking here.
-	 */
-	if (offset > pager->size) {
-		printf("m_o_data_write: pageout x%x + x%x outside file end x%lx dropped.\n", offset, length, pager->size);
-	} else {
-		wlen = pager->size - offset;
-		if (offset + length > pager->size) {
-			printf("m_o_data_write: truncating pageout x%x + x%x -> x%x (size=xl%x)\n", offset, length, wlen, pager->size);
-		}
-
-		error = vn_pageinout(UIO_WRITE, vn, (caddr_t) data, wlen,
-				     offset, UIO_SYSSPACE, IO_UNIT, cred,
-				     &resid, p);
-
-		if (error) {
-			printf("memory_object_data_write: vn_pageinout failed: %s (x%x)");
-			warning_panic("pageout dropped");
-		} 
-	}
-	kr = vm_deallocate(mach_task_self(), data, length);
-	assert(kr == KERN_SUCCESS);
+	panic("seqnos_memory_object_data_write unimplemented");
 	consume_control(memory_control);
-	DEBUG_PRINT(("memory_object_data_write(x%x) end\n", memory_object));
-	XMM_END_SERVER();
+	return ENOSYS;
 }
 
 kern_return_t seqnos_memory_object_lock_completed (
@@ -560,9 +511,63 @@ kern_return_t seqnos_memory_object_data_return (
 	boolean_t dirty,
 	boolean_t kernel_copy)
 {
-	panic("seqnos_memory_object_data_return unimplemented");
+	struct vnode *vn;
+	vn_pager_t pager;
+	kern_return_t kr;
+	int error;
+	struct ucred *cred;
+	int resid;
+	vm_size_t length = dataCnt;
+	vm_size_t wlen = length;
+
+	XMM_START_SERVER();
+	DEBUG_PRINT(("seqnos_memory_object_data_return(x%x o=x%x l=x%x) start\n",
+		     memory_object, offset, dataCnt));
+
+	/* XXX */
+	assert(dirty == TRUE && kernel_copy == FALSE);
+
+	vn = port_to_vnode_lookup(memory_object, seqno);
+	unix_master();		/* XXX */
+	pager = vn->v_vmdata;
+
+	if (!vn || !pager)
+	    panic("seqnos_memory_object_data_return");
+	assert(MACH_PORT_VALID(pager->control_port));
+	assert(pager->control_port == memory_control);
+	assert(pager->page_size == length);
+
+	assert (vn->v_cache_state == VC_MO_WRITE
+		|| vn->v_cache_state == VC_MO_CLEANING);
+
+	cred = p->p_ucred;
+
+	/* 
+	 * Writing does not do boundary checking but instead enlarges
+	 * the file. So we do the boundary checking here.
+	 */
+	if (offset > pager->size) {
+		printf("m_o_data_return: pageout x%x + x%x outside file end x%lx dropped.\n", offset, length, pager->size);
+	} else {
+		wlen = pager->size - offset;
+		if (offset + length > pager->size) {
+			printf("m_o_data_return: truncating pageout x%x + x%x -> x%x (size=xl%x)\n", offset, length, wlen, pager->size);
+		}
+
+		error = vn_pageinout(UIO_WRITE, vn, (caddr_t) data, wlen,
+				     offset, UIO_SYSSPACE, IO_UNIT, cred,
+				     &resid, p);
+
+		if (error) {
+			printf("memory_object_data_return: vn_pageinout failed: %s (x%x)");
+			warning_panic("pageout dropped");
+		} 
+	}
+	kr = vm_deallocate(mach_task_self(), data, length);
+	assert(kr == KERN_SUCCESS);
 	consume_control(memory_control);
-	return ENOSYS;
+	DEBUG_PRINT(("memory_object_data_return(x%x) end\n", memory_object));
+	XMM_END_SERVER();
 }
 
 kern_return_t seqnos_memory_object_change_completed (
