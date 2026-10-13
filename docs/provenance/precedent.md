@@ -597,6 +597,50 @@ reads the file system and loads `/mach_kernel` and
 `/mach_servers/bootstrap` — and this project boots with QEMU's
 multiboot `-kernel` instead. `docs/deferred.md` §2 holds it.
 
+## What runs first: /sbin/init, not mach_init
+
+Under CMU's bootstrap the server's first program was USER's
+`mach_init`, the "service" server: it forked, pid 1 became
+`/sbin/init`, and the child stayed as pid 2. Lites was written for
+that, and its `wait4()` (`server/kern/kern_exit.c`, "major hack for
+BSD init compatibility") hides pid 2 from pid 1, in every release
+from 1.0 to 1.1.u3 and in xMach.
+
+OSFMK's bootstrap does that job itself. The OSF Research Institute's
+"Optimizing Mach-based Systems by Server Co-location" (Condict,
+Mitchell, Reynolds, August 1993; uploaded as
+`server_colocation_design.ps`), section 5.1, sets the two side by
+side: in the older procedure "The OSF/1 server runs the mach_init
+program, which implements the 'service' service, and it will fork,
+running /sbin/init in the parent"; in the bootstrap-task procedure,
+which is MK7.3's, "The OSF/1 server runs /sbin/init. There is no need
+for mach_init as the service server is already running in the
+bootstrap task and the netname service is already running as well."
+The service server is in this tree as `bootstrap/service.c`
+("Program: Service server", CMU's), and OSF's `bootstrap.template`
+starts `name_server` first.
+
+OSF's other server on OSFMK agrees. MkLinux 1.0b2's server execs
+`/mach_servers/mach_init` (`osfmach3/server/serv_init.c`), and the
+`mach_init` its binary set ships, with source, only execs
+`/etc/init`, `/bin/init` or `/sbin/init` in place, so init keeps pid
+1 and nothing is left at pid 2. It is Linux-derived and not usable
+here, and need not be: Lites' notes offer the same thing as a link,
+"ln -s /sbin/init /mach_servers/mach_init".
+
+With the link and the hack together, init cannot wait for its first
+child. That is not this port's doing: Utah's own 1.1.u3 server
+(`startup.Lites.1.1.u3.LARGE+mach4`, built at Utah in March 1996,
+with the hack -- `cmpl $0x1` and `cmpl $0x2` on `p_pid` in its
+`wait4`) on Mach4 UK22, from the MachUK22 disk image, boots NetBSD's
+init to "wait for /bin/sh on /etc/rc failed: No child processes;
+going to single user mode" and no login prompt, as ours did. So the
+hack is left out under `OSFMACH3`, Lites' switch for OSFMK, and kept
+for the CMU environment it was written for. Lites' own comment names
+the cleaner fix -- "mach_init does an init_process system call. It
+should cause this effect" -- which needs no change here, as there is
+no mach_init.
+
 ## Where to look, in order
 
 1. **This tree itself** — any of the three subdirectories, and
