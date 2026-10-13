@@ -13,27 +13,27 @@ FileName	({QString}|{AString})
 
 %{
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -106,12 +106,16 @@ FileName	({QString}|{AString})
 
 #include "strdefs.h"
 #include "type.h"
+#include <sys/types.h>
 #include <mach/message.h>
+#include <mach/std_types.h>
 #include "statement.h"
 #include "global.h"
 #include "parser.h"
 #include "lexxer.h"
+#include "mig_machine.h"
 
+#define	PortSize	(sizeof (mach_port_t) * NBBY)
 #ifdef	__STDC__
 #define stringize(x)	#x
 #else	/* __STDC__ */
@@ -190,6 +194,8 @@ extern void yyerror();
 <Normal>[Ii][Mm][Pp][Oo][Rr][Tt]		RETURN(syImport);
 <Normal>[Uu][Ii][Mm][Pp][Oo][Rr][Tt]		RETURN(syUImport);
 <Normal>[Ss][Ii][Mm][Pp][Oo][Rr][Tt]		RETURN(sySImport);
+<Normal>[Dd][Ii][Mm][Pp][Oo][Rr][Tt]		RETURN(syDImport);
+<Normal>[Ii][Ii][Mm][Pp][Oo][Rr][Tt]		RETURN(syIImport);
 <Normal>[Tt][Yy][Pp][Ee]			RETURN(syType);
 <Normal>[Kk][Ee][Rr][Nn][Ee][Ll][Ss][Ee][Rr][Vv][Ee][Rr] RETURN(syKernelServer);
 <Normal>[Kk][Ee][Rr][Nn][Ee][Ll][Uu][Ss][Ee][Rr]	RETURN(syKernelUser);
@@ -210,9 +216,14 @@ extern void yyerror();
 <Normal>[Dd][Ee][Aa][Ll][Ll][Oo][Cc]		FRETURN(flDealloc);
 <Normal>[Nn][Oo][Tt][Dd][Ee][Aa][Ll][Ll][Oo][Cc] FRETURN(flNotDealloc);
 <Normal>[Cc][Oo][Uu][Nn][Tt][Ii][Nn][Oo][Uu][Tt] FRETURN(flCountInOut);
-<Normal>[Pp][Oo][Ll][Yy][Mm][Oo][Rr][Pp][Hh][Ii][Cc]	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC, MACH_MSG_TYPE_POLYMORPHIC, 32);
+<Normal>[Pp][Oo][Ll][Yy][Mm][Oo][Rr][Pp][Hh][Ii][Cc]	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC, MACH_MSG_TYPE_POLYMORPHIC, PortSize);
 <Normal>[Aa][Uu][Tt][Oo]			FRETURN(flAuto);
 <Normal>[Cc][Oo][Nn][Ss][Tt]			FRETURN(flConst);
+<Normal>"PointerTo"				RETURN(syPointerTo);
+<Normal>"PointerToIfNot"		      	RETURN(syPointerToIfNot);
+<Normal>"ValueOf"				RETURN(syValueOf);
+<Normal>"UserTypeLimit"				RETURN(syUserTypeLimit);
+<Normal>"OnStackLimit"                          RETURN(syOnStackLimit);
 
 
 <Normal>"MACH_MSG_TYPE_UNSTRUCTURED"	TRETURN(MACH_MSG_TYPE_UNSTRUCTURED,0);
@@ -227,18 +238,18 @@ extern void yyerror();
 <Normal>"MACH_MSG_TYPE_CHAR"		TRETURN(MACH_MSG_TYPE_CHAR,8);
 <Normal>"MACH_MSG_TYPE_BYTE"		TRETURN(MACH_MSG_TYPE_BYTE,8);
 
-<Normal>"MACH_MSG_TYPE_MOVE_RECEIVE"	TPRETURN(MACH_MSG_TYPE_MOVE_RECEIVE,MACH_MSG_TYPE_PORT_RECEIVE,32);
-<Normal>"MACH_MSG_TYPE_COPY_SEND"	TPRETURN(MACH_MSG_TYPE_COPY_SEND,MACH_MSG_TYPE_PORT_SEND,32);
-<Normal>"MACH_MSG_TYPE_MAKE_SEND"	TPRETURN(MACH_MSG_TYPE_MAKE_SEND,MACH_MSG_TYPE_PORT_SEND,32);
-<Normal>"MACH_MSG_TYPE_MOVE_SEND"	TPRETURN(MACH_MSG_TYPE_MOVE_SEND,MACH_MSG_TYPE_PORT_SEND,32);
-<Normal>"MACH_MSG_TYPE_MAKE_SEND_ONCE"	TPRETURN(MACH_MSG_TYPE_MAKE_SEND_ONCE,MACH_MSG_TYPE_PORT_SEND_ONCE,32);
-<Normal>"MACH_MSG_TYPE_MOVE_SEND_ONCE"	TPRETURN(MACH_MSG_TYPE_MOVE_SEND_ONCE,MACH_MSG_TYPE_PORT_SEND_ONCE,32);
+<Normal>"MACH_MSG_TYPE_MOVE_RECEIVE"	TPRETURN(MACH_MSG_TYPE_MOVE_RECEIVE,MACH_MSG_TYPE_PORT_RECEIVE,PortSize);
+<Normal>"MACH_MSG_TYPE_COPY_SEND"	TPRETURN(MACH_MSG_TYPE_COPY_SEND,MACH_MSG_TYPE_PORT_SEND,PortSize);
+<Normal>"MACH_MSG_TYPE_MAKE_SEND"	TPRETURN(MACH_MSG_TYPE_MAKE_SEND,MACH_MSG_TYPE_PORT_SEND,PortSize);
+<Normal>"MACH_MSG_TYPE_MOVE_SEND"	TPRETURN(MACH_MSG_TYPE_MOVE_SEND,MACH_MSG_TYPE_PORT_SEND,PortSize);
+<Normal>"MACH_MSG_TYPE_MAKE_SEND_ONCE"	TPRETURN(MACH_MSG_TYPE_MAKE_SEND_ONCE,MACH_MSG_TYPE_PORT_SEND_ONCE,PortSize);
+<Normal>"MACH_MSG_TYPE_MOVE_SEND_ONCE"	TPRETURN(MACH_MSG_TYPE_MOVE_SEND_ONCE,MACH_MSG_TYPE_PORT_SEND_ONCE,PortSize);
 
-<Normal>"MACH_MSG_TYPE_PORT_NAME"	TRETURN(MACH_MSG_TYPE_PORT_NAME,32);
-<Normal>"MACH_MSG_TYPE_PORT_RECEIVE"	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC,MACH_MSG_TYPE_PORT_RECEIVE,32);
-<Normal>"MACH_MSG_TYPE_PORT_SEND"	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC,MACH_MSG_TYPE_PORT_SEND,32);
-<Normal>"MACH_MSG_TYPE_PORT_SEND_ONCE"	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC,MACH_MSG_TYPE_PORT_SEND_ONCE,32);
-<Normal>"MACH_MSG_TYPE_POLYMORPHIC"	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC, MACH_MSG_TYPE_POLYMORPHIC, 32);
+<Normal>"MACH_MSG_TYPE_PORT_NAME"	TRETURN(MACH_MSG_TYPE_PORT_NAME,PortSize);
+<Normal>"MACH_MSG_TYPE_PORT_RECEIVE"	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC,MACH_MSG_TYPE_PORT_RECEIVE,PortSize);
+<Normal>"MACH_MSG_TYPE_PORT_SEND"	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC,MACH_MSG_TYPE_PORT_SEND,PortSize);
+<Normal>"MACH_MSG_TYPE_PORT_SEND_ONCE"	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC,MACH_MSG_TYPE_PORT_SEND_ONCE,PortSize);
+<Normal>"MACH_MSG_TYPE_POLYMORPHIC"	TPRETURN(MACH_MSG_TYPE_POLYMORPHIC, MACH_MSG_TYPE_POLYMORPHIC, PortSize);
 
 <Normal>":"		RETURN(syColon);
 <Normal>";"		RETURN(sySemi);

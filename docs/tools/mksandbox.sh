@@ -5,6 +5,7 @@
 # Creates what has no vendor route and nothing else:
 #
 #   obj/ and export/at386    symlinks out of the tree (see below)
+#   tools/i386 and tools/at386     the same, for the host tools
 #   rc_files/osc/Buildconf.local   generated, never committed
 #   a .sandboxrc for the caller to install as ~/.sandboxrc
 #
@@ -35,8 +36,9 @@ mkdir -p "${MK_BUILD}/obj/at386" "${MK_BUILD}/export/at386"
 
 # --- 1. obj/ and export/at386 ------------------------------------------
 #
-# These two symlinks are the only things this script puts inside the
-# vendor tree, and they are unavoidable.  Buildconf line 108 defines
+# These two symlinks and the two in 1a are the only things this script
+# puts inside the vendor tree, and they are unavoidable.  Buildconf line
+# 108 defines
 #
 #	object_base ${sandbox_base}/obj/${target_machine}
 #
@@ -55,6 +57,31 @@ mkdir -p "${MK_BUILD}/obj/at386" "${MK_BUILD}/export/at386"
 # vendor files.
 ln -sfn "${MK_BUILD}/obj" "${OSFMK}/obj"
 ln -sfn "${MK_BUILD}/export/at386" "${OSFMK}/export/at386"
+
+# --- 1a. tools/i386 and tools/at386 ------------------------------------
+#
+# The host tools a build runs: mig and makeboot, which are scripts, and
+# config and migcom, which docs/tools/mkhostbin.sh builds from this
+# tree.  Two vendor files name their directory, and differently:
+#
+#	Buildconf 100	tools_base ${sandbox_base}/link/tools/${MACHINE}/
+#			    ${HOST_MACHINE}_linux
+#	Makeconf 53	TOOLS=${SOURCEBASE:H}/tools/${target_machine}/hostbin
+#
+# The build runs tools_base/hostbin (TARGET_EXEC_PREFIX, MIGCOM);
+# "build setup_all" installs into TOOLS.  link/tools is ../tools, so
+# here they are tools/i386/i386_linux/hostbin and tools/at386/hostbin.
+# DR3 shipped tools/ppc/ppc_linux/hostbin, and its README there copies
+# the setup pass's products across by hand.  One directory under
+# MK_BUILD, reached by both names, makes the copy unnecessary.
+#
+# Not a tools_base override in Buildconf.local: Buildconf expands
+# tools_base into TARGET_EXEC_PREFIX and MIGCOM as it reads them, and
+# Buildconf.local is read after.  Replacing tools_base there was tested
+# and the build still ran link/tools/i386/i386_linux/hostbin/mig.
+mkdir -p "${MK_BUILD}/tools/i386/i386_linux/hostbin"
+ln -sfn "${MK_BUILD}/tools/i386" "${OSFMK}/tools/i386"
+ln -sfn "${MK_BUILD}/tools/i386/i386_linux" "${OSFMK}/tools/at386"
 
 # --- 2. Buildconf.local ------------------------------------------------
 #
@@ -285,6 +312,7 @@ sandbox ready.
 
   obj           ${MK_BUILD}/obj
   export        ${MK_BUILD}/export/at386
+  tools         ${MK_BUILD}/tools/i386/i386_linux/hostbin
   Buildconf     ${OSFMK}/rc_files/osc/Buildconf.local
   sandboxrc     ${MK_BUILD}/sandboxrc
 
@@ -294,6 +322,7 @@ OSFMK_BUILD.README's own flow, which is what to use:
   . ${REPO}/set_ode_path.sh
   export PATH="${MK_BUILD}/ode-sandbox/tools/at386_linux/bin:\$PATH"
   cd ${REPO}/osfmk/src
+  sh ../../docs/tools/mkhostbin.sh      # once, for config and migcom
   sh ../../build_world
 
 build_world is shipped mode 100644, hence "sh".  Its final makeboot

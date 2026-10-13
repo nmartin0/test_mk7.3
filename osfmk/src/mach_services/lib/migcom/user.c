@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -222,7 +222,6 @@
 
 #include <assert.h>
 
-#include "type.h"
 #include <mach/message.h>
 #include "write.h"
 #include "error.h"
@@ -250,7 +249,7 @@ WriteKPD_Iterator(file, in, overwrite, varying, arg, bracket)
 
     fprintf(file, "\t{\n");
     fprintf(file, "\t    register\t%s\t*ptr;\n", it->itUserKPDType);
-    fprintf(file, "\t    register\ti");
+    fprintf(file, "\t    register int\ti");
     if (varying && !in)
 	fprintf(file, ", j");
     fprintf(file, ";\n\n");
@@ -291,8 +290,9 @@ WriteKPD_Iterator(file, in, overwrite, varying, arg, bracket)
  *	header:WriteHeader. Called by WriteProlog.
  *************************************************************/
 static void
-WriteIncludes(file)
+WriteMyIncludes(file, stats)
     FILE *file;
+    statement_t *stats;
 {
     if (IsKernelServer)
     {
@@ -317,6 +317,9 @@ WriteIncludes(file)
 	}
     }
 
+    
+    if (UserHeaderFileName == strNULL || UseSplitHeaders)
+        WriteIncludes(file, TRUE, FALSE);
     if (UserHeaderFileName != strNULL)
     {
 	register char *cp;
@@ -328,24 +331,9 @@ WriteIncludes(file)
 	else
 	    cp++;	/* skip '/' */
 	fprintf(file, "#include \"%s\"\n", cp);
-    } else {
-	fprintf(file, "#include <string.h>\n");
-	fprintf(file, "#include <mach/ndr.h>\n");
-	fprintf(file, "#include <mach/boolean.h>\n");
-	fprintf(file, "#include <mach/kern_return.h>\n");
-	fprintf(file, "#include <mach/notify.h>\n");
-	fprintf(file, "#include <mach/mach_types.h>\n");
-	fprintf(file, "#include <mach/message.h>\n");
-	fprintf(file, "#include <mach/mig_errors.h>\n");
-	if (ShortCircuit)
-		fprintf(file, "#include <mach/rpc.h>\n");
-	if (IsKernelUser) {
-	    fprintf(file, "#include <ipc/ipc_port.h>\n");
-	    fprintf(file, "#include <kern/ipc_mig.h>\n");
-	} else
-	    fprintf(file, "#include <mach/port.h>\n");
-	fprintf(file, "\n");
-    }
+    } 
+    if (UseSplitHeaders)
+        WriteImplImports(file, stats, TRUE);
 
     if (UseEventLogger) {
 	if (IsKernelUser) {
@@ -386,17 +374,58 @@ WriteGlobalDecls(file)
     fprintf(file, "\n");
 }
 
+static void
+WriteOneMachErrorDefine(file, name, timeout)
+    FILE *file;
+    char *name;
+    boolean_t timeout;
+{
+    fprintf(file, "#ifndef\t%s\n", name);
+    fprintf(file, "#define\t%s(_R_) { \\\n", name);
+    fprintf(file, "\tswitch (_R_) { \\\n");
+    fprintf(file, "\tcase MACH_SEND_INVALID_REPLY: \\\n");
+    fprintf(file, "\tcase MACH_RCV_INVALID_NAME: \\\n");
+    fprintf(file, "\tcase MACH_RCV_IN_SET: \\\n");
+    fprintf(file, "\tcase MACH_RCV_PORT_DIED: \\\n");
+    fprintf(file, "\tcase MACH_RCV_PORT_CHANGED: \\\n");
+    fprintf(file, "\tcase MACH_SEND_INVALID_MEMORY: \\\n");
+    fprintf(file, "\tcase MACH_SEND_INVALID_RIGHT: \\\n");
+    fprintf(file, "\tcase MACH_SEND_INVALID_TYPE: \\\n");
+    fprintf(file, "\tcase MACH_SEND_MSG_TOO_SMALL: \\\n");
+    fprintf(file, "\tcase MACH_SEND_INVALID_RT_OOL_SIZE: \\\n");
+    if (timeout)
+        fprintf(file, "\tcase MACH_RCV_TIMED_OUT: \\\n");
+    fprintf(file, "\t\tmig_dealloc_reply_port(InP->Head.msgh_reply_port); \\\n");
+    fprintf(file, "\t\tbreak; \\\n");
+    fprintf(file, "\tdefault: \\\n");
+    fprintf(file, "\t\tmig_put_reply_port(InP->Head.msgh_reply_port); \\\n");
+    fprintf(file, "\t} \\\n}\n");
+    fprintf(file, "#endif\t/* %s */\n", name);
+    fprintf(file, "\n");
+}
+
+static void
+WriteMachErrorDefines(file)
+    FILE *file;
+{
+    WriteOneMachErrorDefine(file, "__MachMsgErrorWithTimeout", TRUE);
+    WriteOneMachErrorDefine(file, "__MachMsgErrorWithoutTimeout", FALSE);
+}
+
 /*************************************************************
  *	Writes the standard #includes, #defines, and
  *	RCS declaration. Called by WriteUser.
  *************************************************************/
 static void
-WriteProlog(file)
+WriteProlog(file, stats)
     FILE *file;
+    statement_t *stats;
 {
     WriteIdentificationString(file);
-    WriteIncludes(file);
+    WriteMyIncludes(file, stats);
     WriteBogusDefines(file);
+    WriteMachErrorDefines(file);
+    WriteApplDefaults(file, "Send");
     WriteGlobalDecls(file);
 }
 
@@ -430,7 +459,7 @@ WriteRequestHead(file, rt)
 	    fprintf(file, "\tInP = &MessRequest;\n");
 	else
 	    fprintf(file, "\tInP = &Mess%sIn;\n",
-		    (rt->rtMessOnStack ? "." : "->"));
+		    (rtMessOnStack(rt) ? "." : "->"));
 
     fprintf(file, "\tInP->Head.msgh_bits =");
     if (rt->rtRetCArg == argNULL && !rt->rtSimpleRequest)
@@ -506,14 +535,14 @@ WriteVarDecls(file, rt)
 	for (i = 1; i <= rt->rtMaxReplyPos; i++)
 	    fprintf(file, "\tregister Reply *Out%dP;\n", i);
     } else {
-        if (rt->rtMessOnStack)
+        if (rtMessOnStack(rt))
 	    fprintf(file, "\tunion {\n");
 	else
 	    fprintf(file, "\tunion %sMessU {\n", rt->rtName);
 	fprintf(file, "\t\tRequest In;\n");
 	if (!rt->rtOneWay)
 	    fprintf(file, "\t\tReply Out;\n");
-        if (rt->rtMessOnStack)
+        if (rtMessOnStack(rt))
 	    fprintf(file, "\t} Mess;\n");
         else
 	    fprintf(file, "\t} *Mess = (union %sMessU *) %s(sizeof(*Mess));\n",
@@ -521,10 +550,10 @@ WriteVarDecls(file, rt)
 	fprintf(file, "\n");
 
 	fprintf(file, "\tregister Request *InP = &Mess%sIn;\n",
-	    (rt->rtMessOnStack ? "." : "->"));
+	    (rtMessOnStack(rt) ? "." : "->"));
 	if (!rt->rtOneWay) {
 	    fprintf(file, "\tregister Reply *Out0P = &Mess%sOut;\n",
-		(rt->rtMessOnStack ? "." : "->"));
+		(rtMessOnStack(rt) ? "." : "->"));
 	    for (i = 1; i <= rt->rtMaxReplyPos; i++)
 		fprintf(file, "\tregister Reply *Out%dP;\n", i);
         }
@@ -532,16 +561,20 @@ WriteVarDecls(file, rt)
     
     fprintf(file, "\n");
 
-    if (!rt->rtOneWay || (! rt->rtMessOnStack))
-	fprintf(file, "\tmach_msg_return_t msg_result;\n");
+    fprintf(file, "\tmach_msg_return_t msg_result;\n");
 
     if (!rt->rtOneWay &&
 	     !(rt->rtSimpleReply)) {
 	fprintf(file, "\tboolean_t msgh_simple;\n");
     }
 
-    if (rt->rtNumRequestVar > 0 || (!rt->rtOneWay && !rt->rtNoReplyArgs))
+    if (rt->rtNumRequestVar > 0)
 	fprintf(file, "\tunsigned int msgh_size;\n");
+    else if (!rt->rtOneWay && !rt->rtNoReplyArgs) {
+	fprintf(file, "#if\tTypeCheck\n");
+	fprintf(file, "\tunsigned int msgh_size;\n");
+	fprintf(file, "#endif\t/* TypeCheck */\n");
+    }
 
     /* if either request or reply is variable, we need msgh_size_delta */
     if ((rt->rtMaxRequestPos > 0) ||
@@ -554,6 +587,7 @@ WriteVarDecls(file, rt)
 	fprintf(file, "\tunsigned int trailer_size;\n");
 	fprintf(file, "#endif\t/* TypeCheck */\n");
     }
+    WriteApplMacro(file, "Send", "Declare", rt);
     fprintf(file, "\n");
 }
 
@@ -561,9 +595,11 @@ static void
 WriteReturn(file, rt, before, value, after)
     FILE *file;
     routine_t *rt;
+    char *before;
     char *value;
+    char *after;
 {
-    if (rt->rtMessOnStack && value != stRetCode)
+    if (rtMessOnStack(rt) && value != stRetCode)
     {
 	/* get the easy case (no braces needed) out of the way */
 	fprintf(file, "%sreturn%s%s;%s",
@@ -572,7 +608,7 @@ WriteReturn(file, rt, before, value, after)
     }
 
     /* get the easy case (no braces needed) out of the way */
-    if (rt->rtMessOnStack)
+    if (rtMessOnStack(rt))
     {
 	if (value == stRetNone)
 	    fprintf(file, "%sreturn;%s",
@@ -591,7 +627,7 @@ WriteReturn(file, rt, before, value, after)
     if (value == stRetCode)
 	fprintf(file, "%s ReturnValue = Out0P->RetCode; ", ReturnTypeStr(rt));
 
-    if (! rt->rtMessOnStack)
+    if (! rtMessOnStack(rt))
 	fprintf(file, "%s((char *) Mess, sizeof(*Mess)); ", MessFreeRoutine);
 
     if (value == stRetNone)
@@ -627,18 +663,12 @@ WriteMsgSend(file, rt)
 {
     char *SendSize = "";
     char string[MAX_STR_LEN];
-    char *MsgResult = "";
 
     if (rt->rtNumRequestVar == 0)
 	SendSize = "sizeof(Request)";
     else
 	SendSize = "msgh_size";
 
-    if (!rt->rtMessOnStack)
-	MsgResult = "msg_result =";
-    else
-	MsgResult = "return";
-        
     if (rt->rtRetCArg != argNULL && !rt->rtSimpleRequest) {
 	sprintf(string, "(%s) ? sizeof(mig_reply_error_t) : ", 
 	    rt->rtRetCArg->argVarName);
@@ -647,20 +677,20 @@ WriteMsgSend(file, rt)
 
     if (IsKernelUser)
     {
-	fprintf(file, "\t%s mach_msg_send_from_kernel(", MsgResult);
+	fprintf(file, "\tmsg_result = mach_msg_send_from_kernel(");
 	fprintf(file, "&InP->Head, %s);\n", SendSize);
     }
     else
     {
-	fprintf(file, "\t%s mach_msg_overwrite(&InP->Head, MACH_SEND_MSG|%s, %s, 0,",
-		MsgResult,
+	fprintf(file, "\tmsg_result = mach_msg_overwrite("
+                      "&InP->Head, MACH_SEND_MSG|%s, %s, 0,",
 		rt->rtMsgOption->argVarName,
 		SendSize);
 	fprintf(file, " MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL,");
 	fprintf(file, " (mach_msg_header_t *) 0, 0);\n");
     }
-    if (! rt->rtMessOnStack)
-	WriteReturn(file, rt, "\t\t", "msg_result", "\n");
+    WriteApplMacro(file, "Send", "After", rt);
+    WriteReturn(file, rt, "\t\t", "msg_result", "\n");
 }
 
 /*************************************************************
@@ -680,22 +710,13 @@ WriteMsgCheckReceive(file, rt, success)
 	   deallocate the reply port when it is invalid or
 	   for TIMED_OUT errors. */
 #ifdef DeallocOnAnyError
-	fprintf(file, "\t\tmig_dealloc_reply_port();\n");
+	fprintf(file,
+		"\t\tmig_dealloc_reply_port(InP->Head.msgh_reply_port);\n");
 #else
-	fprintf(file, "\t\tswitch (msg_result) {\n");
-	fprintf(file, "\t\tcase MACH_SEND_INVALID_REPLY:\n");
-	fprintf(file, "\t\tcase MACH_RCV_INVALID_NAME:\n");
-	fprintf(file, "\t\tcase MACH_RCV_IN_SET:\n");
-	fprintf(file, "\t\tcase MACH_RCV_PORT_DIED:\n");
-	fprintf(file, "\t\tcase MACH_RCV_PORT_CHANGED:\n");
-	fprintf(file, "\t\tcase MACH_SEND_INVALID_MEMORY:\n");
-	fprintf(file, "\t\tcase MACH_SEND_INVALID_RIGHT:\n");
-	fprintf(file, "\t\tcase MACH_SEND_INVALID_TYPE:\n");
-	fprintf(file, "\t\tcase MACH_SEND_MSG_TOO_SMALL:\n");
 	if (rt->rtWaitTime != argNULL)
-	    fprintf(file, "\t\tcase MACH_RCV_TIMED_OUT:\n");
-	fprintf(file, "\t\t\tmig_dealloc_reply_port();\n");
-	fprintf(file, "\t\t\t/*break;*/\n\t\t}\n");
+            fprintf(file, "\t\t__MachMsgErrorWithTimeout(msg_result);\n");
+        else
+            fprintf(file, "\t\t__MachMsgErrorWithoutTimeout(msg_result);\n");
 #endif
     }
     WriteReturnMsgError(file, rt, TRUE, argNULL, "msg_result");
@@ -745,6 +766,7 @@ WriteMsgSendReceive(file, rt)
 	    rt->rtWaitTime != argNULL ? "|MACH_RCV_TIMEOUT" : "",
 	    rt->rtWaitTime != argNULL ? rt->rtWaitTime->argVarName : "MACH_MSG_TIMEOUT_NONE");
     fprintf(file, " (mach_msg_header_t *) 0, 0);\n");
+    WriteApplMacro(file, "Send", "After", rt);
     WriteMsgCheckReceive(file, rt, "MACH_MSG_SUCCESS");
     fprintf(file, "\n");
 }
@@ -788,6 +810,7 @@ WriteMsgRPC(file, rt)
 	else
 	    fprintf(file, " (mach_msg_header_t *) 0, 0);\n");
     }
+    WriteApplMacro(file, "Send", "After", rt);
     WriteMsgCheckReceive(file, rt, "MACH_MSG_SUCCESS");
     fprintf(file, "\n");
 }
@@ -1219,7 +1242,8 @@ WritePackArgValueNormal(file, arg)
     register argument_t *arg;
 {
     register ipc_type_t *it = arg->argType;
-    register char *ref = arg->argByReferenceUser ? "*" : "";
+    register char *ref = (arg->argByReferenceUser ||
+                          it->itNativePointer) ? "*" : "";
 
     if (IS_VARIABLE_SIZED_UNTYPED(it) || it->itNoOptArray) {
 	if (it->itString) {
@@ -1266,6 +1290,14 @@ WritePackArgValueNormal(file, arg)
 	    fprintf(file, "%s%s);\n", countRef, count->argVarName);
 	}
     }
+    else if (IS_OPTIONAL_NATIVE(it)) {
+	fprintf(file, "\tif ((InP->__Present__%s = (%s != %s))) {\n",
+		arg->argMsgField, arg->argVarName, it->itBadValue);
+	WriteCopyType(file, it, "\tInP->%s.__Real__%s", "/* %s%s */ %s%s",
+		      arg->argMsgField, arg->argMsgField, 
+		      ref, arg->argVarName);
+	fprintf(file, "\t}\n");
+    }
     else
 	WriteCopyType(file, it, "InP->%s", "/* %s */ %s%s",
 		      arg->argMsgField, ref, arg->argVarName);
@@ -1276,14 +1308,24 @@ WritePackArgValueNormal(file, arg)
  * Calculate the size of a variable-length message field.
  */
 static void
-WriteArgSize(file, arg)
+WriteArgSizeVariable(file, arg, ptype)
     FILE *file;
     register argument_t *arg;
+    ipc_type_t *ptype;
 {
-    register ipc_type_t *ptype = arg->argType;
     register int bsize = ptype->itElement->itTypeSize;
     register argument_t *count = arg->argCount;
 
+    if (PackMsg == FALSE) {
+	fprintf(file, "%d", ptype->itTypeSize + ptype->itPadSize);
+	return;
+    } 
+
+    /* If the base type size of the data field isn`t a multiple of 4,
+       we have to round up. */
+    if (bsize % itWordAlign != 0)
+	fprintf(file, "_WALIGN_");
+    fprintf(file, "(");
     if (bsize > 1)
 	fprintf(file, "%d * ", bsize);
     if (ptype->itString)
@@ -1294,13 +1336,32 @@ WriteArgSize(file, arg)
 	fprintf(file, "%s%s",
 		count->argByReferenceUser ? "*" : "",
 		count->argVarName);
+    fprintf(file, ")");
+}
 
-    /*
-     * If the base type size is not a multiple of sizeof(int) [4],
-     * we have to round up.
-     */
-    if (bsize % 4 != 0)
-	fprintf(file, " + 3 & ~3");
+static void
+WriteArgSizeOptional(file, arg, ptype)
+    FILE *file;
+    argument_t *arg;
+    ipc_type_t *ptype;
+{
+
+    fprintf(file, "(InP->__Present__%s ? _WALIGNSZ_(%s) : 0)",
+	    arg->argVarName, ptype->itUserType);
+}
+
+static void
+WriteArgSize(file, arg)
+    FILE *file;
+    argument_t *arg;
+    
+{
+    ipc_type_t *ptype = arg->argType;
+
+    if (IS_OPTIONAL_NATIVE(ptype))
+	WriteArgSizeOptional(file, arg, ptype);
+    else
+	WriteArgSizeVariable(file, arg, ptype);
 }
 
 /*
@@ -1323,18 +1384,30 @@ WriteAdjustMsgSize(file, arg)
     WriteArgSize(file, arg);
     fprintf(file, ";\n");
 
-    if (arg->argRequestPos == 0)
+    if (arg->argRequestPos == 0) {
 	/* First variable-length argument.  The previous msgh_size value
 	   is the minimum request size. */
 
-	fprintf(file, "\tmsgh_size = %d + msgh_size_delta;\n",
-		arg->argRoutine->rtRequestMinSize);
-    else
+	fprintf(file, "\tmsgh_size = ");
+	rtMinRequestSize(file, arg->argRoutine, "Request");
+	fprintf(file, " + msgh_size_delta;\n");
+    } else
 	fprintf(file, "\tmsgh_size += msgh_size_delta;\n");
 
-    fprintf(file,
-	"\tInP = (Request *) ((char *) InP + msgh_size_delta - %d);\n\n",
-	ptype->itTypeSize + ptype->itPadSize);
+    if (PackMsg == TRUE) {
+	fprintf(file,
+		"\tInP = (Request *) ((pointer_t) InP + msgh_size_delta - ");
+	if (IS_OPTIONAL_NATIVE(ptype)) 
+	    fprintf(file,
+		    "_WALIGNSZ_(%s)",
+		    ptype->itUserType);
+	else
+	    fprintf(file,
+		    "%d",
+		    ptype->itTypeSize + ptype->itPadSize);
+	fprintf(file,
+		");\n\n");
+    }
 }
 
 /*
@@ -1351,8 +1424,9 @@ WriteFinishMsgSize(file, arg)
        request size. */
 
     if (arg->argRequestPos == 0) {
-	fprintf(file, "\tmsgh_size = %d + (",
-			arg->argRoutine->rtRequestMinSize);
+	fprintf(file, "\tmsgh_size = ");
+	rtMinRequestSize(file, arg->argRoutine, "Request");
+	fprintf(file, " + (");
 	WriteArgSize(file, arg);
 	fprintf(file, ");\n");
     }
@@ -1472,8 +1546,7 @@ WriteCheckIdentity(file, rt)
   	fprintf(file,
 	    "\tif ((Out0P->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) ||\n");
 	if (rt->rtNoReplyArgs)
-	    fprintf(file, "\t    (Out0P->Head.msgh_size != %d))\n",
-			rt->rtReplyMinSize);
+	    fprintf(file, "\t    (Out0P->Head.msgh_size != sizeof(__Reply)))\n");
 	else {
 	    /*
 	     * We have an error iff:
@@ -1481,12 +1554,12 @@ WriteCheckIdentity(file, rt)
 	     * 2) the message size is also different from sizeof(mig_reply_error_t)
 	     *    or the RetCode == KERN_SUCCESS
 	     */
-	    if (rt->rtNumReplyVar > 0)
-	        fprintf(file, "\t    ((msgh_size > %d || msgh_size < %d) &&\n",
-		    rt->rtReplyMaxSize, rt->rtReplyMinSize);
-	    else
-	        fprintf(file, "\t    ((msgh_size != %d) &&\n",
-		    rt->rtReplyMinSize);
+	    if (rt->rtNumReplyVar > 0)  {
+	        fprintf(file, "\t    ((msgh_size > sizeof(__Reply) || msgh_size < ");
+		rtMinReplySize(file, rt, "__Reply");
+	        fprintf(file, ") &&\n");
+	    } else
+	        fprintf(file, "\t    ((msgh_size != sizeof(__Reply)) &&\n");
 	    fprintf(file, "\t     (msgh_size != sizeof(mig_reply_error_t) ||\n");
 	    fprintf(file, "\t      Out0P->RetCode == KERN_SUCCESS)))\n");
 	}
@@ -1496,12 +1569,12 @@ WriteCheckIdentity(file, rt)
 
 	fprintf(file, "\tif ((msgh_simple || Out0P->msgh_body.msgh_descriptor_count != %d ||\n",
 		rt->rtReplyKPDs);
-	if (rt->rtNumReplyVar > 0)
-	    fprintf(file, "\t    msgh_size < %d || msgh_size > %d) &&\n", 
-		    rt->rtReplyMinSize, rt->rtReplyMaxSize);
-	else
-	    fprintf(file, "\t    msgh_size != %d) &&\n",
-		    rt->rtReplyMinSize);
+	if (rt->rtNumReplyVar > 0) {
+	    fprintf(file, "\t    msgh_size < ");
+	    rtMinReplySize(file, rt, "__Reply");
+	    fprintf(file, " || msgh_size > sizeof(__Reply)) &&\n");
+	} else
+	    fprintf(file, "\t    msgh_size != sizeof(__Reply)) &&\n");
 	fprintf(file, "\t    (!msgh_simple || msgh_size != sizeof(mig_reply_error_t) ||\n");
 	fprintf(file, "\t    ((mig_reply_error_t *)Out0P)->RetCode == KERN_SUCCESS))\n");	
     }
@@ -1669,15 +1742,18 @@ WriteCheckArgSize(file, arg)
     argument_t *count = arg->argCount;
     int multiplier = btype->itTypeSize;
 
+    /* If the base type size of the data field isn`t a multiple of 4,
+       we have to round up. */
+    if (btype->itTypeSize % itWordAlign != 0)
+	fprintf(file, "_WALIGN_");
+    fprintf(file, "(");
+
     if (multiplier > 1)
 	fprintf(file, "%d * ", multiplier);
 
     fprintf(file, "Out%dP->%s", count->argReplyPos, count->argMsgField);
 
-    /* If the base type size of the data field isn`t a multiple of 4,
-       we have to round up. */
-    if (btype->itTypeSize % 4 != 0)
-	fprintf(file, " + 3 & ~3");
+    fprintf(file, ")");
 }
 
 static void
@@ -1694,8 +1770,9 @@ WriteCheckMsgSize(file, arg)
     if (arg->argReplyPos == rt->rtMaxReplyPos)
     {
 	fprintf(file, "#if\tTypeCheck\n");
-	fprintf(file, "\tif (msgh_size != %d + (",
-		rt->rtReplyMinSize);
+	fprintf(file, "\tif (msgh_size != ");
+        rtMinReplySize(file, rt, "__Reply");
+	fprintf(file, " + (");
 	WriteCheckArgSize(file, arg);
 	fprintf(file, "))\n");
 
@@ -1725,11 +1802,11 @@ WriteCheckMsgSize(file, arg)
 	   it won't underflow. */
 
 	if (LastVarArg)
-	    fprintf(file, "\tif (msgh_size != %d + msgh_size_delta)\n",
-		rt->rtReplyMinSize);
+	    fprintf(file, "\tif (msgh_size != ");
 	else
-	    fprintf(file, "\tif (msgh_size < %d + msgh_size_delta)\n",
-		rt->rtReplyMinSize);
+	    fprintf(file, "\tif (msgh_size < ");
+	rtMinReplySize(file, rt, "__Reply");
+	fprintf(file, " + msgh_size_delta)\n");
 	WriteReturnMsgError(file, arg->argRoutine, TRUE, arg, "MIG_TYPE_ERROR");
 
 	if (!LastVarArg)
@@ -1748,7 +1825,7 @@ WriteAdjustReplyMsgPtr(file, arg)
     register ipc_type_t *ptype = arg->argType;
 
     fprintf(file,
-	"\tOut%dP = (Reply *) ((char *) Out%dP + msgh_size_delta - %d);\n\n",
+	"\tOut%dP = (Reply *) ((pointer_t) Out%dP + msgh_size_delta - %d);\n\n",
 	arg->argReplyPos +1, arg->argReplyPos, ptype->itTypeSize + ptype->itPadSize);
 }
 
@@ -1928,9 +2005,9 @@ WriteExtractArgValueNormal(file, arg)
 	    fprintf(file, "%s%s);\n",
 		countRef, count->argVarName);
 
-	    fprintf(file, "\t\t%s%s = Out%dP->%s;\n",
+	    fprintf(file, "\t\t%s%s = Out%dP->%s",
 		     countRef, count->argVarName, count->argReplyPos, count->argMsgField);
-	    fprintf(file, "");
+	    fprintf(file, ";\n");
 	    WriteReturnMsgError(file, arg->argRoutine, TRUE, arg, "MIG_ARRAY_TOO_LARGE");
 
 	    fprintf(file, "\t}\n");
@@ -2330,7 +2407,7 @@ WriteShortCircInArgBefore(file, arg)
 		 * not overflow the -maxonstack specification:
 		 */
 		if (it->itTypeSize <= sizeof(char *) ||
-			arg->argRoutine->rtMessOnStack ||
+			rtMessOnStack(arg->argRoutine) ||
 			arg->argRoutine->rtTempBytesOnStack +
 				     it->itTypeSize <= MaxMessSizeOnStack) {
 		    fprintf(file, "\t{   char _%sTemp_[%d];\n",
@@ -2559,7 +2636,7 @@ WriteShortCircRPC(file, rt)
 			    "\tmach_msg_type_number_t _MIG_Ignore_Count_;\n");
 			first_OOL_arg = FALSE;
 		}
-	    } else if (!rt->rtMessOnStack &&
+	    } else if (!rtMessOnStack(rt) &&
 		    arg->argType->itNumber > 1 && !arg->argType->itStruct) {
 	    } else
 		continue;
@@ -2730,6 +2807,54 @@ InitKPD_Disciplines(args)
 	    }   /* end of switch */
 }
 
+static void
+WriteLimitCheck(file, rt)
+    FILE *file;
+    routine_t *rt;
+{
+    if (MaxMessSizeOnStack == -1 || UserTypeLimit == -1)
+	return;
+    if (!rt->rtRequestUsedLimit && !rt->rtReplyUsedLimit)
+	return;
+    fprintf(file, "#if LimitCheck\n");
+    if (rt->rtRequestUsedLimit) {
+	if (rt->rtRequestFits) {
+	    fprintf(file, "\tif ((sizeof(Request) - %d) > %d)\n",
+		    rt->rtRequestSizeKnown, UserTypeLimit);
+	    fprintf(file, "\t    __RequestOnStackAbort(%d, \"%s\");\n",
+		    SubsystemBase + rt->rtNumber, rt->rtName);
+	} else if (rt->rtReplyFits) {
+	    fprintf(file, "\tif (sizeof(Request) < %d)\n",
+		    MaxMessSizeOnStack);
+	    fprintf(file, "\t    __MessageOffStackNote(%d, \"%s\");\n",
+		    SubsystemBase + rt->rtNumber, rt->rtName);
+	}
+    }
+    if (rt->rtReplyUsedLimit) {
+	if (rt->rtReplyFits) {
+	    fprintf(file, "\tif ((sizeof(Reply) - %d) > %d)\n",
+		    rt->rtReplySizeKnown, UserTypeLimit);
+	    fprintf(file, "\t    __ReplyOnStackAbort(%d, \"%s\");\n",
+		    SubsystemBase + rt->rtNumber, rt->rtName);
+	} else if (rt->rtRequestFits) {
+	    fprintf(file, "\tif (sizeof(Reply) < %d)\n",
+		    MaxMessSizeOnStack);
+	    fprintf(file, "\t    __MessageOffStackNote(%d, \"%s\");\n",
+		    SubsystemBase + rt->rtNumber, rt->rtName);
+	}
+    }
+    if (rt->rtRequestUsedLimit && rt->rtReplyUsedLimit &&
+	! (rt->rtRequestFits || rt->rtReplyFits)) {
+        fprintf(file, "\tif (sizeof(Request) < %d \n",
+		MaxMessSizeOnStack);
+	fprintf(file, "&& sizeof(Reply) < %d)\n",
+		MaxMessSizeOnStack);
+	fprintf(file, "\t    __MessageOffStackNote(%d, \"%s\");\n",
+		SubsystemBase + rt->rtNumber, rt->rtName);
+    }
+    fprintf(file, "#endif /* LimitCheck */\n");
+}
+
 /*************************************************************
  *  Writes all the code comprising a routine body. Called by
  *  WriteUser for each routine.
@@ -2744,7 +2869,6 @@ WriteRoutine(file, rt)
     InitKPD_Disciplines(rt->rtArgs);
 
     /* write the stub's declaration */
-
     WriteStubDecl(file, rt);
 
     /* Use the RPC trap for user-user and user-kernel RPC */
@@ -2759,13 +2883,16 @@ WriteRoutine(file, rt)
 
     /* typedef of structure for Request and Reply messages */
     WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbRequest, 
-	"Request", rt->rtSimpleRequest, FALSE, TRUE, FALSE);
-    if (!rt->rtOneWay)
+	"Request", rt->rtSimpleRequest, FALSE, FALSE, FALSE);
+    if (!rt->rtOneWay) {
 	WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbReply, 
-	"Reply", rt->rtSimpleReply, rt->rtUserImpl, TRUE, FALSE);
+	"Reply", rt->rtSimpleReply, TRUE, rt->rtUserImpl, FALSE);
+	WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbReply, 
+	"__Reply", rt->rtSimpleReply, FALSE, FALSE, FALSE);
+    }
     if (rt->rtOverwrite)
 	WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbReply|akbOverwrite,
-	"OverwriteTemplate", FALSE, FALSE, TRUE, TRUE);
+	"OverwriteTemplate", FALSE, TRUE, FALSE, TRUE);
     /*
      * Define a Minimal Reply structure to be used in case of errors
      */
@@ -2789,6 +2916,7 @@ WriteRoutine(file, rt)
 
     WriteList(file, rt->rtArgs, WriteTemplateDeclIn, akbRequest | akbSendKPD, "\n", "\n");
  
+    WriteLimitCheck(file, rt);
     WriteRetCodeArg(file, rt);
 
     /* fill in the fields that are non related to parameters */
@@ -2806,13 +2934,17 @@ WriteRoutine(file, rt)
     WriteRequestHead(file, rt);
     fprintf(file, "\n");
 
+    /* give the application a chance to do some stuff. */
+    WriteApplMacro(file, "Send", "Before", rt);
+
     /* Write the send/receive or rpc call */
 
     if (UseEventLogger)
 	WriteLogMsg(file, rt, LOG_USER, LOG_REQUEST);
 
-    if (rt->rtOneWay)
+    if (rt->rtOneWay) {
 	WriteMsgSend(file, rt);
+    }
     else
     {
 	if (UseMsgRPC) {
@@ -2867,13 +2999,14 @@ WriteRPCClientFunctions(file, stats)
 {
     register statement_t *stat;
     char *fname;
+    char *argfmt = "(mach_port_t, char *, mach_msg_type_number_t)";
 
     fprintf(file, "#ifdef AUTOTEST\n");
     for (stat = stats; stat != stNULL; stat = stat->stNext)
 	if (stat->stKind == skRoutine)
 	{
 	    fname = stat->stRoutine->rtName;
-	    fprintf(file, "extern void client_%s(mach_port_t, int, char **);\n", fname);
+	    fprintf(file, "extern void client_%s%s;\n", fname, argfmt);
 	}
     fprintf(file, "function_table_entry %s_client_functions[] =\n", SubsystemName);
     fprintf(file, "{\n");
@@ -2898,7 +3031,7 @@ WriteUser(file, stats)
 {
     register statement_t *stat;
 
-    WriteProlog(file);
+    WriteProlog(file, stats);
     if (TestRPCTrap)
 	WriteRPCClientFunctions(file, stats);
     for (stat = stats; stat != stNULL; stat = stat->stNext)
@@ -2910,6 +3043,8 @@ WriteUser(file, stats)
 	  case skImport:
 	  case skUImport:
 	  case skSImport:
+	  case skDImport:
+	  case skIImport:
 	    break;
 	  default:
 	    fatal("WriteUser(): bad statement_kind_t (%d)",
@@ -2941,7 +3076,7 @@ WriteUserIndividual(stats)
 		if (file == NULL)
 		    fatal("fopen(%s): %s", filename,
 			  strerror(errno));
-		WriteProlog(file);
+		WriteProlog(file, stats);
 		WriteRoutine(file, stat->stRoutine);
 		WriteEpilog(file);
 		fclose(file);
@@ -2951,6 +3086,8 @@ WriteUserIndividual(stats)
 	  case skImport:
 	  case skUImport:
 	  case skSImport:
+	  case skDImport:
+	  case skIImport:
 	    break;
 	  default:
 	    fatal("WriteUserIndividual(): bad statement_kind_t (%d)",

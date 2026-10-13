@@ -1,26 +1,26 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /* 
  * Mach Operating System
- * Copyright (c) 1989,1988,1987 Carnegie Mellon University
+ * Copyright (c) 1991,1990,1989,1988,1987 Carnegie Mellon University
  * All Rights Reserved.
  * 
  * Permission to use, copy, modify and distribute this software and its
@@ -43,9 +43,8 @@
  * any improvements or extensions that they make and grant Carnegie Mellon
  * the rights to redistribute these changes.
  */
-
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /*
  * Copyright (c) 1980,1990 Regents of the University of California.
@@ -206,6 +205,10 @@ makefile()
 		exit(1);
 	}
 	do_build("cputypes.h", build_cputypes);
+	if (ident == 0) {
+		printf ("ident must be specified\n");
+		exit(1);
+	}
 	fprintf(ofp, "IDENT=-D%s -D%s", machinename, raise(ident));
 	for (op = opt; op; op = op->op_next)
 		if (op->op_value)
@@ -215,12 +218,6 @@ makefile()
 	fprintf(ofp, "\n");
 	for (op = mkopt; op; op = op->op_next)
 		fprintf(ofp, "%s=%s\n", op->op_name, op->op_value);
-	if (hadtz == 0)
-		printf("timezone not specified; gmt assumed\n");
-	if (maxusers == 0) {
-		printf("maxusers not specified; 8 assumed\n");
-		maxusers = 8;
-	}
 	do_build("confdep.h", build_confdep);
 	while (fgets(line, BUFSIZ, ifp) != 0) {
 		if (*line != '%') {
@@ -384,6 +381,10 @@ read_files()
 		if (read_file(&fs, 2))
 			break;
 	}
+	if (ident == 0) {
+		printf ("ident must be specified\n");
+		exit(1);
+	}
 	(void) sprintf(fs.fs_fname, "files.%s", raise(ident));
 	fs.fs_fp = VPATHopen(fs.fs_fname, "r");
 	if (fs.fs_fp == 0)
@@ -444,6 +445,7 @@ int pass;
 	fs->fs_type = NORMAL;
 	fs->fs_flags = SEDIT;
 	fs->fs_define_dynamic = 0;
+	fs->fs_special = (char *) 0;
 	rest = (char *)0;
 	needs = (char *)0;
 	if (eq(fs->fs_wd, "standard")) {
@@ -489,6 +491,7 @@ char *rest, *needs;
 	tp->f_type = fs->fs_type;
 	tp->f_flags = fs->fs_flags;
 	tp->f_needs = needs;
+	tp->f_special = fs->fs_special;
 	if (pf && pf->f_type == INVISIBLE)
 		pf->f_flags = 1;		/* mark as duplicate */
 	return;
@@ -530,14 +533,18 @@ char **restp;
 		fs->fs_type = DRIVER;
 	else if (eq(fs->fs_wd, "profiling-routine"))
 		fs->fs_type = PROFILING;
-	next_word(fs->fs_fp, fs->fs_wd);
-	if (fs->fs_wd) {
-		if (*fs->fs_wd != '|') {
-			printf("%s: syntax error describing %s\n",
-			       fs->fs_fname, fs->fs_this);
-			exit(1);
-		}
+	if (fs->fs_wd && (*fs->fs_wd == '|'))
 		*restp = ns(get_rest(fs->fs_fp));
+	else {
+	    next_word(fs->fs_fp, fs->fs_wd);
+	    if (fs->fs_wd) {
+		    if (*fs->fs_wd != '|') {
+			    printf("%s: syntax error describing %s\n",
+				   fs->fs_fname, fs->fs_this);
+			    exit(1);
+		    }
+		    *restp = ns(get_rest(fs->fs_fp));
+	    }
 	}
 	return;
 }
@@ -758,7 +765,18 @@ struct file_state *fs;
 		fs->fs_flags |= CONFIGDEP;
 		return(1);
 	}
-	if (eq(fs->fs_wd, "compile-with")) {
+	if (eq(fs->fs_wd, "=")) {
+		next_quoted_word(fs->fs_fp, fs->fs_wd);
+		if (fs->fs_wd == 0) {
+			printf("%s: %s missing cflags command string.\n",
+			       fs->fs_fname);
+			exit(1);
+		}
+		fs->fs_special = ns(fs->fs_wd);
+		fs->fs_flags |= CFLAGS;
+		return(1);
+	}
+	else if (eq(fs->fs_wd, "compile-with")) {
 		next_quoted_word(fs->fs_fp, fs->fs_wd);
 		if (fs->fs_wd == 0) {
 			printf("%s: %s missing compile command string.\n",
@@ -1009,11 +1027,13 @@ do_machdep(ofp)
 build_confdep(fp)
 	FILE *fp;
 {
-	fprintf(fp,
-	    "#define TIMEZONE %d\n#define MAXUSERS %d\n#define DST %d\n",
-	    zone, maxusers, dst);
-	fprintf(fp,
-	    "#define MAXDSIZ 0x%x\n", maxdsiz);
+	if (hadtz)
+		fprintf(fp, "#define TIMEZONE %d\n#define DST %d\n",
+			zone, dst);
+	if (maxusers)
+		fprintf(fp, "#define MAXUSERS %d\n", maxusers);
+	if (maxdsiz)
+		fprintf(fp, "#define MAXDSIZ 0x%x\n", maxdsiz);
 }
 
 
@@ -1128,10 +1148,17 @@ do_cflags(f)
 		if (ftp->f_extra)
 			fprintf(f, "%s_CFLAGS+=%s\n", tp, ftp->f_extra);
 		if (ftp->f_special) {
+			if (ftp->f_flags & CFLAGS) {
+				fprintf(f, "%s_CFLAGS=%s\n", tp, 
+					ftp->f_special);
+			}
+			else {
 			fprintf(f, "%s: ", tp);
 			*cp = och;
-			fprintf(f, "%s\n\t%s\n\n", tail(np), ftp->f_special);
+				fprintf(f, "%s\n\t%s\n\n", tail(np), 
+					ftp->f_special);
 			continue;
+			}
 		}
 		if (och == 's' || och == 'b') {
 			*cp = och;

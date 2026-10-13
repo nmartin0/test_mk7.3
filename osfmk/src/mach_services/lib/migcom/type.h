@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -104,7 +104,11 @@
 #include <mach/boolean.h>
 #include "strdefs.h"
 
+#ifdef linux
+#include <sys/types.h>
+#else
 typedef unsigned int u_int;
+#endif
 typedef u_int ipc_flags_t;
 
 /*
@@ -257,6 +261,9 @@ typedef struct ipc_type
     boolean_t itString;
     boolean_t itVarArray;
     boolean_t itNoOptArray;
+    boolean_t itNative;         /* User specified a native (C) type. */
+    boolean_t itNativePointer;  /* The user will pass a pointer to the */
+                                /* native C type. */
 
     struct ipc_type *itElement;	/* may be NULL */
 
@@ -270,9 +277,13 @@ typedef struct ipc_type
     identifier_t itInTrans;	/* may be NULL */
     identifier_t itOutTrans;	/* may be NULL */
     identifier_t itDestructor;	/* may be NULL */
+    identifier_t itBadValue;    /* Excluded value for PointerToIfNot.  May
+                                   be NULL. */
 } ipc_type_t;
 
 #define	itNULL		((ipc_type_t *) 0)
+
+#define itWordAlign     sizeof(void *)
 
 extern ipc_type_t *itLookUp(/* identifier_t name */);
 extern void itInsert(/* identifier_t name, ipc_type_t *it */);
@@ -288,6 +299,9 @@ extern ipc_type_t *itArrayDecl(/* u_int number, ipc_type_t *it */);
 extern ipc_type_t *itPtrDecl(/* ipc_type_t *it */);
 extern ipc_type_t *itStructDecl(/* u_int number, ipc_type_t *it */);
 extern ipc_type_t *itCStringDecl(/* u_int number, boolean_t varying */);
+extern ipc_type_t *itNativeType(/* identifier_t CType, boolean_t pointer 
+                                   identifier_t NotVal 
+*/);
 
 extern ipc_type_t *itRetCodeType;
 extern ipc_type_t *itNdrCodeType;

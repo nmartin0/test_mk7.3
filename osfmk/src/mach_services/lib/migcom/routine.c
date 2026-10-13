@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -46,335 +46,6 @@
  * any improvements or extensions that they make and grant Carnegie Mellon
  * the rights to redistribute these changes.
  */
-/*
- * HISTORY
- * $Log: routine.c,v $
- * Revision 1.2.29.2  1994/09/23  06:25:43  ezf
- * 	change marker to not FREE
- * 	[1994/09/23  05:41:51  ezf]
- *
- * Revision 1.2.31.2  1994/09/23  05:41:51  ezf
- * 	change marker to not FREE
- *
- * Revision 1.2.29.1  1994/08/23  21:38:07  burke
- * 	orig rt2_shared version
- * 	[1994/08/23  21:20:05  burke]
- *
- * Revision 1.2.28.3  1994/08/23  21:28:42  burke
- * 	orig rt2_shared version
- * 	[1994/08/23  21:20:05  burke]
- *
- * Revision 1.2.28.2  1994/08/23  21:20:05  burke
- * 	orig rt2_shared version
- *
- * Revision 1.2.25.1  1994/07/18  22:06:17  burke
- * 	Check-in for merge.
- * 	[1994/07/15  21:05:46  burke]
- *
- * Revision 1.2.24.2  1994/07/15  21:05:46  burke
- * 	Check-in for merge.
- *
- * Revision 1.2.23.2  1994/06/30  21:44:49  burke
- * 	Added routine to count the args and arg descriptors for the RPC Trap.
- *
- * Revision 1.2.12.2  1994/05/03  21:33:28  condict
- * 	Ported the -maxonstack feature from NMK17.1.
- * 	[1994/05/03  20:56:24  condict]
- *
- * Revision 1.2.19.2  1994/05/03  20:56:24  condict
- * 	Ported the -maxonstack feature from NMK17.1.
- *
- * Revision 1.2.14.1  1994/02/08  11:04:20  bernadat
- * 	Checked in NMK16_1 changes
- * 	[94/02/04            bernadat]
- *
- * Revision 1.2.13.2  1994/02/04  14:36:45  bernadat
- * 	Checked in NMK16_1 changes
- * 	[94/02/04            bernadat]
- *
- * Revision 1.2.9.2  1993/09/29  12:46:10  bernadat
- * 	Added support for -maxonstack option.
- * 	From Joseph Barrera (jsb) at Carnegie-Mellon University.
- * 	[93/09/14            bernadat]
- *
- * Revision 1.2.7.2  1993/09/29  12:39:05  bernadat
- * 	Added support for -maxonstack option.
- * 	From Joseph Barrera (jsb) at Carnegie-Mellon University.
- * 	[93/09/14            bernadat]
- *
- * Revision 1.2.12.1  1994/01/20  04:30:10  condict
- * 	Add printing of "auto" and "const" flags.  Also, set Destroy bit for
- * 	"auto" IN args that are OOL.
- * 	[1993/12/27  19:49:12  condict]
- *
- * Revision 1.2.11.2  1993/12/27  19:49:12  condict
- * 	Add printing of "auto" and "const" flags.  Also, set Destroy bit for
- * 	"auto" IN args that are OOL.
- *
- * Revision 1.2.6.2  1993/06/09  03:10:37  gm
- * 	Changes to the logic of flRetCode ( CR #9102).
- * 	The field rt->rtRetCArg is used to enter into the new
- * 	algorithm, that allows to send asynchronous messages
- * 	that need to be understood both as Reply and Request
- * 	messages.
- * 	[1993/05/19  20:21:57  travos]
- *
- * 	Code clean-up (pass with -Wall -pedantic).
- * 	A better error reporting.
- * 	Generate warnings if CountInOut flag is set for OOL types.  CR #9014.
- * 	[1993/05/01  14:18:29  travos]
- *
- * 	Remove dependency on UNIX libc internals, use ANSI C strerror().
- * 	[1993/05/11  21:04:08  jeffc]
- *
- * Revision 1.2.5.2  1993/06/09  01:27:46  gm
- * 	Changes to the logic of flRetCode ( CR #9102).
- * 	The field rt->rtRetCArg is used to enter into the new
- * 	algorithm, that allows to send asynchronous messages
- * 	that need to be understood both as Reply and Request
- * 	messages.
- * 	[1993/05/19  20:21:57  travos]
- *
- * 	Code clean-up (pass with -Wall -pedantic).
- * 	A better error reporting.
- * 	Generate warnings if CountInOut flag is set for OOL types.  CR #9014.
- * 	[1993/05/01  14:18:29  travos]
- *
- * 	Remove dependency on UNIX libc internals, use ANSI C strerror().
- * 	[1993/05/11  21:04:08  jeffc]
- *
- * Revision 1.1.7.2  1993/06/04  21:59:10  gm
- * 	Changes to the logic of flRetCode ( CR #9102).
- * 	The field rt->rtRetCArg is used to enter into the new
- * 	algorithm, that allows to send asynchronous messages
- * 	that need to be understood both as Reply and Request
- * 	messages.
- * 	[1993/05/19  20:21:57  travos]
- *
- * 	Code clean-up (pass with -Wall -pedantic).
- * 	A better error reporting.
- * 	Generate warnings if CountInOut flag is set for OOL types.  CR #9014.
- * 	[1993/05/01  14:18:29  travos]
- *
- * 	Remove dependency on UNIX libc internals, use ANSI C strerror().
- * 	[1993/05/11  21:04:08  jeffc]
- *
- * Revision 1.1.6.2  1993/06/04  02:05:00  gm
- * 	Changes to the logic of flRetCode ( CR #9102).
- * 	The field rt->rtRetCArg is used to enter into the new
- * 	algorithm, that allows to send asynchronous messages
- * 	that need to be understood both as Reply and Request
- * 	messages.
- * 	[1993/05/19  20:21:57  travos]
- *
- * 	Code clean-up (pass with -Wall -pedantic).
- * 	A better error reporting.
- * 	Generate warnings if CountInOut flag is set for OOL types.  CR #9014.
- * 	[1993/05/01  14:18:29  travos]
- *
- * 	Remove dependency on UNIX libc internals, use ANSI C strerror().
- * 	[1993/05/11  21:04:08  jeffc]
- *
- * Revision 1.2.4.3  1993/05/25  18:57:49  rod
- * 	Changes to the logic of flRetCode ( CR #9102).
- * 	The field rt->rtRetCArg is used to enter into the new
- * 	algorithm, that allows to send asynchronous messages
- * 	that need to be understood both as Reply and Request
- * 	messages.
- * 	[1993/05/19  20:21:57  travos]
- *
- * 	Code clean-up (pass with -Wall -pedantic).
- * 	A better error reporting.
- * 	Generate warnings if CountInOut flag is set for OOL types.  CR #9014.
- * 	[1993/05/01  14:18:29  travos]
- *
- * Revision 1.2.5.2  1993/05/25  15:24:10  rod
- * 	Changes to the logic of flRetCode ( CR #9102).
- * 	The field rt->rtRetCArg is used to enter into the new
- * 	algorithm, that allows to send asynchronous messages
- * 	that need to be understood both as Reply and Request
- * 	messages.
- * 	[1993/05/19  20:21:57  travos]
- *
- * 	Code clean-up (pass with -Wall -pedantic).
- * 	A better error reporting.
- * 	Generate warnings if CountInOut flag is set for OOL types.  CR #9014.
- * 	[1993/05/01  14:18:29  travos]
- *
- * Revision 1.2.2.3  1993/05/19  20:25:33  travos
- * 	Changes to the logic of flRetCode (see CR009102).
- * 	The field rt->rtRetCArg is used to enter into the new
- * 	algorithm, that allows to send asynchronous messages
- * 	that need to be understood both as Reply and Request
- * 	messages.
- * 	[1993/05/19  20:21:57  travos]
- *
- * Revision 1.2.3.2  1993/05/19  20:21:57  travos
- * 	Changes to the logic of flRetCode (see CR009102).
- * 	The field rt->rtRetCArg is used to enter into the new
- * 	algorithm, that allows to send asynchronous messages
- * 	that need to be understood both as Reply and Request
- * 	messages.
- *
- * Revision 1.2.2.2  1993/05/01  14:19:18  travos
- * 	Code clean-up (pass with -Wall -pedantic).
- * 	A better error reporting
- * 	Generate warnings if CountInOut flag is set for OOL types.
- * 	[1993/05/01  14:18:29  travos]
- *
- * Revision 1.2.1.3  1993/05/01  14:18:29  travos
- * 	Code clean-up (pass with -Wall -pedantic).
- * 	A better error reporting
- * 	Generate warnings if CountInOut flag is set for OOL types.
- *
- * Revision 1.2.1.2  1993/04/30  22:14:08  travos
- * 	Code clean-up (pass with -DWall -pedantic).
- * 	A better error reporting
- * 	Generate warnings for CountInOut used for OOL types.
- *
- * Revision 1.1.3.3  1993/04/07  16:33:39  travos
- * 	Added trailer support
- * 	[1993/04/07  13:22:35  travos]
- *
- * Revision 1.1.4.2  1993/04/07  13:22:35  travos
- * 	Added trailer support
- *
- * Revision 1.1.4.3  1993/03/26  17:25:44  travos
- * 	Support of the sequence number as a part of the trailer
- * 	[1993/03/26  16:24:21  travos]
- *
- * Revision 1.1.5.2  1993/03/26  16:24:21  travos
- * 	Support of the sequence number as a part of the trailer
- *
- * Revision 1.1.4.2  1993/03/23  14:55:00  travos
- * 	TRAILER support
- * 	[1993/03/23  14:22:10  travos]
- *
- * Revision 1.1.3.2  1993/03/23  14:22:10  travos
- * 	TRAILER support
- *
- * Revision 1.1.2.6  1993/03/16  19:19:54  travos
- * 	a new significant revision: different handling of NDR and RetCode
- * 	[1993/03/16  19:01:52  travos]
- *
- * Revision 1.1.3.2  1993/03/16  19:01:52  travos
- * 	a new significant revision: different handling of NDR and RetCode
- *
- * Revision 1.1.3.2  1993/03/10  15:25:57  travos
- * 	Remove NDR from messages with no data - remove RetCode from complex replies
- *
- * Revision 1.1.2.4  1993/03/05  21:35:48  travos
- * 	Fixex on Min/Max sizes
- * 	[1993/03/05  21:34:21  travos]
- *
- * Revision 1.1.3.2  1993/03/05  21:34:21  travos
- * 	Fixex on Min/Max sizes
- *
- * 1993/02/22  20:15:13  travos
- * 	Support of tracing facilities when VarArray of VarArray
- * 	[1993/02/21  23:29:58  travos]
- *
- * 1993/02/21  23:29:58  travos
- * 	Support of tracing facilities when VarArray of VarArray
- *
- * 1993/01/19  17:12:55  travos
- * 	support for samecount and -L (logger)
- *
- * 92/03/03  16:25:07  jeffreyh
- * 	Changes from TRUNK
- * 	[92/02/26  12:31:38  jeffreyh]
- * 
- * 92/01/14  16:46:28  rpd
- * 	Added itCheckFlags, itCheckDeallocate,
- * 	itCheckIsLong, itCheckServerCopy.
- * 	Revised the CountInOut implementation.
- * 	Modified deallocate bit implementation for Indefinite types.
- * 	[92/01/09            rpd]
- * 
- * 92/01/03  20:29:39  dbg
- * 	Indefinite OUT arrays are passed by pointer, not by address.
- * 
- * 	Set argByReferenceUser and argByReferenceServer fields.
- * 	[91/09/04            dbg]
- * 
- * 2.6  91/08/28  11:17:12  jsb
- * 	Removed Camelot and TrapRoutine support.
- * 	Changed MsgKind to MsgSeqno.
- * 	[91/08/12            rpd]
- * 
- * 2.5  91/07/31  18:10:15  dbg
- * 	Support indefinite-length (inline or out-of-line) variable
- * 	arrays.
- * 	[91/04/10            dbg]
- * 
- * 	Change argDeallocate to an enumerated type, to allow for
- * 	user-specified deallocate flag.
- * 
- * 	Special handling for varying C_Strings in rtAddCountArg.
- * 
- * 	Add rtCheckMaskFunction.  Add rtNoReplyArgs to routine
- * 	structure.
- * 	[91/04/03            dbg]
- * 
- * 2.4  91/02/05  17:55:20  mrt
- * 	Changed to new Mach copyright
- * 	[91/02/01  17:55:07  mrt]
- * 
- * 2.3  90/09/28  16:57:29  jsb
- * 	Fixed bug setting akbRequestQC in rtAugmentArgKind.
- * 	Kernel servers can't quick-check the deallocate bit
- * 	on port arguments.
- * 	[90/09/19            rpd]
- * 
- * 2.2  90/06/02  15:05:17  rpd
- * 	Created for new IPC.
- * 	[90/03/26  21:12:43  rpd]
- * 
- * 07-Apr-89  Richard Draves (rpd) at Carnegie-Mellon University
- *	Extensive revamping.  Added polymorphic arguments.
- *	Allow multiple variable-sized inline arguments in messages.
- *
- * 17-Oct-88  Mary Thompson (mrt) at Carnegie-Mellon University
- *	Added to code to rtAugmentArgKind to reject any inline
- *	variable arguments that are both In and Out.
- *
- * 27-Feb-88  Richard Draves (rpd) at Carnegie-Mellon University
- *	Added warning messages.  CamelotRoutines should only be
- *	used in camelot subsystems, which should consist entirely
- *	of CamelotRoutines.
- *
- * 18-Feb-88  Richard Draves (rpd) at Carnegie-Mellon University
- *	Fix to rtCheckRoutineArgs, so we don't seg-fault on bad input.
- *	We want to do some checking for malformed args after an error,
- *	but nothing that has to use their type (which is NULL).
- *
- * 20-Dec-87  David Golub (dbg) at Carnegie-Mellon University
- *	Fill in pointers to last request and reply arguments.  Implement
- *	partial variable-length messages - only the last inline argument
- *	in a message can vary in size.  Added argMultiplier field for
- *	count arguments.
- *
- * 16-Nov-87  David Golub (dbg) at Carnegie-Mellon University
- *	Don't add akbVarNeeded attribute here - server.c can
- *	better determine whether it is needed.
- *
- * 25-Aug-87  Mary Thompson (mrt) at Carnegie-Mellon University
- *	Changed CamelotPrefix from a UserPrefix to a ServerPrefix.
- *
- * 18-Aug-87  Mary Thompson (mrt) at Carnegie-Mellon University
- *	Added code to add requestPort, Tid and WaitTime 
- *	arguments for CamelotRoutines.
- *
- * 10-Aug-87  Mary Thompson (mrt) at Carnegie-Mellon University
- *	Added code to handle MsgType arguments
- *
- * 15-Jun-87  David Black (dlb) at Carnegie-Mellon University
- *	Fixed rtAlloc and argAlloc to correctly initialize string
- *	pointers in allocated structures.
- *
- * 28-May-87  Richard Draves (rpd) at Carnegie-Mellon University
- *	Created.
- */
 
 /*
  *  ABSTRACT:
@@ -393,6 +64,7 @@
 #include "type.h"
 #include <mach/message.h>
 #include <mach/kern_return.h>
+#include "mig_machine.h"
 #include "error.h"
 #include "alloc.h"
 #include "global.h"
@@ -400,6 +72,8 @@
 #include "write.h"
 
 u_int rtNumber = 0;
+
+static void rtSizeDelta();
 
 routine_t *
 rtAlloc()
@@ -640,26 +314,52 @@ rtCheckSimple(args, mask, simple)
     *simple = !MustBeComplex;
 }
 
-static u_int
-rtFindSize(args, mask, ismax, simple)
-    argument_t *args;
+static void
+rtCheckFit(rt, mask, fitp, uselimp, knownp)
+    routine_t *rt;
     u_int mask;
-    boolean_t ismax, simple;
+    boolean_t *fitp;
+    boolean_t *uselimp;
+    u_int *knownp;
 {
-    register argument_t *arg;
+    boolean_t uselim = FALSE;
+    argument_t *arg;
     u_int size = sizeof(mach_msg_header_t);
 
-    if (!simple)
-	size += sizeof(mach_msg_body_t);
-    for (arg = args; arg != argNULL; arg = arg->argNext)
+    if (!rt->rtSimpleRequest)    
+	machine_alignment(size,sizeof(mach_msg_body_t));
+    for (arg = rt->rtArgs; arg != argNULL; arg = arg->argNext) 
 	if (akCheck(arg->argKind, mask)) {
 	    register ipc_type_t *it = arg->argType;
 
-	    size += it->itMinTypeSize;
-	    if (ismax && IS_VARIABLE_SIZED_UNTYPED(it))
-		size += it->itTypeSize + it->itPadSize;
+	    machine_alignment(size, it->itMinTypeSize);
+	    if (it->itNative)
+		uselim = TRUE;
+	    else if (IS_VARIABLE_SIZED_UNTYPED(it)) {
+	        machine_alignment(size, it->itTypeSize);
+		size += it->itPadSize;
+            }
 	}
-    return size;
+    *knownp = size;
+    if (MaxMessSizeOnStack == -1) {
+	*fitp = TRUE;
+        *uselimp = FALSE;
+    } else if (size > MaxMessSizeOnStack) {
+	*fitp = FALSE;
+        *uselimp = FALSE;
+    } else if (!uselim) {
+        *fitp = TRUE;
+        *uselimp = FALSE;
+    } else if (UserTypeLimit == -1) {
+	*fitp = FALSE;
+        *uselimp = FALSE;
+    } else if (size + UserTypeLimit > MaxMessSizeOnStack) {
+	*fitp = FALSE;
+        *uselimp = TRUE;
+    } else {
+	*fitp = TRUE;
+        *uselimp = TRUE;
+    }        
 }
 
 static void
@@ -1053,6 +753,8 @@ rtAugmentArgKind(arg)
 		  arg->argName);
 	arg->argKind = akAddFeature(arg->argKind, akbVariable);
     }
+    if (IS_OPTIONAL_NATIVE(it))
+	arg->argKind = akAddFeature(arg->argKind, akbVariable);
 
     /*
      * Need to use a local variable in the following cases:
@@ -2065,12 +1767,10 @@ rtCheckRoutine(rt)
 	    fatal("Overwrite option(s) do not match with the KernelUser personality\n");
     }
 
-    rt->rtMessOnStack =
-	(MaxMessSizeOnStack < 0 ||
-	 (rtFindSize(rt->rtArgs, akbRequest, TRUE, rt->rtSimpleRequest)
-	                  <= MaxMessSizeOnStack &&
-	  rtFindSize(rt->rtArgs, akbReply, TRUE, rt->rtSimpleRequest)
-	                  <= MaxMessSizeOnStack));
+    rtCheckFit(rt, akbRequest, &rt->rtRequestFits, 
+	       &rt->rtRequestUsedLimit, &rt->rtRequestSizeKnown);
+    rtCheckFit(rt, akbReply, &rt->rtReplyFits, 
+	       &rt->rtReplyUsedLimit, &rt->rtReplySizeKnown);
 
     rtCheckVariable(rt);
     rtCheckDestroy(rt);
@@ -2083,12 +1783,77 @@ rtCheckRoutine(rt)
         rtProcessMsgOption(rt);       
 
     rt->rtNoReplyArgs = !rtCheckMask(rt->rtArgs, akbReturnSnd);
-    rt->rtRequestMinSize = rtFindSize(rt->rtArgs, akbRequest, FALSE, rt->rtSimpleRequest);
-    rt->rtRequestMaxSize = rtFindSize(rt->rtArgs, akbRequest, TRUE, rt->rtSimpleRequest);
-    rt->rtReplyMinSize = rtFindSize(rt->rtArgs, akbReply, FALSE, rt->rtSimpleReply);
-    rt->rtReplyMaxSize = rtFindSize(rt->rtArgs, akbReply, TRUE, rt->rtSimpleReply);
 
     if (UseEventLogger) 
 	/* some more info's are needed for Event logging/Stats */
 	rtFindHowMany(rt);
 }
+
+void
+rtMinRequestSize(file, rt, str)
+    FILE *file;
+    routine_t *rt;
+    char *str;
+{
+    fprintf(file, "(sizeof(%s)", str);
+    rtSizeDelta(file, akbRequest, rt);
+    fprintf(file, ")");
+}
+
+void
+rtMinReplySize(file, rt, str)
+    FILE *file;
+    routine_t *rt;
+    char *str;
+{
+    fprintf(file, "(sizeof(%s)", str);
+    rtSizeDelta(file, akbReply, rt);
+    fprintf(file, ")");
+}
+
+static void
+rtSizeDelta(file, mask, rt)
+    FILE *file;
+    u_int mask;
+    routine_t *rt;
+{
+    argument_t *arg;
+    u_int min_size = sizeof(mach_msg_header_t);
+    u_int max_size;
+    boolean_t output = FALSE;
+
+    if (!rt->rtSimpleRequest)
+	machine_alignment(min_size, sizeof(mach_msg_body_t));
+    max_size = min_size;
+    for (arg = rt->rtArgs; arg != argNULL; arg = arg->argNext) 
+	if (akCheck(arg->argKind, mask)) {
+	    register ipc_type_t *it = arg->argType;
+
+	    machine_alignment(min_size, it->itMinTypeSize);
+	    machine_alignment(max_size, it->itMinTypeSize);
+			
+	    if (IS_VARIABLE_SIZED_UNTYPED(it)) {
+	        machine_alignment(max_size, it->itTypeSize);
+		max_size += it->itPadSize;
+            }
+	    if (IS_OPTIONAL_NATIVE(it)) {
+	        if (output)
+		    fprintf(file, " + ");
+		else {
+		    output = TRUE;
+		    fprintf(file, " - (");
+		}
+		fprintf(file, "_WALIGNSZ_(%s)", it->itUserType);
+	    }
+	}
+    if (min_size != max_size) {
+	if (output)
+	    fprintf(file, " + ");
+	else 
+	    fprintf(file, " - ");
+	fprintf(file, "%d", max_size - min_size);
+    }
+    if (output)
+        fprintf(file, ")");
+}
+

@@ -157,8 +157,11 @@ kernel the nearest readable copy of MkLinux DR3 is `slp/osfmk-mklinux`'s
 first commit, `0f6f7e6`, with its `start.s~`; each of slp's eighteen
 later commits gets a verdict, as `dev`'s do. The deviation record keeps
 one command per tree, against reference copies of the two releases
-kept in the repository. Independent copies of DR3 and of the Lites
-tarball are being fetched by the maintainer to check both.
+kept in the repository. The maintainer's copies of the MkLinux CVS
+repository and of the Lites tarball check both. The host tools are
+built, not carried: `config` and `migcom` from OSF's 1999 sources in
+that CVS repository, by DR3's own procedure (`docs/tools/mkhostbin.sh`),
+as milestone 5 will build them on the running system.
 
 **1. Boot as OSF did.** OSF's primary boot and `mach_boot`
 (`stand/AT386/boot`) on the vtoc disk, loading `/mach_kernel` and

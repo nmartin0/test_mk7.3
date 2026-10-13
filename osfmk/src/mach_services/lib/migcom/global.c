@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -108,6 +108,7 @@
 #include "strdefs.h"
 #include "global.h"
 #include "error.h"
+#include "mig_machine.h"
 
 boolean_t BeQuiet = FALSE;
 boolean_t BeVerbose = FALSE;
@@ -115,7 +116,9 @@ boolean_t UseMsgRPC = TRUE;
 boolean_t GenSymTab = FALSE;
 boolean_t UseEventLogger = FALSE;
 boolean_t BeAnsiC = TRUE;
-boolean_t ShortCircuit = TRUE;
+boolean_t PackMsg = PACK_MESSAGES;
+boolean_t UseSplitHeaders = FALSE;
+boolean_t ShortCircuit = FALSE;
 boolean_t UseRPCTrap = FALSE;
 boolean_t TestRPCTrap= FALSE;
 
@@ -136,6 +139,7 @@ string_t ServerDemux = strNULL;
 string_t ServerImpl = strNULL;
 string_t ServerSubsys = strNULL;
 int MaxMessSizeOnStack = -1;	/* by default, always on stack */
+int UserTypeLimit = -1;         /* by default, assume unlimited size. */
 
 string_t yyinname;
 
