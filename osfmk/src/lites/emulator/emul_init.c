@@ -43,6 +43,18 @@
 #include <mach/message.h>
 #include <bsd_types_gen.h>
 
+#include "osfmach3.h"
+#if OSFMACH3
+/*
+ * AI-ONLY NOTE: OSFMK 7.3's libmach keeps mach_init static and
+ * exports it as _mach_init_routine, through which its own crt0 calls
+ * it (libsa_mach/crt0.c); CMU's exported mach_init itself.
+ * Link-blocking.
+ */
+extern int	(*_mach_init_routine)(void);
+#define mach_init()	((*_mach_init_routine)())
+#endif /* OSFMACH3 */
+
 int syscall_debug = 0;
 
 void e_signal_child_setup(void);
