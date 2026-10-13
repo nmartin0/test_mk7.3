@@ -134,6 +134,7 @@ be copied, and the commit names it with its release or tag.
 | what | the line, and its tree |
 |---|---|
 | `i386/i386_lock.s`, `i_bit_set` and `i_bit_clear`: `bts %dl` and `btr %dl` become `%edx` | `slp/osfmk-mklinux` `18c9d31`. Neither instruction has a byte-register form and no current GNU as accepts one; the bit number is all of `S_ARG0`, which each routine loads into `%edx` first. The rest of that commit is reverted (`verdicts.md`, "slp's eighteen commits"), so this is the one line kept from it outside `start.s`, and the site says so |
+| `conf/AT386/config.devices`: `pci` 2 to 0; `ncr810`, `tu` and `fta` commented out | `slp/osfmk-mklinux` `0d8ebab`, narrowed: the six sources these name are not in DR3 or in the MkLinux CVS tree, so OSF's configuration cannot be built from what OSF published. Configuration, not code; `conf/AT386/files` stays DR3's. The site says so |
 
 ## C -- our judgement, no donor line
 

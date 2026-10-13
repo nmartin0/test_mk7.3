@@ -57,7 +57,7 @@ OPTIONS/mp_v1_1		optional mp_v1_1
 busses/cbus/cbus.c	optional cbus
 busses/cbus/cbus_init.c	optional cbus
 busses/mbus/mbus.c	optional mbus
-#busses/pci/pci.c	optional pci device-driver
+busses/pci/pci.c	optional pci device-driver
 
 
 busses/cbus/hi_res_clock.sq	optional cbus hi_res_clock
@@ -67,8 +67,8 @@ i386/hi_res_clock_map.c 	optional hi_res_clock
 chips/busses.c		optional at386
 chips/busses.c          optional esp ipsc386 device-driver |${FORCE_VOLATILE}
 
-#device/dma_support.c 	optional pci device-driver
-#device/dma_direct_map.c optional pci device-driver
+device/dma_support.c 	optional pci device-driver
+device/dma_direct_map.c optional pci device-driver
 
 intel/pmap.c		standard
 intel/read_fault.c	standard
@@ -171,7 +171,7 @@ i386/AT386/physmem.c	optional physmem device-driver
 i386/AT386/qd.c		optional qd device-driver
 i386/AT386/wt.c		optional wt device-driver
 
-#i386/pci/dma_map.c	optional pci device-driver
+i386/pci/dma_map.c	optional pci device-driver
 i386/pci/i386_pci.c	optional pci device-driver
 i386/pci/pci_config.c	optional pci device-driver
 i386/pci/pcibios.c	optional pci device-driver
