@@ -136,7 +136,7 @@ monitor_server.o_CFLAGS+=${CFLAGS} ${MIG_CFLAGS}
 # generic interrupt dispatcher, which pushes only one of them:
 #
 #	i386/AT386/pic_isa.c   take_irq(pic, 0, SPLHI, (intr_t)hardclock)
-#	i386/interrupt.S:290   pushl %eax             <- the saved IPL
+#	i386/interrupt.s:290   pushl %eax             <- the saved IPL
 #	                       pushl iunit(,%ecx,4)   <- the one argument
 #	                       call  *ivect(,%ecx,4)
 #

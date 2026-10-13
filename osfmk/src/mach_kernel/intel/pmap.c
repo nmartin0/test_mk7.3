@@ -823,7 +823,7 @@ extern char end;
  */
 /*
  * AI-ONLY NOTE: the section attribute enforces what the comment below
- * already asked for.  start.S line 399 stores the kernel page
+ * already asked for.  start.s line 399 stores the kernel page
  * directory here before any C runs, so it must survive the BSS clear
  * at the top of machine_startup().  GCC 2.7 put an explicitly
  * zero-initialized global in .data; GCC 3.x onward puts it in .bss

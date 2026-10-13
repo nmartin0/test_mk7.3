@@ -131,7 +131,9 @@ the graft was deleted, which settles whether it may be carried.
 The code stays its upstream's; the line taken exists in a tree that may
 be copied, and the commit names it with its release or tag.
 
-*(none yet)*
+| what | the line, and its tree |
+|---|---|
+| `i386/i386_lock.s`, `i_bit_set` and `i_bit_clear`: `bts %dl` and `btr %dl` become `%edx` | `slp/osfmk-mklinux` `18c9d31`. Neither instruction has a byte-register form and no current GNU as accepts one; the bit number is all of `S_ARG0`, which each routine loads into `%edx` first. The rest of that commit is reverted (`verdicts.md`, "slp's eighteen commits"), so this is the one line kept from it outside `start.s`, and the site says so |
 
 ## C -- our judgement, no donor line
 

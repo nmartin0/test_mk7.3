@@ -255,7 +255,7 @@ int		loadpt;
 vm_size_t	mem_size = 0; 
 vm_offset_t	first_addr = 0;	/* set by start.s - keep out of bss */
 /*
- * AI-ONLY NOTE: start.S line 487 stores the first physical address
+ * AI-ONLY NOTE: start.s line 487 stores the first physical address
  * after the page tables here, before any C runs, so it must survive
  * the BSS clear at the top of machine_startup().  See kpde in
  * intel/pmap.c for the compiler change that moved it.
@@ -269,7 +269,7 @@ vm_offset_t	first_addr = 0;	/* set by start.s - keep out of bss */
  * above its end.
  *
  * NOTE the stale comment on first_addr two lines above: it carries
- * OSF's "set by start.s - keep out of bss", but start.S writes
+ * OSF's "set by start.s - keep out of bss", but start.s writes
  * first_avail, not first_addr.  The label is on the wrong variable.
  */
 vm_offset_t	first_avail __attribute__((section(".data"))) = 0;
@@ -286,7 +286,7 @@ unsigned int	avail_remaining;
 int mb_info_size = sizeof(struct multiboot_info);
 /*
  * AI-ONLY NOTE: the section attribute is required, not decorative.
- * start.S fills mb_info from %ebx before any C runs, so it must
+ * start.s fills mb_info from %ebx before any C runs, so it must
  * survive the BSS clear at the top of machine_startup().  Under GCC
  * 2.7, which Buildconf names as the era compiler, an explicitly
  * zero-initialized global went to .data and did survive; GCC 3.x
