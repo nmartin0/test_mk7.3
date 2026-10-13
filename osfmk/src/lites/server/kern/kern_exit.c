@@ -64,6 +64,7 @@
  */
 
 #include "compat_43.h"
+#include "osfmach3.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -481,7 +482,24 @@ loop:
 				error = 0;
 			return (error);
 		}
-#if defined(LITES)
+/*
+ * AI-ONLY NOTE: not under OSFMK.  USER's mach_init, which this hides,
+ * ran first, forked, and became /sbin/init in the parent and the
+ * service server in the child, pid 2.  OSF moved the service server
+ * into the bootstrap task -- bootstrap/service.c, "Program: Service
+ * server" -- and the OSF Research Institute's design (Condict,
+ * Mitchell, Reynolds, "Optimizing Mach-based Systems by Server
+ * Co-location", August 1993, section 5.1) says of that bootstrap:
+ * "The OSF/1 server runs /sbin/init.  There is no need for mach_init
+ * as the service server is already running in the bootstrap task".
+ * So /mach_servers/mach_init is /sbin/init, as doc/README allows, and
+ * pid 2 is init's own first child -- the single-user shell, or the
+ * shell running /etc/rc -- which init must be able to wait for.
+ * Hidden, init reports "wait for /bin/sh on /etc/rc failed: No child
+ * processes" and never reaches a login prompt; Utah's own 1.1.u3
+ * binary does the same with the link, on Mach4.  Boot-blocking.
+ */
+#if defined(LITES) && !OSFMACH3
 		/* 
 		 * XXX major hack for BSD init compatibility.
 		 *

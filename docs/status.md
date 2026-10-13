@@ -172,16 +172,13 @@ there is none in this environment. Two driver messages appear,
 "hdintr: interrupt w/controller not done." and "HD: false interrupt";
 `dev`'s `052a105` explains the second, and is the next commit.
 
-`name_server` is not on the disk: it does not build yet (verdict 31).
-
-**Lites runs NetBSD 1.0's userland, as far as a login prompt.** The
-root is NetBSD 1.0's i386 `base` and `etc` sets, set up as Lites' own
-install notes say (`osfmk/src/lites/doc/README.lites-1.1.u1`,
-"Installing Lites on the x86"): `/mach_servers/mach_init` a symbolic
-link to `/sbin/init`, `/dev` from NetBSD's `MAKEDEV all` and Lites'
-`time` and `timezone` nodes, the console getty on. Lites' device
-numbers are NetBSD's, so NetBSD's nodes are right as made: `wd0a` is
-Lites' `hd0a`. The disk:
+**Lites runs NetBSD 1.0's userland, multi-user.** The root is NetBSD
+1.0's i386 `base` and `etc` sets, set up as Lites' own install notes
+say (`osfmk/src/lites/doc/README.lites-1.1.u1`, "Installing Lites on
+the x86"): `/mach_servers/mach_init` a symbolic link to `/sbin/init`,
+`/dev` from NetBSD's `MAKEDEV all` and Lites' `time` and `timezone`
+nodes, the console getty on. Lites' device numbers are NetBSD's, so
+NetBSD's nodes are right as made: `wd0a` is Lites' `hd0a`. The disk:
 
 	sh docs/tools/mklitesroot.sh root <sets>	# as root
 	ROOT_TREE=root ROOT_MB=40 BOOTSTRAP_CONF=bootstrap.conf \
@@ -191,55 +188,47 @@ with `startup` and `emulator` the files `build -here lites` makes,
 and `bootstrap.conf`
 
 	default_pager default_pager
-	startup startup -s hd0a /dev/hd0a/mach_servers
+	startup startup hd0a /dev/hd0a/mach_servers
 
-The last argument is the server directory, which `parse_arguments()`
-in `server/serv/server_init.c` takes as "server_dir_name (3.0
-style)". Without it Lites derives one from its own name, which OSF's
-bootstrap gives as `/dev/boot_device/mach_servers/startup`, a path in
-the bootstrap's name space, not on the root, and the first program
-is not found (`xc002`, as before).
+(`startup startup -s hd0a ...` for single-user). The last argument
+is the server directory, which `parse_arguments()` in
+`server/serv/server_init.c` takes as "server_dir_name (3.0 style)".
+Without it Lites derives one from its own name, which OSF's bootstrap
+gives as `/dev/boot_device/mach_servers/startup`, a path in the
+bootstrap's name space, not on the root, and the first program is not
+found (`xc002`).
 
-With it, `/sbin/init` starts, as pid 1, with `-s`; the screen shows
+`/sbin/init` runs as pid 1, the first program, as OSF's design has it
+on this bootstrap: "The OSF/1 server runs /sbin/init. There is no
+need for mach_init as the service server is already running in the
+bootstrap task" (`docs/provenance/imports.md`, `kern_exit.c`). Lites'
+`wait4()` hid pid 2 from pid 1, for USER's `mach_init`, which stayed
+as pid 2; under `OSFMACH3` it no longer does, since pid 2 is init's
+own first child. With it hidden, init could not wait for `/etc/rc`
+("wait for /bin/sh on /etc/rc failed: No child processes; going to
+single user mode") and no login prompt came -- as Utah's own 1.1.u3
+binary does with the link on Mach4, in the MachUK22 disk image.
 
-	init: wait for single-user shell failed: No child processes; restarting
-	Enter pathname of shell or RETURN for sh: init: can't get /dev/console for controlling terminal: Operation not permitted
-
-then `/etc/rc` -- `fsck` of `/dev/rwd0a`, the network, `portmap`,
-`syslogd`, `cron`, `inetd` -- and
+Multi-user, the screen shows `/etc/rc` -- `fsck` of `/dev/rwd0a`, the
+network, `portmap`, `syslogd`, `savecore`, quotas, `kvm_mkdb`, `cron`,
+`routed`, `lpd`, `inetd` -- then "kernel security level changed from
+0 to 1" and
 
 	Lites/i386 (myname.my.domain) (console)
 
 	login:
 
-`root` logs in; `login` reports "ROOT LOGIN (root) ON console" and
-`tset` asks for the terminal type. Also on the way: `timed` dies of a
-bus error; `savecore` and `kvm_mkdb` find no `/netbsd`, as there is
-none; and from the second boot "/ was not properly dismounted".
+`root` logs in; `uname -a` prints "Lites myname.my.domain Lites.1.1.u3
+Lites.1.1.u3 STD+WS+osfmach3 i386", `df` shows `/dev/wd0a` on `/`,
+`who` shows root on the console. Single-user, init asks "Enter
+pathname of shell or RETURN for sh:" and RETURN gives a `#` prompt.
+Also on the way: `timed` dies of a bus error; `savecore` and
+`kvm_mkdb` find no `/netbsd`, as there is none; NetBSD's `ps` fails
+on `/dev/mem`, as Lites' `doc/README` says it will ("ps, top, w,
+mach_init should be taken from USER").
 
-**Open: Lites hides pid 2.** `wait4()` in `server/kern/kern_exit.c`
-skips pid 2 when the caller is pid 1, unless it is dead or stopped:
-
-	 * Under lites, mach_init (pid 2) is a child of BSD init (1).
-	 ...  For now we just
-	 * pretend mach_init isn't there (unless it has died or is
-	 * traced and stopped).
-
-That is right for USER's `mach_init`, which runs as pid 1, forks,
-and stays as pid 2 while pid 1 becomes `/sbin/init`. With the link
-the same notes offer instead, `init` is pid 1 and its own first child
-is pid 2 -- the single-user shell with `-s`, `/etc/rc` without -- and
-`init` cannot wait for it. Without `-s` the screen shows "wait for
-/bin/sh on /etc/rc failed: No child processes; going to single user
-mode", `/etc/rc` runs on regardless, and no login prompt comes. That
-this is the whole of it was shown with a two-line shell script as
-`mach_init` that puts a sleeping process in pid 2 and execs
-`/sbin/init`: then the boot is clean, `root` logs in to a `#` prompt,
-`uname -a` prints "Lites myname.my.domain Lites.1.1.u3 Lites.1.1.u3
-STD+WS+osfmach3 i386" and `df` shows `/dev/wd0a` mounted on `/`;
-`ps` fails on `/dev/mem`, as Lites' `doc/README` says NetBSD's will
-("ps, top, w, mach_init should be taken from USER"). The script is
-not in the tree; which way to fill pid 2 is not decided.
+`name_server` is not on the disk: it does not build yet (verdict 31).
+OSF's `bootstrap.template` starts it before `default_pager`.
 
 **Without a disk, the task stops at its own prompt.** Since verdicts
 22–24 the kernel starts OSF's bootstrap task, not the GNU Hurd servers
