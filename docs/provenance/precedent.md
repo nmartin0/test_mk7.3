@@ -632,6 +632,57 @@ the cleaner fix -- "mach_init does an init_process system call. It
 should cause this effect" -- which needs no change here, as there is
 no mach_init.
 
+## How Lites gets its arguments from OSF's bootstrap
+
+Lites' `parse_arguments()` (`server/serv/server_init.c`) reads the
+CMU Mach 3.0 protocol: flags, root name, server directory -- "Arg 2
+should be root name, Arg 3 should be server_dir_name (3.0 style)".
+CMU's and Mach4's bootstrap built that vector itself: xMach's
+`kernel/generic/bootstrap/bootstrap.c` loads the server with "startup
+-boot_flags root_name server_dir_name", the last being
+`/dev/<root>/mach_servers`.
+
+OSF's bootstrap task does not. Its `argv` is the server's path in
+the bootstrap's own name space, then whatever `bootstrap.conf` gives:
+`parse_path()` in `bootstrap/bootstrap.c` makes a relative name
+`/dev/boot_device/mach_servers/<name>`, and `do_bootstrap_arguments()`
+hands that buffer to the server, where libsa_mach's crt0 splits it
+into `argv` (`__get_arguments`, `__setup_ptrs`). So `argc` is at
+least 1 and `argv[0]` is `/dev/boot_device/mach_servers/startup` --
+seen on the screen, where Lites, given no directory, derives
+`/dev/hd0a/dev/boot_device/mach_servers` from it. The template says
+what the rest is for: 'The "server-arguments" are any arguments to
+be passed to the server'; its osf1_server line (-s, -a, a root name)
+describes OSF's server, not every server.
+
+The `OSFMACH3` code in Lites, added between 1.0 and 1.1-950808 and
+unchanged to 1.1.u3, shows what its authors passed on OSF's
+microkernel. Its `get_config_info()` hard-codes, as a fallback, the
+vector
+
+	"/dev/hd0f/mach_servers/startup", "-s", "hd0a", "/dev/hd0a/mach_servers"
+
+-- an OSF-style path for `argv[0]`, then flags, root and server
+directory. That is the shape of this project's line,
+
+	startup startup -s hd0a /dev/hd0a/mach_servers
+
+and the server directory is not this project's invention: it is
+Lites' own argument, carried by OSF's own mechanism. No code change
+is needed for it.
+
+That fallback runs only when `argc` is 0. Under OSF's bootstrap task
+it never is. It is reachable when the kernel starts the server itself,
+as its first task: the kernel serves `bootstrap_arguments` too
+(`kern/bootstrap.c`, `do_bootstrap_arguments()`, "CR9917", 1993), with
+the boot loader's options for the first task -- DR3's
+`i386/AT386/asm_startup.h` stores them as `boot_args_start` and
+`boot_args_size`, 0 when nothing follows the task's name on the boot
+line. That is not MK7.3's documented boot -- the
+Release Notes, section 2.5.3, start servers from `bootstrap.conf` --
+so the branch, which fetches `host_get_boot_info` and prints "Boot
+info IGNORED", is left as Utah shipped it.
+
 ## Where to look, in order
 
 1. **This tree itself** — any of the three subdirectories, and
