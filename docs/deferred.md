@@ -386,7 +386,14 @@ system runs.
 
 ### Making disks on the running system, as OSF did
 
-**Not possible yet; recorded because it is OSF's procedure.** OSF never
+**Possible since 13 October 2026; not yet the project's procedure.**
+NetBSD 1.0's `newfs`, under Lites, made a 100 MB file system in 13
+cylinder groups on a second disk (`newfs /dev/rwd1a qemu100`, with a
+`disktab` entry for the vtoc's partition a, because Lites answers
+`DIOCGDINFO` with "Inappropriate ioctl"); `fsck` passed it, it
+mounted, took 7.7 MB of `/usr`, and passed `fsck` again after
+unmounting. That is S-1 below's way out. Recorded first because it is
+OSF's procedure: OSF never
 built a disk image from a directory. `disk_setup` ran the `vtoc`
 utility and `newfs` on the target machine under MK7.3 itself, and
 `mk_install` then extracted the release onto the new file systems
@@ -454,6 +461,176 @@ line 795), so an `msync(2)` on a file Lites backs stops the server.
 OSF's `default_pager` implements it by answering
 `memory_object_synchronize_completed`; Lites would answer it after
 writing the range back. Taken up when something calls `msync`.
+
+### Stability, as measured on 13 October 2026
+
+**Not yet a stable multi-user system.** With commits 0039-0042 (the
+frame pointer kept, the pid-2 hack off under `OSFMACH3`), a 40 MB root
+made by `mkbootdisk.sh` from NetBSD 1.0's `base`, `etc` and `comp`
+sets boots multi-user to `login:` and, logged in as root:
+
+- `uname`, `df`, `who`, pipes (`cat /etc/* | sort | uniq | wc`), 300
+  file creations, `cp -r`, `tar`, `cksum` of a 3.2 MB file, `dd` of
+  10 MB at about 5 MB/s, `halt` ("syncing disks... done");
+- NetBSD 1.0's `cc`, `cc -O2`, `cpp`, `cc1`, `as` and `ld`: a program
+  that forks 20 children, waits for each and computes fib(25) was
+  compiled under Lites and printed "hello from Lites:
+  fib(25)=75025 sum=20 pid=88", both values right;
+- a second disk made with NetBSD 1.0's `newfs` under Lites, mounted,
+  filled and checked (above).
+
+Each run was QEMU TCG, 64 MB of memory. What fails:
+
+- **S-1. File systems made by `makefs` with more than one cylinder
+  group.** NetBSD 1.0's `fsck` dies in pass 5, "Check Cyl groups",
+  with a bus error (a fault at address 0x10), so `/etc/rc` drops to
+  single-user; and writing to such a file system -- even `cpp`
+  writing its output -- takes the Lites server down ("(bootstrap):
+  '/dev/boot_device/mach_servers/startup' task terminated"), with no
+  panic, no exception to the bootstrap task and no `task_terminate`
+  of its own. A single cylinder group works; with `makefs`'s minimal
+  inode count that is up to about 48 MB, and at `newfs`'s own density
+  (`NFPI` 4, `-o density=4096`) up to about 40 MB. The same sizes made
+  by NetBSD 1.0's `newfs` work, so the fault is in what `makefs`
+  writes, not in Lites' reading of 1994's layout. `makefs` describes
+  each group as a single cylinder (`fs_old_cpg` 1, `fs_old_nsect` =
+  `fs_old_spc`) and its last group as having none (`cg_old_ncyl` 0),
+  where `newfs` wrote 16 cylinders a group; which difference matters
+  is not yet found -- a one-group file system has the same fields and
+  works.
+  **To do**: keep the host-made root to one cylinder group and make
+  every other disk with `newfs` on the running system, as OSF did; and
+  separately, Lites must not die on a bad file system (a server
+  robustness defect, cause not yet found).
+- **S-2. No paging space unless `default_pager` is given one.** Without
+  an argument it starts with none, and under `cc` the screen fills with
+  "(default pager): ps_allocate_cluster: no space in available paging
+  segments; swapon suggested" and the server dies.
+  `default_pager default_pager hd0b` -- the form of the MK7.3 Release
+  Notes' example, `def_pager /mach_servers/default_pager sd0b`, and of
+  `bootstrap.template` ("the default_pager can taking a paging device
+  name") -- prints "(default_pager): added device hd0b". This is O-8
+  below, and it is required, not optional. **To do**: configuration
+  only, in `mkbootdisk.sh`'s Lites example and `docs/status.md`.
+- **S-3. Every bad access is SIGBUS, and its address is lost.** Lites'
+  `catch_exception_raise` (`server/serv/ux_exception.c`) has CMU's
+  arguments, `(exception, code, subcode)`; OSFMK 7.3's `exc.defs`
+  passes `(exception, code[], codeCnt)`. Caught with gdb: `code` was a
+  pointer, `subcode` the count, 2, and the array held
+  `KERN_PROTECTION_FAILURE` and the fault address. So
+  `code == KERN_INVALID_ADDRESS` never holds and SIGSEGV is never
+  sent. The same kind of interface port as `xmm_interface.c`'s.
+  **To do**: a vendor change under `OSFMACH3`, to be proposed.
+- **S-4. A NULL dereference is a protection failure, not an invalid
+  address.** OSFMK 7.3's `mach_init` (`libmach/mach_init.c`) maps page
+  0 `VM_PROT_NONE` "so that the program doesn't get it", and Lites'
+  emulator, linked with that `libmach`, runs it in every process. With
+  S-3 fixed, a NULL dereference would still be classed by its
+  `KERN_PROTECTION_FAILURE`. **To do**: decide with S-3 which signal
+  NetBSD's binaries should see; NetBSD 1.0 sends SIGSEGV.
+- **S-5. `timed` dies of a bus error** at every boot. Not examined;
+  take up after S-3, when the signal and address are right.
+- **S-6. Driver noise.** "hdintr: interrupt w/controller not done." and
+  "HD: false interrupt", already open (`docs/status.md`; `dev`'s
+  `052a105`).
+
+### Lites against the OSF/1 server: the documented behaviour
+
+**Recorded 13 October 2026, at the maintainer's request.** The
+project's aim is that OSF's MK7.3 documents can be followed unchanged
+on this system, with Lites in the place of the OSF/1 server. Lites is
+kept canonical for Lites and OSFMK for OSFMK; where the two meet, this
+is what differs today. Tier 1 (emulator removal, the syscall path,
+locking, collocation, the ABI and boot path) is in `docs/roadmap.md`
+and §1 above; these are the gaps at the boundary OSF's documents
+describe. Sources: MK7.3 Release Notes §2.4.2.1 and §2.5.3,
+`bootstrap/bootstrap.template`, and the OSF RI co-location paper,
+§5.1 (`docs/provenance/precedent.md`, "What runs first" and "How
+Lites gets its arguments from OSF's bootstrap").
+
+- **O-1. OSF's `startup` lines do not work as written.**
+  `startup startup`, `startup: /dev/boot_device/mach_servers/startup
+  -s -a fd0b` and `-k startup /mach_servers/osf1_server.INK sd0a` give
+  only flags and a root; Lites also needs its 3.0-style server
+  directory, so this project's line is
+  `startup startup -s hd0a /dev/hd0a/mach_servers`. **Work**: the
+  server finds `/mach_servers` from OSF's arguments alone.
+- **O-2. An OSF-installed root has no `/mach_servers/mach_init`.** The
+  OSF/1 server runs `/sbin/init`; Lites runs `<server_dir>/mach_init`
+  and panics without it, so this project keeps Lites' link to
+  `/sbin/init`. **Work**: run `/sbin/init` as the first program.
+- **O-3. Lites needs `/mach_servers/emulator`.** OSF/1 MK has no
+  emulator; this closes with Tier 1 item 2 and is listed only so that
+  `/mach_servers`' contents are on record.
+- **O-4. No root argument means `hd0a`.** The OSF/1 server falls back
+  to a default root (Release Notes bug 2271 is about it choosing
+  wrongly); Lites hard-codes `default_root[] = "hd0a"; /* XXX */`, and
+  its `OSFMACH3` boot-info branch prints "Boot info IGNORED".
+  **Work**: take the root from the kernel's boot information.
+- **O-5. `-a` reads differently.** OSF: `root device: [fd0b]`, with a
+  default. Lites: `[lites root device]? `, without one. Text the
+  Release Notes show.
+- **O-6. Lites serves no bootstrap service to its tasks.** The OSF/1
+  server "implements the bootstrap service for its child tasks"
+  (co-location paper §5.1); OSFMK's `get_privileged_ports()` sends
+  `msgh_id` 999999 to the task's bootstrap port, and `mach_perf`, which
+  the Release Notes use, asks for `bootstrap_ports()`. Lites makes each
+  task's bootstrap port its BSD request port and offers CMU's
+  `task_by_pid(-1)` and `(-2)` instead, so OSFMK's own tools fail
+  under it. **Work**: answer `bootstrap.defs` on that port.
+- **O-7. `-s` at the boot prompt may not reach the server.** "-s --
+  single-user mode (passed to server)", the Release Notes say; on
+  i386 the kernel's `startup_single_user` is never set, in DR3 as in
+  this tree. **Work**: check with OSF's boot loader, when it is built.
+- **O-8. `default_pager` takes the paging partition.** Now S-2.
+- **O-9. `name_server` first in `bootstrap.conf`**, as the template and
+  the Release Notes' example have it. Blocked on verdict 31; Lites
+  then finds it through its inherited ports with no change.
+- **O-10. The Release Notes' procedures assume OSF/1's userland.**
+  `disk_setup`, `vtoc`, `newfs`, `net_start`, `mk_install`,
+  `/sbin/init.d/inet` do not exist under NetBSD 1.0. The cost of the
+  decision in §1, "NetBSD 1.0's binaries as the userland,
+  provisionally", recorded so it is visible.
+
+Choices already made at this boundary: the `bootstrap.conf` line is
+Lites' form (O-1); the `mach_init` link is Lites' (O-2); 0041, the
+pid-2 hack off under `OSFMACH3`, is the one change so far that moves
+Lites toward the OSF/1 server.
+
+### Order of work, and when to self-host
+
+**Recommended 13 October 2026; the maintainer decides.**
+
+1. **Stability first** -- S-2 (configuration), S-1 (keep the host-made
+   root to one cylinder group; larger disks with `newfs` on the
+   system), S-3 and S-4 (one vendor change, proposed first), then S-5
+   and S-1's server crash. Everything after is tested on top of these;
+   a server that dies on a write makes every later result doubtful.
+2. **Then the boundary items that are configuration or small**: O-8
+   with S-2, O-9 when `name_server` builds, then O-1, O-2, O-4, O-5 and
+   O-6, each a contained change in `server/serv/server_init.c` or the
+   server's port handling, under `OSFMACH3`. O-6 lets OSFMK's own test
+   programs (`mach_perf`) check the system from inside.
+3. **Self-hosting after both** -- roadmap milestone 5, and OSF's own
+   practice (the Release Notes speak of a "selfhost sup
+   collection"). Not before, because:
+   - it does not shorten the path to the items above: they are server
+     changes, built in minutes by the cross build and tested by booting
+     QEMU, where the same edit-build-boot under TCG inside the system
+     takes far longer, and a server crash (S-1) would take the
+     development environment down with it;
+   - its own prerequisites are open: NetBSD 1.0's `gcc` makes a.out,
+     and this kernel and its servers are ELF, so gcc 2.7.2 in its
+     OSF/1 i386 ELF configuration and binutils must be built on the
+     system first (§1, "The compiler is OSF's line first"); ODE's
+     `build`, `migcom` and `config` must be built for NetBSD 1.0; the
+     source tree needs disks larger than one cylinder group (S-1, so
+     `newfs` on the system); and sources need a way in -- the `ne`
+     network (milestone 4) or disks written on the host and read by
+     `tar` on the system;
+   - what it does prove -- `cc` compiling and running a program under
+     Lites -- already works (above), so the first step toward it is
+     measured, not assumed.
 
 ## 2a. Tooling defects, to fix in a later patch
 
