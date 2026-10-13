@@ -29,7 +29,7 @@ sandbox's `tools_base`, outside the tree. The host needs `flex`, its
 | `mach_kernel.PRODUCTION` | 1,008,208 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 203,052 bytes, same format; two PT_LOAD segments, R+X and R+W; reads UFS only |
 | errors | 0 |
-| vendor files modified | 107 in `osfmk/` against `f8fee21`, 3,393 insertions and 8,048 deletions. 63 of them, 1,867 insertions and 5,214 deletions, are `config` and `migcom` -- OSF's 1999 sources restored from the MkLinux CVS repository, slp's 1995 ones, built objects and binaries deleted, two `AT386/machdep.mk` added -- and `link/tools`, spelt as CVS spells it (`docs/provenance/imports.md`, kinds C and F). 24, 1,273 insertions and 1,261 deletions, put DR3's assembler files back -- the kernel's sixteen under their `.s` names and with OSF's comments, and `libsa_mach`'s six -- with `template.mk`'s lines that name them and all of `conf/AT386/files`; `config.devices` keeps PCI out, because its sources are not in DR3. Against DR3 they differ by a 60-line diff in three files, `locore.s`, `i386_lock.s` and `start.s`: operand fixes no current GNU as lets pass, and the multiboot entry (`docs/provenance/verdicts.md`, `18c9d31`). Seven of the rest return files to DR3 exactly (`kern/boot_script.[ch]` deleted, `conf/files`, `ext2fs/ext2_fs.h`, `kern/lock.c`, `i386/proc_reg.h`, `mach/i386/vm_param.h`), because `f8fee21` is `slp/osfmk-mklinux`'s 2012 tree, not DR3 (`docs/provenance/verdicts.md`, "slp's eighteen commits"); in Lites, at `osfmk/src/lites` against `9d1c98a`, Utah's 1.1.u3 release, one file removed (`Makeconf`) and one replaced (`makefile`) -- no source line changed |
+| vendor files modified | 107 in `osfmk/` against `f8fee21`, 3,393 insertions and 8,048 deletions. 63 of them, 1,867 insertions and 5,214 deletions, are `config` and `migcom` -- OSF's 1999 sources restored from the MkLinux CVS repository, slp's 1995 ones, built objects and binaries deleted, two `AT386/machdep.mk` added -- and `link/tools`, spelt as CVS spells it (`docs/provenance/imports.md`, kinds C and F). 24, 1,273 insertions and 1,261 deletions, put DR3's assembler files back -- the kernel's sixteen under their `.s` names and with OSF's comments, and `libsa_mach`'s six -- with `template.mk`'s lines that name them and all of `conf/AT386/files`; `config.devices` keeps PCI out, because its sources are not in DR3. Against DR3 they differ by a 60-line diff in three files, `locore.s`, `i386_lock.s` and `start.s`: operand fixes no current GNU as lets pass, and the multiboot entry (`docs/provenance/verdicts.md`, `18c9d31`). Seven of the rest return files to DR3 exactly (`kern/boot_script.[ch]` deleted, `conf/files`, `ext2fs/ext2_fs.h`, `kern/lock.c`, `i386/proc_reg.h`, `mach/i386/vm_param.h`), because `f8fee21` is `slp/osfmk-mklinux`'s 2012 tree, not DR3 (`docs/provenance/verdicts.md`, "slp's eighteen commits"); in Lites, at `osfmk/src/lites` against `9d1c98a`, Utah's 1.1.u3 release, one file removed (`Makeconf`), one replaced (`makefile`), and the source fixes for today's compiler and for OSFMK 7.3 that `docs/provenance/imports.md` lists under kinds B and C, each with a note at its site |
 | kernel text | 809,426 bytes |
 
 The kernel text was 818,058 after `2508bd3` and 818,102 after
@@ -59,7 +59,7 @@ succeeds.
 | --- | --- |
 | configure | succeeds; server configuration `STD+WS+osfmach3` selects 150 of `conf/files`' 287 sources. xMach's copy selected 157: its `conf/i386/MASTER` added `extfs` and with it the seven `cd9660` sources |
 | `include/`, `liblites/` | build; `liblites.a` and `liblites_p.a` |
-| `server/` | stops; 138 objects compiled, with `GMAKE="gmake -k"` -- xMach's 145 less the seven `cd9660` |
+| `server/` | stops; 146 objects compiled, with `GMAKE="gmake -k"` -- xMach's 145 less the seven `cd9660`, and the eight the fixes for today's compiler, make and sh unblocked (`docs/provenance/imports.md`, kinds B and C) |
 | `emulator/`, `bin/` | not reached |
 | kernel and bootstrap | not affected by building Lites |
 
@@ -68,24 +68,20 @@ What stops it, every error, from a clean object directory:
 | where | what | kind |
 |---|---|---|
 | `conf/files:347` | `# Linux file systems`, a `#` comment in a file configure runs through the C preprocessor, reported as an invalid directive; the configuration is written all the same. xMach's copy has it as `/* */` | compiler era |
-| `conf/gensym.awk` → `bsd_types_gen.symc` | 22 errors: a string literal written across lines | compiler era |
-| ← that | `bsd_types_gen.h` missing in `bsd_types.defs`, `bsd_types.h`, `server_exec.c`, `ux_server_loop.c`, and `bsd_1_server.h` in `serv_syscalls.c` | follows from the first |
-| `kern/kern_sig.c:1067-1215` | 5, pointers as case values | compiler era |
-| `serv/user_copy.c:214` | a cast used as an lvalue | compiler era |
 | `serv/device_reply_hdlr.c:87` | `mig_reply_header_t`; OSFMK has `mig_reply_error_t` | OSFMK interface |
 | `serv/xmm_interface.c:109,111` | `memory_object_attr_info` has no `object_ready`, `may_cache` | OSFMK interface |
 | `serv/vn_pager_misc.c:396` | `memory_object_behave_info` has no `write_completions` | OSFMK interface |
+| `serv/ux_server_loop.c:49` | Lites' own `cthread_mach_msg`, "missing from cthreads"; OSFMK 7.3's cthreads has one, with a struct argument | OSFMK interface |
 
 `serv/xmm_interface.c` is Utah's post-release copy of 5 May 1996,
 which implements `memory_object_data_return`, the call OSFMK's
 pageout makes; the release's panics there (`docs/provenance/imports.md`,
 kind F). It stops on the same two lines as the release's.
 
-`dev`'s `tools/lites/lites-osfmk73.patch` touches `gensym.awk`,
-`kern_sig.c`, `user_copy.c`, `xmm_interface.c` and `vn_pager_misc.c`,
-so the verdict walk reaches a fix for all but `device_reply_hdlr.c`.
-Those come as their own commits, as the walk reaches them, not here.
-Two more are known to be ahead, both found by `dev` first. The link:
+The compiler-era errors are fixed: `gensym.awk`, `newvers.sh`,
+`kern_sig.c`, `serv_syscalls.c`, `user_copy.c`, and a GNU make
+dependency in `server/Makerules`. What is left is OSFMK 7.3's
+interfaces. Two more are known to be ahead, both found by `dev` first. The link:
 `server/Makerules` names `-lthreads -lmach_sa` (or `-lcthreadsZ
 -lmachZ -lsa_machZ` under `OSF_ENVIRONMENT`), and this export area has
 `libcthreads`, `libmach` and `libsa_mach`. And `-Ulinux`: `-std=gnu89`,

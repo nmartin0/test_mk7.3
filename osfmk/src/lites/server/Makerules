@@ -89,7 +89,14 @@ $(OBJFILES) bsd_types.gen: vnode_if.h
 bsd_server_side.o: bsd_1_server.h
 bsd_1_server.h bsd_1_server.c: bsd_types_gen.h bsd_1.srv bsd_1.defs bsd_types.defs
 signal_user.c signal_user.h: signal_user.cli signal.defs bsd_types.defs
-bsd_server.c: bsd_1_server.c
+# AI-ONLY NOTE: was "bsd_server.c: bsd_1_server.c".  serv/bsd_server.c
+# is a two-line wrapper that #includes the MIG-generated bsd_1_server.c,
+# so the dependency belongs to its object.  Written on the source file,
+# it makes GNU make think serv/bsd_server.c out of date whenever MIG
+# writes bsd_1_server.c, and a target that needs remaking loses the
+# directory VPATH found it in; the compile then asks for bsd_server.c
+# here, which does not exist.  Build-blocking.
+bsd_server.o: bsd_1_server.c
 sendsig.o: signal_user.h
 # inhibit gmake autoremoval
 bsd_types_gen.h: bsd_types_gen.symc.o

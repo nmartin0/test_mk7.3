@@ -38,9 +38,17 @@ BEGIN {
 	}
 }
 
+# AI-ONLY NOTE: each asm string below starts with the escape "\n"
+# where Utah printed a newline, so the string no longer spans two
+# lines.  GCC 3.3 stopped accepting string literals with a newline in
+# them; GCC 2.7, the era's, took them with a warning.  The assembler
+# sees the same text: a newline, then "* NAME mAgIc...", which
+# conf/Makerules turns into a #define.  From test_mk7.3 dev's
+# tools/lites/lites-osfmk73.patch.  Compile-blocking.
+#
 # Take an arbitrarily complex C symbol or expression and constantize it.
 /^expr/ {
-	print "asm (\"";
+	printf "asm (\"\\n";
 	if ($3 == "")
 		printf "* %s mAgIc%%0\" : : \"i\" (%s));\n", $2, $2;
 	else
@@ -49,14 +57,14 @@ BEGIN {
 
 # Output a symbol defining the size of a C structure.
 /^size/ {
-	print "asm (\"";
+	printf "asm (\"\\n";
 	printf "* %s_SIZE mAgIc%%0\" : : \"i\" (sizeof(struct %s)));\n",
 		toupper($3), $2;
 }
 
 # Output a symbol defining the byte offset of an element of a C structure.
 /^offset/ {
-	print "asm (\"";
+	printf "asm (\"\\n";
 	if ($5 == "")
 	{
 		printf "* %s_%s mAgIc%%0\" : : \"i\" (&((struct %s*)0)->%s));\n",

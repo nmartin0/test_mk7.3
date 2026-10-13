@@ -29,12 +29,18 @@ if [ -z "$h" -o -z "$t" ]; then
 fi
 CONFIG=`expr "$d" : '.*/\([^/]*\)$'`
 d=`expr "$d" : '.*/\([^/]*/[^/]*\)$'`
+# AI-ONLY NOTE: printf "%s\n", not echo, for these five lines.  Three
+# of them hand echo a backslash, and POSIX leaves what echo does with
+# one to the shell: BSD's sh printed it, and a System V echo, as
+# /bin/sh's is on Debian, turns "\\n" into a newline inside the C
+# string and vers.c does not compile.  From test_mk7.3 dev's
+# tools/lites/lites-osfmk73.patch.  Build-blocking.
 (
-  echo "char ostype[] = \"Lites\";" ;
-  echo "char osrelease[] = \"${version}\";" ;
-  echo "char version[] = \"${name} ${v}: ${t}; $config ($h)\\n\";" ;
-  echo "char version_short[] = \"${version} ${config}\\n\";" ;
-  echo "char cmu_copyright[] = \"\\" ;
+  printf "%s\n" "char ostype[] = \"Lites\";" ;
+  printf "%s\n" "char osrelease[] = \"${version}\";" ;
+  printf "%s\n" "char version[] = \"${name} ${v}: ${t}; $config ($h)\\n\";" ;
+  printf "%s\n" "char version_short[] = \"${version} ${config}\\n\";" ;
+  printf "%s\n" "char cmu_copyright[] = \"\\" ;
   sed <$copyright -e '/^#/d' -e 's;[ 	]*$;;' -e '/^$/d' -e 's;$;\\n\\;' -e 's/"/\\"/g';
   echo "\";";
 ) > vers.c

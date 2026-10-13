@@ -539,15 +539,22 @@ boolean_t thread_signal(struct proc *p, thread_t thread, int sig, int code)
 	    break;
 	}
 
+	/*
+	 * AI-ONLY NOTE: the case labels here and in bsd_take_signal()
+	 * are cast to the switch's type, as 4.4BSD-Lite2's issignal()
+	 * casts them to its (long).  SIG_DFL, SIG_IGN and SIG_HOLD are
+	 * function-pointer constants; GCC 2.7 took them as case labels,
+	 * and current GCC wants an integer constant.  Compile-blocking.
+	 */
 	switch ((vm_offset_t)p->p_sigacts->ps_sigact[sig]) {
-	    case SIG_IGN:
-	    case SIG_HOLD:
+	    case (vm_offset_t)SIG_IGN:
+	    case (vm_offset_t)SIG_HOLD:
 		/*
 		 * Should not get here unless traced.
 		 */
 		break;
 
-	    case SIG_DFL:
+	    case (vm_offset_t)SIG_DFL:
 		sig_default(p, sig);
 		break;
 
@@ -697,15 +704,15 @@ bsd_take_signal(
 	p->p_siglist &= ~sigmask(sig);
 	action = ps->ps_sigact[sig];
 	switch ((vm_offset_t)action) {
-	    case SIG_IGN:
-	    case SIG_HOLD:
+	    case (vm_offset_t)SIG_IGN:
+	    case (vm_offset_t)SIG_HOLD:
 		/*
 		 * Should not get here.
 		 */
 		sig = 0;
 		break;
 
-	    case SIG_DFL:
+	    case (vm_offset_t)SIG_DFL:
 		/*
 		 * take default action
 		 */
