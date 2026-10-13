@@ -10,7 +10,7 @@ from". They stay that way except where we deliberately change code,
 and every such change is visible in one command:
 
 	git diff f8fee21 HEAD -- osfmk/ ':(exclude)osfmk/src/lites'
-	git diff e31a69d:lites HEAD:osfmk/src/lites
+	git diff 9d1c98a HEAD:osfmk/src/lites
 
 One command per tree.  Lites lives inside the kernel's sandbox at
 `osfmk/src/lites/` -- where OSF built its own server, as
@@ -19,12 +19,18 @@ server's record compares its import's tree directly against where it
 lives now.  Both were run when Lites moved: the first shows the 11
 kernel files, all under `osfmk/src/mach_kernel`; the second was empty.
 
-The second now shows four entries and no changed source line: CMU's
-`Makeconf` deleted, the ODE `Makefile` that runs Lites' own build
-added, and mode 644 to 755 on `conf/config.guess` and
-`conf/move-if-change`.  `docs/provenance/precedent.md`, "How Lites
-meets ODE", has the reason for each; the Makefile is level 2 of the
-order below, a build change, and carries an AI-ONLY NOTE as the
+`9d1c98a` is a tree, not a commit: Utah's `lites-1.1.u3.tar.gz`
+unpacked, as the commit "Restore Lites 1.1.u3 as Utah released it"
+put it at `osfmk/src/lites` (13 October 2026; it replaced xMach's
+copy, `e31a69d:lites`).  A tree's id is its content's, so it is the
+same in every clone, where a commit's id depends on who applied it
+and when.
+
+The second shows two entries and no changed source line: CMU's
+`Makeconf` deleted, and Utah's `makefile` replaced by the ODE
+makefile that runs Lites' own build.  `docs/provenance/precedent.md`,
+"How Lites meets ODE", has the reason for each; the makefile is level
+2 of the order below, a build change, and carries an AI-ONLY NOTE as the
 kernel's `template.mk` change does.
 
 That is the deviation record. "We changed two files" becomes something
