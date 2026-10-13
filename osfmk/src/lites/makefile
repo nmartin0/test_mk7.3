@@ -73,7 +73,14 @@
 #           component is built with.  -fno-builtin matters most: Lites
 #           has its own two-argument free() and three-argument malloc(),
 #           which a compiler with built-ins rejects.
-#   ld      ${_LD_} ${LDOPTS}, the kernel link's linker and options.
+#   ld      ${_LD_} ${LDOPTS} ${LDARGS}, the kernel link's linker and
+#           options.  LDARGS is mksandbox.sh's "-z noseparate-code",
+#           which every program osf.prog.mk links in this sandbox gets:
+#           two PT_LOAD segments, R+X and R+W, the shape OSF's
+#           bootstrap task loads (verdict 26).  Without it the server
+#           has read-only segments, the bootstrap task reports "ELF:
+#           Unknown program header flags 0x4", and the startup task
+#           terminates.
 #   ar, ranlib   ${_AR_}, ${_RANLIB_}.
 #   strip, size, nm   the host's; they read 32-bit ELF.
 #
@@ -160,7 +167,7 @@ _LITES_ENV_	= env -u MAKEFLAGS -u INCDIRS -u LIBDIRS
 
 tools/${LITES_TARGET}-gcc_EXEC	= ${_CC_} ${CARGS} \
 				  -idirafter ${EXPORTBASE}/include/sa_mach
-tools/${LITES_TARGET}-ld_EXEC	= ${_LD_} ${LDOPTS}
+tools/${LITES_TARGET}-ld_EXEC	= ${_LD_} ${LDOPTS} ${LDARGS}
 tools/${LITES_TARGET}-ar_EXEC	= ${_AR_}
 tools/${LITES_TARGET}-ranlib_EXEC = ${_RANLIB_}
 tools/${LITES_TARGET}-strip_EXEC = strip

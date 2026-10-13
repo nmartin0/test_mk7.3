@@ -170,6 +170,36 @@ there is none in this environment. Two driver messages appear,
 
 `name_server` is not on the disk: it does not build yet (verdict 31).
 
+**Lites starts.** With the server and emulator `build -here lites`
+makes, as `/mach_servers/startup` and `/mach_servers/emulator`, and
+
+	default_pager default_pager
+	startup startup -s hd0a
+
+as `bootstrap.conf` (`BOOTSTRAP_CONF` for `mkbootdisk.sh`), the screen
+continues past `(default_pager): started`:
+
+	(lites): WARNING! no server directory specified.
+	(lites): path(/dev/hd0a/dev/boot_device/mach_servers) derived from root
+	(lites): server_dir(/dev/boot_device/mach_servers) on root.
+	(lites): emulator_path(/dev/boot_device/mach_servers/emulator)
+	(lites): init_program(/dev/boot_device/mach_servers/mach_init)
+	Lites VERSION(Lites.1.1.u3): ... STD+WS+osfmach3 (vm)
+	Copyright (c) 1982, 1986, 1989, 1991, 1993 ...
+	Base is Mon Oct 12 20:14:56 2026
+	Time is set to Sun Oct 11 20:15:0 2026
+	timer: 4 timeouts adjusted by 0.720000 seconds
+
+It has mounted partition a, an FFS root, read its time, and then
+panics, as it must with no userland: `system_setup()` calls
+`panic("first program (%s) exec failed: x%x %s",
+"/dev/boot_device/mach_servers/mach_init", 0xc002, ...)`, and the
+reap of the dead init panics again, "init died" -- both caught with
+gdb on QEMU's stub at `panic`'s address. What reaches the screen is
+"panic:" and three bytes of garbage, not those messages; why is open.
+The next thing is a userland, NetBSD 1.0's, and `mach_init` linked
+to its `/sbin/init`.
+
 **Without a disk, the task stops at its own prompt.** Since verdicts
 22–24 the kernel starts OSF's bootstrap task, not the GNU Hurd servers
 (`docs/deferred.md` §2, "The bootstrap fork"); since verdict 25 kernel
