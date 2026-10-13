@@ -56,7 +56,7 @@ directory. `docs/provenance/precedent.md`, "Where the server lives,
 and why", has the sources.
 
 **The build driver exists; the source fixes are the blocking item.**
-`osfmk/src/lites/Makefile` runs Lites' own configure build under ODE
+`osfmk/src/lites/makefile` runs Lites' own configure build under ODE
 (`docs/provenance/precedent.md`, "How Lites meets ODE"; option A,
 reviving Lites' CMU ODE build, is held in `docs/deferred.md` §2). The
 server stops on errors in six files, listed in `docs/status.md`; `dev`'s
@@ -153,7 +153,9 @@ reached a multi-user login under Lites, by other means, at its commit
 
 **0. The releases, not the copies.** Neither import is its upstream's
 release (`docs/provenance/precedent.md`, "Where the two imports came
-from"). Lites is restored from Utah's `lites-1.1.u3.tar.gz`. For the
+from"). Lites is restored from Utah's `lites-1.1.u3.tar.gz` (done, 13
+October 2026: the tarball unpacked at `osfmk/src/lites`, where OSF's
+`src/osf1_server` stood). For the
 kernel the nearest readable copy of MkLinux DR3 is `slp/osfmk-mklinux`'s
 first commit, `0f6f7e6`, with its `start.s~`; each of slp's eighteen
 later commits gets a verdict, as `dev`'s do. The deviation record keeps

@@ -12,7 +12,7 @@ first thing to establish before looking anywhere.
 
 	name        where it is          import    what
 	osfmk7.3/   osfmk/               f8fee21   OSF Mach Kernel 7.3, from MkLinux DR3, as slp/osfmk-mklinux had it in 2012.
-	lites/      osfmk/src/lites/     e31a69d   Lites 1.1.u3, the CMU/HUT 4.4BSD-Lite single server, as xMach's CVS had it in 2000.
+	lites/      osfmk/src/lites/     9d1c98a   Lites 1.1.u3, the CMU/HUT 4.4BSD-Lite single server, as Utah released it on 30 March 1996.
 	bsd/        not yet imported               the 4.4BSD-Lite2 personality, from nmartin0/4.4BSD-Lite2.
 
 **Throughout `docs/`, `osfmk7.3/`, `lites/` and `bsd/` are the trees'
@@ -77,7 +77,14 @@ the commit itself. The other eighteen commits, in order:
 `stand/`, `i386/AT386/asm_startup.h`, `conf.c`, `autoconf.c` and
 `mach/boot_info.h` are as `0f6f7e6` has them.
 
-**`lites/` is xMach's SourceForge CVS module (`/cvsroot/xmach/lites`)
+**Restored 13 October 2026: `lites/` is Utah's release.** The commit
+"Restore Lites 1.1.u3 as Utah released it" replaced the import below
+with `lites-1.1.u3.tar.gz` unpacked in place, 892 files and their
+modes; `9d1c98a` above is that tree's object id, the same in every
+clone, where a commit id would not be. What it replaced, for the
+record:
+
+**`lites/` was xMach's SourceForge CVS module (`/cvsroot/xmach/lites`)
 as of late 2000**, not Utah's release. 78 files carry
 `$Header: /cvsroot/xmach/lites/...`; the CVS logs show the import by
 `xmach` on 6 May 2000 and changes by `welchd` in October and November
@@ -95,9 +102,9 @@ The tarball used for comparison is `github.com/ryanwoodsmall/lites`'s,
 SHA-256 `f81eab46e47786a6db7217aab6d3b29534ff24a8314a889e8e249568e7042c93`.
 It is 1,763,728 bytes, the size `ftp.lip6.fr/pub/mach/mach4/mach/lites/`
 lists for it, 29 March 1996, and xMach's import of 2000 agrees with its
-content file for file. Its seven scripts are mode 0775, which would
-make our own mode change on `conf/config.guess` and
-`conf/move-if-change` unnecessary.
+content file for file. Its seven scripts are mode 0775, and with the
+release restored our mode change on `conf/config.guess` and
+`conf/move-if-change` is gone.
 
 ## What OSF's running system was
 
@@ -302,8 +309,8 @@ it. `97b5ea4` moved Lites to `osfmk/src/lites/`.
 
 ## How Lites meets ODE
 
-`build -here lites` builds Lites. `osfmk/src/lites/Makefile`, the one
-file added for it, is an ODE Makefile that runs **Lites' own
+`build -here lites` builds Lites. `osfmk/src/lites/makefile`, in place
+of Utah's driver of that name, is an ODE makefile that runs **Lites' own
 `configure` and GNU make** in the object directory, against the
 sandbox's compiler, MIG and export area. Lites' older ODE build was not
 revived. Both were tested before either was written.
@@ -317,6 +324,12 @@ Two build descriptions, of different ages:
   Helander, 1992 and 1994, and the `Makefile.config` that composes a
   configuration). Only the server has one; `include/`, `liblites/`,
   `emulator/` and `bin/` have no ODE Makefile at all.
+  *Corrected 13 October 2026:* that was xMach's copy, which had removed
+  them. The release has CMU's ODE Makefiles at the top and in
+  `include/`, `include/i386/`, `include/sys/`, `liblites/`,
+  `emulator/`, `emulator/libsyscall/`, `server/` and `server/conf/`,
+  1992-95; only `bin/` has none. The server's configuration is still
+  the part that predates `osfmach3`.
 - **autoconf and GNU make**, `configure` from `conf/configure.in`, with
   `conf/MASTER`, `conf/files` (the `fileif` dialect) and a `Makefile.in`
   and `Makerules` per directory. Helander's `doc/building` documents
@@ -379,7 +392,8 @@ the two would drift.
 **B. One ODE Makefile that runs Lites' configure build.** OSF's step 8
 keeps its shape — `build -here` inside the sandbox — and inside Lites
 the build is the one its authors used on OSF's kernel. One file added,
-one removed.
+one removed -- since the release was restored, one replaced (Utah's
+`makefile`) and one removed.
 
 **C. A driver in `docs/tools/`, outside `build_world`.** Contrary to
 OSF's release notes, which build the server with the same driver as
@@ -393,7 +407,7 @@ of OSF's own server layout and may be revisited; `docs/deferred.md`
 
 ### What B needed, and why each piece
 
-The comment at the top of `osfmk/src/lites/Makefile` carries all of
+The comment at the top of `osfmk/src/lites/makefile` carries all of
 this; in short:
 
 - **`Makeconf` removed**, for the reason measured above. Its defaults
@@ -430,15 +444,21 @@ this; in short:
   Makerules uses the same names for bare lists it prefixes itself,
   producing `-I-I/…`.
 - **A subdirectory per configuration**, `obj/at386/lites/<config>/`,
-  as the kernel has `PRODUCTION/`. Run in the object directory itself,
-  configure's generated `Makefile` is read by ODE's make in preference
-  to the source one, and the second build fails.
-- **Two execute bits restored**, on `conf/config.guess` and
-  `conf/move-if-change`. The import carries all 761 Lites files as
-  mode 644; these are the two the configure build runs by path rather
-  than through `sh`, and without them configure cannot guess the host
-  and writes no option headers. The other eight scripts with `#!` are
-  run through `sh` and are left as imported.
+  as the kernel has `PRODUCTION/`. While the driver was named
+  `Makefile`, configure's generated `Makefile` in the object directory
+  itself was read by ODE's make in its place, and the second build
+  failed.
+- **No execute bits to restore.** xMach's import carried every file as
+  mode 644, and `conf/config.guess` and `conf/move-if-change`, which
+  configure runs by path, were set to 755 here. The release has them,
+  and five more, as 0775.
+- **Utah's `makefile` replaced, CMU's `Makefile` kept.** Lites 1.1.u3
+  has both at the top: CMU's ODE `Makefile` and Utah's BSD-make
+  `makefile`, a driver that runs `conf/configure` and gmake in an
+  object directory with Utah's paths. ODE's make reads `makefile`
+  before `Makefile` (`ode/bin/make/main.c`), so this site's driver
+  takes the name and the role of Utah's, and every CMU Makefile stays
+  as shipped.
 
 ## What OSF booted from
 

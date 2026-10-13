@@ -305,8 +305,8 @@ surprise when the collocation numbers come in lower than hoped.
 ### Lites' ODE build (option A)
 
 **Not chosen for now, and not refused.** Lites is built under ODE by
-one Makefile that runs its own `configure` build
-(`docs/provenance/precedent.md`, "How Lites meets ODE"). The
+one makefile, in Utah's driver's place, that runs its own `configure`
+build (`docs/provenance/precedent.md`, "How Lites meets ODE"). The
 alternative was to revive the CMU ODE build Lites also carries, which
 is the closer likeness to OSF's `src/osf1_server/conf/AT386/template.mk`.
 
@@ -327,8 +327,11 @@ B on 11 October 2026: "we might revisit A in the future".
   `serv/synch_prim.c`, `conf/param.c`); reconcile the two it has that
   the configure build does not (`../conf/param.c`,
   `serv/notify_interface.c`).
-- ODE Makefiles for `include/`, `liblites/`, `emulator/`, `bin/` and
-  the top, none of which has one.
+- ODE Makefiles: *corrected 13 October 2026*, the release has CMU's
+  for the top, `include/`, `liblites/`, `emulator/` and `server/`
+  (xMach's copy had removed them), so only `bin/` needs one; the
+  existing ones are 1992-95 and would need checking against OSFMK's
+  `makedefs/`, and the top's `Makeconf` against the sandbox's.
 - `gensym.awk` and Lites' MIG rules as ODE rules; OSFMK's `osf.osc.mk`
   already has MIG rules.
 
