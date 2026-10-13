@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -195,7 +195,6 @@
 
 #include <assert.h>
 
-#include "type.h"
 #include <mach/message.h>
 #include "write.h"
 #include "utils.h"
@@ -208,6 +207,7 @@
 
 void WriteLogDefines();
 void WriteIdentificationString();
+static void WriteFieldDecl();
 
 static void
 WriteKPD_Iterator(file, in, varying, arg, bracket)
@@ -221,7 +221,7 @@ WriteKPD_Iterator(file, in, varying, arg, bracket)
 
     fprintf(file, "\t{\n");
     fprintf(file, "\t    register\t%s\t*ptr;\n", it->itServerKPDType);
-    fprintf(file, "\t    register\ti");
+    fprintf(file, "\t    register int\ti");
     if (varying && !in)
 	fprintf(file, ", j");
     fprintf(file, ";\n\n");
@@ -255,9 +255,12 @@ WriteKPD_Iterator(file, in, varying, arg, bracket)
 }
 
 static void
-WriteIncludes(file)
+WriteMyIncludes(file, stats)
     FILE *file;
+    statement_t *stats;
 {
+    if (ServerHeaderFileName == strNULL || UseSplitHeaders)
+	WriteIncludes(file, FALSE, FALSE);
     if (ServerHeaderFileName != strNULL)
     {
         register char *cp;
@@ -269,19 +272,9 @@ WriteIncludes(file)
         else
             cp++;       /* skip '/' */
         fprintf(file, "#include \"%s\"\n", cp); 
-    } else {
-	fprintf(file, "#include <string.h>\n");
-	fprintf(file, "#include <mach/ndr.h>\n");
-	fprintf(file, "#include <mach/boolean.h>\n");
-	fprintf(file, "#include <mach/kern_return.h>\n");
-	fprintf(file, "#include <mach/message.h>\n");
-	fprintf(file, "#include <mach/mig_errors.h>\n");
-	fprintf(file, "#include <mach/rpc.h>\n");
-	if (IsKernelServer)
-	    fprintf(file, "#include <ipc/ipc_port.h>\n");
-	else
-	    fprintf(file, "#include <mach/port.h>\n");
-    }
+    } 
+    if (ServerHeaderFileName == strNULL || UseSplitHeaders)
+        WriteImplImports(file, stats, FALSE);
     if (UseEventLogger) {
 	if (IsKernelServer) {
 	    fprintf(file, "#ifdef\tMACH_KERNEL\n");
@@ -346,6 +339,28 @@ WriteGlobalDecls(file)
 }
 
 static void
+WriteReplyTypes(file, stats)
+    FILE *file;
+    statement_t *stats;
+{
+    register statement_t *stat;
+
+    fprintf(file, "/* typedefs for all replies */\n\n");
+    for (stat = stats; stat != stNULL; stat = stat->stNext) {
+        if (stat->stKind == skRoutine) {
+            register routine_t *rt;
+            char str[MAX_STR_LEN];
+	    
+	    rt = stat->stRoutine;
+	    sprintf(str, "__Reply__%s_t", rt->rtName);
+	    WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbReply, 
+			    str, rt->rtSimpleReply, FALSE, FALSE, FALSE);
+	}
+    }
+    fprintf(file, "\n");
+}
+
+static void
 WriteForwardDeclarations(file, stats)
     FILE *file;
     statement_t *stats;
@@ -363,19 +378,21 @@ WriteForwardDeclarations(file, stats)
 }
 
 static void
-WriteProlog(file)
+WriteProlog(file, stats)
     FILE *file;
+    statement_t *stats;
 {
     WriteIdentificationString(file);
     fprintf(file, "\n");
     fprintf(file, "/* Module %s */\n", SubsystemName);
     fprintf(file, "\n");
     
-    WriteIncludes(file);
+    WriteMyIncludes(file, stats);
     WriteBogusDefines(file);
+    WriteApplDefaults(file, "Rcv");
     WriteGlobalDecls(file);
+    WriteReplyTypes(file, stats);
 }
-
 
 static void
 WriteSymTabEntries(file, stats)
@@ -417,11 +434,12 @@ WriteRoutineEntries(file, stats)
 	{
 	    register routine_t *rt = stat->stRoutine;
 
-	    sig_array = (char *) malloc(strlen(ServerSubsys)+50);
+	    sig_array = (char *) malloc(strlen(ServerSubsys)+80);
 	    rt_name = (char *) malloc(strlen(rt->rtName)+5);
 	    while (current++ < rt->rtNumber)
 		fprintf(file, "\t\t{0, 0, 0, 0, 0, 0},\n");
-	    sprintf(sig_array, "&%s.arg_descriptor[%d]", ServerSubsys, offset);
+	    sprintf(sig_array, "&%s.arg_descriptor[%d], sizeof(__Reply__%s_t)",
+		    ServerSubsys, offset, rt->rtName);
 	    sprintf(rt_name, "_X%s", rt->rtName);
 	    descr_count = rtCountArgDescriptors(rt->rtArgs, &arg_count);
 	    offset += descr_count;
@@ -465,10 +483,9 @@ WriteArgDescriptorEntries(file, stats)
  * Write out the description of this subsystem, for use in direct RPC
  */
 static void
-WriteSubsystem(file, stats, maxsize)
+WriteSubsystem(file, stats)
     FILE *file;
     statement_t *stats;
-    unsigned int maxsize;
 {
     register statement_t *stat;
     int descr_count = 0;
@@ -480,6 +497,20 @@ WriteSubsystem(file, stats, maxsize)
 	    descr_count += rtCountArgDescriptors(rt->rtArgs, (int *) 0);
 	}
     fprintf(file, "\n");
+    if (ServerHeaderFileName == strNULL) {
+	fprintf(file, "extern boolean_t %s(", ServerDemux);
+	if (BeAnsiC) {
+	    fprintf(file, "\n\t\tmach_msg_header_t *InHeadP,");
+	    fprintf(file, "\n\t\tmach_msg_header_t *OutHeadP");
+	}
+	fprintf(file, ");\n\n");
+
+	fprintf(file, "extern mig_routine_t %s_routine(", ServerDemux);
+	if (BeAnsiC) {
+	    fprintf(file, "\n\t\tmach_msg_header_t *InHeadP");
+	}
+	fprintf(file, ");\n\n");
+    }
     fprintf(file, "\n/* Description of this subsystem, for use in direct RPC */\n");
     if (ServerHeaderFileName == strNULL) {
 	fprintf(file, "struct %s {\n", ServerSubsys);
@@ -499,7 +530,7 @@ WriteSubsystem(file, stats, maxsize)
     fprintf(file, "\t0,\n");
     fprintf(file, "\t%d,\n", SubsystemBase);
     fprintf(file, "\t%d,\n", SubsystemBase + rtNumber);
-    fprintf(file, "\t%d,\n", maxsize);
+    fprintf(file, "\tsizeof(union __ReplyUnion),\n");
     fprintf(file, "\t(vm_address_t)&%s,\n", ServerSubsys);
 
     WriteRoutineEntries(file, stats);
@@ -509,17 +540,61 @@ WriteSubsystem(file, stats, maxsize)
 }
 
 static void
-WriteDispatcher(file, stats, maxsize)
+WriteArraySizes(file, stats)
     FILE *file;
     statement_t *stats;
-    unsigned int maxsize;
 {
+    register u_int current = 0;
+    register statement_t *stat;
+
+    for (stat = stats; stat != stNULL; stat = stat->stNext)
+	if (stat->stKind == skRoutine)
+	{
+	    register routine_t *rt = stat->stRoutine;
+
+	    while (current++ < rt->rtNumber)
+		fprintf(file, "\t\t0,\n");
+	    fprintf(file, "\t\tsizeof(__Reply__%s_t),\n", rt->rtName);
+	}
+    while (current++ < rtNumber)
+	fprintf(file, "\t\t\t0,\n");
+}
+
+WriteReplyUnion(file, stats)
+    FILE *file;
+    statement_t *stats;
+{
+    register statement_t *stat;
+
+    fprintf(file, "/* union of all replies */\n\n");
+    fprintf(file, "union __ReplyUnion {\n");
+    for (stat = stats; stat != stNULL; stat = stat->stNext) {
+        if (stat->stKind == skRoutine) {
+            register routine_t *rt;
+	    
+	    rt = stat->stRoutine;
+	    fprintf(file, "\t__Reply__%s_t Reply_%s;\n",
+		    rt->rtName, rt->rtName);
+	}
+    }
+    fprintf(file, "};\n");
+}
+static void
+WriteDispatcher(file, stats)
+    FILE *file;
+    statement_t *stats;
+{
+    /*
+     * First write the reply union as a substitute for maxsize
+     */
     fprintf(file, "\n");
+    WriteReplyUnion(file, stats);
 
     /*
-     * First, the RPC subsystem structure:
+     * Write the subsystem stuff.
      */
-    WriteSubsystem(file, stats, maxsize);
+    fprintf(file, "\n");
+    WriteSubsystem(file, stats);
 
      /*
       * Then, the server routine
@@ -605,7 +680,7 @@ WriteDispatcher(file, stats, maxsize)
     fprintf(file, "\n");
     fprintf(file, "\treturn %s.routine[msgh_id].stub_routine;\n", ServerSubsys);
     fprintf(file, "}\n");
-
+    
     /* symtab */
 
     if (GenSymTab) {
@@ -700,9 +775,14 @@ WriteVarDecls(file, rt)
     if (rt->rtMaxRequestPos > 0 || rt->rtMaxReplyPos > 0)
 	NeedMsghSizeDelta = TRUE;
 
-    if (NeedMsghSize)
+    if (NeedMsghSize) {
+        if (rt->rtNumReplyVar <= 1)
+	    fprintf(file, "#if\tTypeCheck\n");
 	fprintf(file, "\tunsigned int msgh_size;\n");
-    if (NeedMsghSizeDelta)
+        if (rt->rtNumReplyVar <= 1)
+            fprintf(file, "#endif\t/* TypeCheck */\n");
+    }
+    if (NeedMsghSizeDelta) 
 	fprintf(file, "\tunsigned int msgh_size_delta;\n");
     if (rt->rtServerImpl) {
 	fprintf(file, "\tmach_msg_format_0_trailer_t *TrailerP;\n");
@@ -729,9 +809,11 @@ WriteReplyInit(file, rt)
 	fprintf(file,
 		"\tOutP->Head.msgh_bits |= MACH_MSGH_BITS_COMPLEX;\n");
 
-    if (rt->rtNumReplyVar == 0)
-	fprintf(file, "\tOutP->Head.msgh_size = %d;\n", rt->rtReplyMinSize);
-    else if (rt->rtNumReplyVar > 1)
+    if (rt->rtNumReplyVar == 0) {
+        fprintf(file, "\tOutP->Head.msgh_size = "); 
+        rtMinReplySize(file, rt, "Reply");
+	fprintf(file, ";\n"); 
+    } else if (rt->rtNumReplyVar > 1)
 	fprintf(file, "\tOutP->Head.msgh_size = msgh_size;\n");
     /* the case rt->rtNumReplyVar = 1 is taken care of in WriteAdjustMsgSize() */
 }
@@ -771,12 +853,12 @@ WriteCheckHead(file, rt)
 	/* Expecting a simple message. */
 	fprintf(file,
 	    "\tif ((In0P->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) ||\n");
-	if (rt->rtNumRequestVar > 0)
-	    fprintf(file, "\t    (msgh_size < %d) ||  (msgh_size > %d))\n",
-		rt->rtRequestMinSize, rt->rtRequestMaxSize);
-	else 
-	    fprintf(file, "\t    (In0P->Head.msgh_size != %d))\n",
-			rt->rtRequestMinSize);
+	if (rt->rtNumRequestVar > 0) {
+	    fprintf(file, "\t    (msgh_size < ");
+	    rtMinRequestSize(file, rt, "__Request");
+	    fprintf(file, ") ||  (msgh_size > sizeof(__Request)))\n");
+	} else 
+	    fprintf(file, "\t    (In0P->Head.msgh_size != sizeof(__Request)))\n");
     } else {
 	/* Expecting a complex message. */
 
@@ -786,12 +868,12 @@ WriteCheckHead(file, rt)
 	fprintf(file, "!(In0P->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) ||\n");
 	fprintf(file, "\t    (In0P->msgh_body.msgh_descriptor_count != %d) ||\n",
 		rt->rtRequestKPDs);
-	if (rt->rtNumRequestVar > 0)
-	    fprintf(file, "\t    (msgh_size < %d) ||  (msgh_size > %d)",
-		rt->rtRequestMinSize, rt->rtRequestMaxSize);
-	else
-	    fprintf(file, "\t    (In0P->Head.msgh_size != %d)",
-		rt->rtRequestMinSize);
+	if (rt->rtNumRequestVar > 0) {
+	    fprintf(file, "\t    (msgh_size < ");
+	    rtMinRequestSize(file, rt, "__Request");
+	    fprintf(file, ") ||  (msgh_size > sizeof(__Request))\n");
+	} else 
+	    fprintf(file, "\t    (In0P->Head.msgh_size != sizeof(__Request))");
 	if (rt->rtRetCArg == argNULL) 
 	    fprintf(file, ")\n");
 	else {
@@ -812,19 +894,30 @@ WriteCheckArgSize(file, arg)
     register argument_t *arg;
 {
     register ipc_type_t *ptype = arg->argType;
-    register ipc_type_t *btype = ptype->itElement;
-    argument_t *count = arg->argCount;
-    int multiplier = btype->itTypeSize;
 
-    if (multiplier > 1)
-	fprintf(file, "%d * ", multiplier);
+    if (PackMsg == FALSE) {
+	    fprintf(file, "%d", ptype->itTypeSize + ptype->itPadSize);
+	    return;
+    } 
 
-    fprintf(file, "In%dP->%s", count->argRequestPos, count->argMsgField); /* XXX */
+    if (IS_OPTIONAL_NATIVE(ptype)) 
+        fprintf(file, "(In%dP->__Present__%s ? _WALIGNSZ_(%s) : 0)" ,
+		arg->argRequestPos, arg->argMsgField, ptype->itServerType);
+    else
+    {
+        register ipc_type_t *btype = ptype->itElement;
+	argument_t *count = arg->argCount;
+	int multiplier = btype->itTypeSize;
+	
+        if (btype->itTypeSize % itWordAlign != 0)
+	    fprintf(file, "_WALIGN_");
+	fprintf(file, "(");
 
-    /* If the base type size of the data field isn`t a multiple of 4,
-       we have to round up. */
-    if (btype->itTypeSize % 4 != 0)
-	fprintf(file, " + 3 & ~3");
+	if (multiplier > 1)
+	    fprintf(file, "%d * ", multiplier);
+	fprintf(file, "In%dP->%s", count->argRequestPos, count->argMsgField); 
+	fprintf(file, ")");
+    }
 }
 
 static void
@@ -841,8 +934,9 @@ WriteCheckMsgSize(file, arg)
     if (arg->argRequestPos == rt->rtMaxRequestPos)
     {
 	fprintf(file, "#if\tTypeCheck\n");
-	fprintf(file, "\tif (msgh_size != %d + (",
-		rt->rtRequestMinSize);
+	fprintf(file, "\tif (msgh_size != ");
+	rtMinRequestSize(file, rt, "__Request");
+	fprintf(file, " + (");
 	WriteCheckArgSize(file, arg);
 	fprintf(file, "))\n");
 
@@ -871,12 +965,12 @@ WriteCheckMsgSize(file, arg)
 	/* Don't decrement msgh_size until we've checked that
 	   it won't underflow. */
 
-	if (LastVarArg)
-	    fprintf(file, "\tif (msgh_size != %d + msgh_size_delta)\n",
-		rt->rtRequestMinSize);
+	if (LastVarArg) 
+	    fprintf(file, "\tif (msgh_size != ");
 	else
-	    fprintf(file, "\tif (msgh_size < %d + msgh_size_delta)\n",
-		rt->rtRequestMinSize);
+	    fprintf(file, "\tif (msgh_size < ");
+	rtMinRequestSize(file, rt, "__Request");
+	fprintf(file, " + msgh_size_delta)\n");
 	WriteReturnMsgError(file, rt, FALSE, arg, "MIG_BAD_ARGUMENTS");
 
 	if (!LastVarArg)
@@ -888,8 +982,9 @@ WriteCheckMsgSize(file, arg)
 }
 
 static char *
-InArgMsgField(arg)
+InArgMsgField(arg, str)
     register argument_t *arg;
+    char *str;
 {
     static char buffer[MAX_STR_LEN];
     char who[20] = {0};
@@ -909,10 +1004,10 @@ InArgMsgField(arg)
     if (IsKernelServer &&
 	((akIdent(arg->argKind) == akeRequestPort) ||
 	 (akIdent(arg->argKind) == akeReplyPort)))
-	sprintf(buffer, "(ipc_port_t) %s%s", who,
+	sprintf(buffer, "(ipc_port_t) %s%s%s", who, str,
 		(arg->argSuffix != strNULL) ? arg->argSuffix : arg->argMsgField);
     else
-	sprintf(buffer, "%s%s", who,
+	sprintf(buffer, "%s%s%s", who, str,
 		(arg->argSuffix != strNULL) ? arg->argSuffix : arg->argMsgField);
 
     return buffer;
@@ -934,10 +1029,10 @@ WriteExtractArgValue(file, arg)
 	recast = "";
     if (it->itInTrans != strNULL)
 	WriteCopyType(file, it, "%s", "/* %s */ %s(%s%s)",
-	    arg->argVarName, it->itInTrans, recast, InArgMsgField(arg));
+	    arg->argVarName, it->itInTrans, recast, InArgMsgField(arg, ""));
     else
 	WriteCopyType(file, it, "%s", "/* %s */ %s%s",
-	    arg->argVarName, recast, InArgMsgField(arg));
+	    arg->argVarName, recast, InArgMsgField(arg, ""));
 
     fprintf(file, "\n");
 }
@@ -1030,7 +1125,7 @@ WriteInitializeCount(file, arg)
      */
 
     if (arg->argCInOut != argNULL) {
-	char *msgfield = InArgMsgField(arg->argCInOut);
+	char *msgfield = InArgMsgField(arg->argCInOut, "");
 
 	fprintf(file, "\tif (%s < %s)\n", msgfield, newstr);
 	fprintf(file, "\t\t%s = %s;\n", newstr, msgfield);
@@ -1046,10 +1141,26 @@ WriteAdjustRequestMsgPtr(file, arg)
 {
     register ipc_type_t *ptype = arg->argType;
 
+    if (PackMsg == FALSE) {
+	fprintf(file,
+	    "\tIn%dP = (Request *) ((pointer_t) In%dP);\n\n",
+	    arg->argRequestPos+1, arg->argRequestPos);
+	return;
+    }
+
     fprintf(file,
-	"\tIn%dP = (Request *) ((char *) In%dP + msgh_size_delta - %d);\n\n",
-	arg->argRequestPos+1, arg->argRequestPos,
-	ptype->itTypeSize + ptype->itPadSize);
+	"\tIn%dP = (Request *) ((pointer_t) In%dP + msgh_size_delta - ",
+	arg->argRequestPos+1, arg->argRequestPos);
+    if (IS_OPTIONAL_NATIVE(ptype)) 
+        fprintf(file,
+		"_WALIGNSZ_(%s)",
+		ptype->itUserType);
+    else
+        fprintf(file,
+		"%d",
+		ptype->itTypeSize + ptype->itPadSize);
+    fprintf(file,
+	    ");\n\n");
 }
 
 static void
@@ -1132,7 +1243,8 @@ WriteServerCallArg(file, arg)
 {
     ipc_type_t *it = arg->argType;
     boolean_t NeedClose = FALSE;
-    string_t  at = (arg->argByReferenceServer) ? "&" : "";
+    string_t  at = (arg->argByReferenceServer ||
+		    it->itNativePointer) ? "&" : "";
     string_t  star = (arg->argByReferenceServer) ? " *" : "";
     string_t  msgfield = 
 	(arg->argSuffix != strNULL) ? arg->argSuffix : arg->argMsgField;
@@ -1151,16 +1263,23 @@ WriteServerCallArg(file, arg)
 	if (!it->itInLine)
 	    /* recast the void *, although it is not necessary */
 	    fprintf(file, "(%s%s)%s(%s)", it->itTransType, 
-		star, at, InArgMsgField(arg));
+		star, at, InArgMsgField(arg, ""));
 	else if (IsKernelServer && streql(it->itServerType, "ipc_port_t"))
 	    /* recast the port to the kernel internal form value */
 	    fprintf(file, "(ipc_port_t%s)%s(%s)", 
-		star, at, InArgMsgField(arg));
+		star, at, InArgMsgField(arg, ""));
 	else
-	    fprintf(file, "%s%s", at, InArgMsgField(arg));
-    } else if (akCheck(arg->argKind, akbSendRcv))
-	fprintf(file, "%s%s", at, InArgMsgField(arg));
-    else if (akCheckAll(arg->argKind, akbReturnSnd|akbReturnKPD)) {
+	    fprintf(file, "%s%s", at, InArgMsgField(arg, ""));
+    } else if (akCheck(arg->argKind, akbSendRcv)) {
+        if (IS_OPTIONAL_NATIVE(it)) {
+            fprintf(file, "(%s ? ",
+		    InArgMsgField(arg, "__Present__"));
+            fprintf(file, "%s%s.__Real__%s : %s)",
+		    at, InArgMsgField(arg, ""), arg->argMsgField,
+		    it->itBadValue);
+	} else
+	    fprintf(file, "%s%s", at, InArgMsgField(arg, ""));
+    } else if (akCheckAll(arg->argKind, akbReturnSnd|akbReturnKPD)) {
         if (!it->itInLine)
 	    /* recast the void *, although it is not necessary */
 	    fprintf(file, "(%s%s)%s(OutP->%s)", 
@@ -1204,7 +1323,7 @@ WriteConditionalCallArg(file, arg)
     if (akCheck(arg->argKind, akbSendRcv)) {
 	if (akIdent(arg->argKind) == akeRequestPort ||
 	    akCheck(arg->argKind, akbServerImplicit)) 
-	        fprintf(file, "%s", InArgMsgField(arg));
+	        fprintf(file, "%s", InArgMsgField(arg, ""));
 	else if (akIdent(arg->argKind) == akeRetCode)
 	    fprintf(file, "((mig_reply_error_t *)In0P)->RetCode");
         else
@@ -1243,19 +1362,20 @@ WriteDestroyArg(file, arg)
 	int	multiplier = btype->itSize / (8 * btype->itNumber);
 
         if (IsKernelServer)
-            fprintf(file, "\tvm_map_copy_discard(%s);\n", InArgMsgField(arg));
+            fprintf(file, "\tvm_map_copy_discard(%s);\n", 
+		    InArgMsgField(arg, ""));
         else {
             fprintf(file, "\tmig_deallocate((vm_offset_t) %s, ",
-                InArgMsgField(arg));
+                InArgMsgField(arg, ""));
 	    if (it->itVarArray) {
 		if (multiplier > 1)
 		    fprintf(file, "%d * ", multiplier);
-		fprintf(file, "%s);\n", InArgMsgField(count));
+		fprintf(file, "%s);\n", InArgMsgField(count, ""));
 	    } else
 		fprintf(file, "%d);\n", (it->itNumber * it->itSize + 7) / 8);
         }
 	fprintf(file, "\t%s = (vm_offset_t) 0;\n", 
-	    InArgMsgField(arg));
+	    InArgMsgField(arg, ""));
 	fprintf(file, "\tIn%dP->%s.size = (mach_msg_size_t) 0;\n",
 	    arg->argRequestPos, arg->argMsgField); 
     } else {
@@ -1263,7 +1383,7 @@ WriteDestroyArg(file, arg)
 	    fprintf(file, "\t%s(%s);\n", it->itDestructor, arg->argVarName);
 	else
 	    fprintf(file, "\t%s(%s);\n", it->itDestructor,
-		InArgMsgField(arg));
+		InArgMsgField(arg, ""));
     }
 }
 
@@ -1287,8 +1407,10 @@ WriteDestroyPortArg(file, arg)
     if ((it->itInTrans != strNULL) &&
 	(it->itOutName == MACH_MSG_TYPE_PORT_SEND)) {
 	    fprintf(file, "\n");
-	    fprintf(file, "\tif (IP_VALID((ipc_port_t)%s))\n", InArgMsgField(arg));
-	    fprintf(file, "\t\tipc_port_release_send((ipc_port_t)%s);\n", InArgMsgField(arg));
+	    fprintf(file, "\tif (IP_VALID((ipc_port_t)%s))\n", 
+		    InArgMsgField(arg, ""));
+	    fprintf(file, "\t\tipc_port_release_send((ipc_port_t)%s);\n", 
+		    InArgMsgField(arg, ""));
     }
 }
 
@@ -1954,7 +2076,15 @@ WriteArgSize(file, arg)
     register int bsize = ptype->itElement->itTypeSize;
     register argument_t *count = arg->argCount;
 
-	    
+    /* If the base type size of the data field isn`t a multiple of 4,
+       we have to round up. */
+    if (bsize % itWordAlign != 0)
+	fprintf(file, "_WALIGN_");
+
+    /* Here, we generate ((value + %d) & ~%d). We have to put two (( at the
+     * the beginning.
+     */
+    fprintf(file, "((");
     if (bsize > 1)
 	fprintf(file, "%d * ", bsize);
     if (ptype->itString || !akCheck(count->argKind, akbVarNeeded))
@@ -1965,11 +2095,13 @@ WriteArgSize(file, arg)
 	fprintf(file, "%s", count->argVarName);
 
     /*
-     * If the base type size is not a multiple of sizeof(int) [4],
+     * If the base type size is not a multiple of sizeof(natural_t),
      * we have to round up.
      */
-    if (bsize % 4 != 0)
-	fprintf(file, " + 3 & ~3");
+    if (bsize % sizeof(natural_t) != 0)
+	fprintf(file, " + %d) & ~%d)", sizeof(natural_t)-1, sizeof(natural_t)-1);
+    else
+	fprintf(file, "))");
 }
 
 /*
@@ -1993,24 +2125,25 @@ WriteAdjustMsgSize(file, arg)
     WriteArgSize(file, arg);
     fprintf(file, ";\n");
 
-    if (rt->rtNumReplyVar == 1)
+    if (rt->rtNumReplyVar == 1) {
 	/* We can still address the message header directly.  Fill
 	   in the size field. */
 
-	fprintf(file, "\tOutP->Head.msgh_size = %d + msgh_size_delta;\n",
-			rt->rtReplyMinSize);
-    else
-    if (arg->argReplyPos == 0)
+	fprintf(file, "\tOutP->Head.msgh_size = ");
+        rtMinReplySize(file, rt, "Reply");
+	fprintf(file, " + msgh_size_delta;\n");
+    } else if (arg->argReplyPos == 0) {
 	/* First variable-length argument.  The previous msgh_size value
 	   is the minimum reply size. */
 
-	fprintf(file, "\tmsgh_size = %d + msgh_size_delta;\n",
-		rt->rtReplyMinSize);
-    else
+	fprintf(file, "\tmsgh_size = ");
+        rtMinReplySize(file, rt, "Reply");
+	fprintf(file, " + msgh_size_delta;\n");
+    } else
 	fprintf(file, "\tmsgh_size += msgh_size_delta;\n");
 
     fprintf(file,
-	"\tOutP = (Reply *) ((char *) OutP + msgh_size_delta - %d);\n",
+	"\tOutP = (Reply *) ((pointer_t) OutP + msgh_size_delta - %d);\n",
 	ptype->itTypeSize + ptype->itPadSize);
 }
 
@@ -2027,8 +2160,9 @@ WriteFinishMsgSize(file, arg)
        argument, we can assign to msgh_size directly. */
 
     if (arg->argReplyPos == 0) {
-	fprintf(file, "\tOutP->Head.msgh_size = %d + (",
-			arg->argRoutine->rtReplyMinSize);
+	fprintf(file, "\tOutP->Head.msgh_size = ");
+	rtMinReplySize(file, arg->argRoutine, "Reply");
+	fprintf(file, " + (");
 	WriteArgSize(file, arg);
 	fprintf(file, ");\n");
     }
@@ -2204,10 +2338,15 @@ WriteRoutine(file, rt)
     }
 
     fprintf(file, "{\n");
-    WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbRequest, "Request",
-	rt->rtSimpleRequest, rt->rtServerImpl, FALSE, FALSE);
-    WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbReply, "Reply",
-	rt->rtSimpleReply, FALSE, FALSE, FALSE);
+    WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbRequest, 
+		    "Request", rt->rtSimpleRequest, TRUE, 
+		    rt->rtServerImpl, FALSE);
+    fprintf(file, "\ttypedef __Reply__%s_t Reply;\n",
+	    rt->rtName);
+    WriteStructDecl(file, rt->rtArgs, WriteFieldDecl, akbRequest, 
+		    "__Request", rt->rtSimpleRequest, FALSE, 
+		    FALSE, FALSE);
+
     /*
      * Define a Minimal Reply structure to be used in case of errors
      */
@@ -2229,7 +2368,8 @@ WriteRoutine(file, rt)
     WriteRetCode(file, rt->rtRetCode);
     WriteList(file, rt->rtArgs, WriteLocalVarDecl,
 	akbVarNeeded | akbServerArg, ";\n", ";\n\n");
-
+    WriteApplMacro(file, "Rcv", "Declare", rt);
+    WriteApplMacro(file, "Rcv", "Before", rt);
     if (rt->rtRetCArg != argNULL && !rt->rtSimpleRequest) { 
 	WriteRetCArgCheckError(file, rt);
 	if (rt->rtServerImpl)
@@ -2299,6 +2439,7 @@ WriteRoutine(file, rt)
     if (UseEventLogger)
 	WriteLogMsg(file, rt, LOG_SERVER, LOG_REPLY);
 
+    WriteApplMacro(file, "Rcv", "After", rt);
     fprintf(file, "}\n");
 }
 
@@ -2308,9 +2449,8 @@ WriteServer(file, stats)
     statement_t *stats;
 {
     register statement_t *stat;
-    register size = 0;
 
-    WriteProlog(file);
+    WriteProlog(file, stats);
     if (BeAnsiC)
 	WriteForwardDeclarations(file, stats);
     for (stat = stats; stat != stNULL; stat = stat->stNext)
@@ -2318,18 +2458,16 @@ WriteServer(file, stats)
 	{
 	  case skRoutine:
 	    WriteRoutine(file, stat->stRoutine);
-	    size = max(size, stat->stRoutine->rtReplyMaxSize);
 	    break;
+          case skIImport:
 	  case skImport:
 	  case skSImport:
-	    if (ServerHeaderFileName == strNULL)
-		WriteImport(file, stat->stFileName);
-	    break;
+	  case skDImport:
 	  case skUImport:
 	    break;
 	  default:
 	    fatal("WriteServer(): bad statement_kind_t (%d)",
 		  (int) stat->stKind);
 	}
-    WriteDispatcher(file, stats, size);
+    WriteDispatcher(file, stats);
 }

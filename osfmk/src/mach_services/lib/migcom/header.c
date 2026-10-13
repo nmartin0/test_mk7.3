@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -121,29 +121,62 @@
 #include "error.h"
 #include <stdlib.h>
 
-static void
-WriteIncludes(file, isuser)
+void
+WriteIncludes(file, isuser, isdef)
     FILE *file;
     boolean_t	isuser;
+    boolean_t   isdef;
 {
-    fprintf(file, "#include <string.h>\n");
-    fprintf(file, "#include <mach/ndr.h>\n");
-    fprintf(file, "#include <mach/boolean.h>\n");
-    fprintf(file, "#include <mach/kern_return.h>\n");
-    fprintf(file, "#include <mach/notify.h>\n");
-    fprintf(file, "#include <mach/mach_types.h>\n");
-    fprintf(file, "#include <mach/message.h>\n");
-    fprintf(file, "#include <mach/mig_errors.h>\n");
-    if (ShortCircuit)
-	    fprintf(file, "#include <mach/rpc.h>\n");
-    if (isuser && IsKernelUser) {
-	    fprintf(file, "#include <ipc/ipc_port.h>\n");
-	    fprintf(file, "#include <kern/ipc_mig.h>\n");
-    } else if (!isuser && IsKernelServer)
-	    fprintf(file, "#include <ipc/ipc_port.h>\n");
-    else
+    if (isdef) {
 	fprintf(file, "#include <mach/port.h>\n");
+	fprintf(file, "#include <mach/machine/kern_return.h>\n");
+	if (!isuser)
+	    fprintf(file, "#include <mach/mig_errors.h>\n");
+    }
+    else {
+        fprintf(file, "#include <string.h>\n");
+        fprintf(file, "#include <mach/ndr.h>\n");
+        fprintf(file, "#include <mach/boolean.h>\n");
+        fprintf(file, "#include <mach/kern_return.h>\n");
+        fprintf(file, "#include <mach/notify.h>\n");
+        fprintf(file, "#include <mach/mach_types.h>\n");
+        fprintf(file, "#include <mach/message.h>\n");
+	fprintf(file, "#include <mach/mig_errors.h>\n");
+        if (ShortCircuit)
+	        fprintf(file, "#include <mach/rpc.h>\n");
+        if (isuser && IsKernelUser) {
+            fprintf(file, "#include <ipc/ipc_port.h>\n");
+	    fprintf(file, "#include <kern/ipc_mig.h>\n");
+        } else if (!isuser && IsKernelServer)
+            fprintf(file, "#include <ipc/ipc_port.h>\n");
+        else
+	    fprintf(file, "#include <mach/port.h>\n");
+    }
     fprintf(file, "\n");
+}
+
+static void
+WriteETAPDefines(file)
+    FILE *file;
+{
+    register statement_t *stat;
+    int fnum;
+    char *fname;
+    int first = TRUE;
+
+    fprintf(file, "\n#ifndef subsystem_to_name_map_%s\n", SubsystemName);
+    fprintf(file, "#define subsystem_to_name_map_%s \\\n", SubsystemName);
+    for (stat = stats; stat != stNULL; stat = stat->stNext)
+        if (stat->stKind == skRoutine)
+	{
+	    fnum = SubsystemBase + stat->stRoutine->rtNumber;
+	    fname = stat->stRoutine->rtName;
+	    if (! first)
+		fprintf(file, ",\\\n");
+	    fprintf(file, "    { \"%s\", %d }", fname, fnum);
+	    first = FALSE;
+	}
+    fprintf(file, "\n#endif\n");
 }
 
 static void
@@ -179,16 +212,38 @@ WriteProlog(file, protect, more, isuser)
     fprintf(file, "\n");
 
     if (more) {
-	WriteIncludes(file, isuser);
+	WriteIncludes(file, isuser, UseSplitHeaders);
 	WriteDefines(file);
     }
+    fprintf(file, "#ifdef AUTOTEST\n");
+    fprintf(file, "#ifndef FUNCTION_PTR_T\n");
+    fprintf(file, "#define FUNCTION_PTR_T\n");
+    fprintf(file, "typedef void (*function_ptr_t)");
+    fprintf(file, "(mach_port_t, char *, mach_msg_type_number_t);\n");
+    fprintf(file, "typedef struct {\n");
+    fprintf(file, "        char            *name;\n");
+    fprintf(file, "        function_ptr_t  function;\n");
+    fprintf(file, "} function_table_entry;\n");
+    fprintf(file, "typedef function_table_entry 	*function_table_t;\n");
+    fprintf(file, "#endif /* FUNCTION_PTR_T */\n");
+    fprintf(file, "#endif /* AUTOTEST */\n");
+    fprintf(file, "\n#ifndef\t%s_MSG_COUNT\n", SubsystemName);
+    fprintf(file, "#define\t%s_MSG_COUNT\t%d\n", SubsystemName, rtNumber);
+    fprintf(file, "#endif\t/* %s_MSG_COUNT */\n\n", SubsystemName);
 }
 
 static void
-WriteEpilog(file, protect)
+WriteEpilog(file, protect, isuser)
     FILE *file;
     char *protect;
+    boolean_t isuser;
 {
+    char *defname = 
+        isuser ? "__AfterMigUserHeader" : "__AfterMigServerHeader";
+
+    WriteETAPDefines(file);
+    fprintf(file, "\n#ifdef %s\n%s\n#endif /* %s */\n",
+	    defname, defname, defname);
     if (protect != strNULL) {
 	fprintf(file, "\n");
 	fprintf(file, "#endif\t /* _%s */\n", protect);
@@ -244,20 +299,27 @@ WriteUserHeader(file, stats)
     for (stat = stats; stat != stNULL; stat = stat->stNext)
 	switch (stat->stKind)
 	{
-	  case skRoutine:
-	    WriteUserRoutine(file, stat->stRoutine);
-	    break;
 	  case skImport:
 	  case skUImport:
+          case skDImport:
 	    WriteImport(file, stat->stFileName);
 	    break;
+	  case skRoutine:
 	  case skSImport:
+          case skIImport:
 	    break;
 	  default:
 	    fatal("WriteHeader(): bad statement_kind_t (%d)",
 		  (int) stat->stKind);
 	}
-    WriteEpilog(file, protect);
+    fprintf(file, "\n#ifdef __BeforeMigUserHeader\n");
+    fprintf(file, "__BeforeMigUserHeader\n");
+    fprintf(file, "#endif /* __BeforeMigUserHeader */\n\n");
+    for (stat = stats; stat != stNULL; stat = stat->stNext) {
+	if (stat->stKind == skRoutine)
+	    WriteUserRoutine(file, stat->stRoutine);
+    }
+    WriteEpilog(file, protect, TRUE);
 }
 
 static void
@@ -364,21 +426,28 @@ WriteServerHeader(file, stats)
     for (stat = stats; stat != stNULL; stat = stat->stNext)
 	switch (stat->stKind)
 	{
-	  case skRoutine:
-	    WriteServerRoutine(file, stat->stRoutine);
-	    break;
 	  case skImport:
 	  case skSImport:
+	  case skDImport:
 	    WriteImport(file, stat->stFileName);
 	    break;
+	  case skRoutine:
 	  case skUImport:
+	  case skIImport:
 	    break;
 	  default:
 	    fatal("WriteServerHeader(): bad statement_kind_t (%d)",
 		  (int) stat->stKind);
 	}
+    fprintf(file, "\n#ifdef __BeforeMigServerHeader\n");
+    fprintf(file, "__BeforeMigServerHeader\n");
+    fprintf(file, "#endif /* __BeforeMigServerHeader */\n\n"); 
+    for (stat = stats; stat != stNULL; stat = stat->stNext) {
+	if (stat->stKind == skRoutine)
+	    WriteServerRoutine(file, stat->stRoutine);
+    }
     WriteDispatcher(file);
-    WriteEpilog(file, protect);
+    WriteEpilog(file, protect, FALSE);
 }
 
 static void
@@ -406,6 +475,8 @@ WriteInternalHeader(file, stats)
 	  case skImport:
 	  case skUImport:
 	  case skSImport:
+	  case skDImport:
+	  case skIImport:
 	    break;
 	  default:
 	    fatal("WriteInternalHeader(): bad statement_kind_t (%d)",
@@ -437,5 +508,5 @@ WriteDefinesHeader(file, stats)
 	    fatal("WriteDefinesHeader(): bad statement_kind_t (%d)",
 		  (int) stat->stKind);
 	}
-    WriteEpilog(file, protect);
+    WriteEpilog(file, protect, FALSE);
 }

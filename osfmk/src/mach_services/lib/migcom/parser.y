@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -107,6 +107,8 @@
 %token	syImport
 %token	syUImport
 %token	sySImport
+%token  syIImport
+%token  syDImport
 
 %token	syIn
 %token	syOut
@@ -128,7 +130,12 @@
 %token	syDestructor
 %token	syCType
 %token	syCUserType
+%token	syUserTypeLimit
+%token	syOnStackLimit
 %token	syCServerType
+%token  syPointerTo
+%token  syPointerToIfNot
+%token  syValueOf
 
 %token	syCString
 %token	syUserSecToken
@@ -167,9 +174,10 @@
 
 %type	<statement_kind> ImportIndicant
 %type	<number> VarArrayHead ArrayHead StructHead IntExp
-%type	<type> NamedTypeSpec TransTypeSpec TypeSpec
+%type	<type> NamedTypeSpec TransTypeSpec NativeTypeSpec TypeSpec
 %type	<type> CStringSpec
 %type	<type> BasicTypeSpec PrevTypeSpec ArgumentType
+%type   <identifier> TypePhrase
 %type	<symtype> PrimIPCType IPCType
 %type	<routine> RoutineDecl Routine SimpleRoutine
 %type	<direction> Direction TrExplKeyword TrImplKeyword
@@ -220,6 +228,8 @@ Statements		:	/* empty */
 Statement		:	Subsystem sySemi
 			|	WaitTime sySemi
 			|	MsgOption sySemi
+                        |       UserTypeLimit sySemi
+                        |       OnStackLimit sySemi
 			|	Error sySemi
 			|	ServerPrefix sySemi
 			|	UserPrefix sySemi
@@ -315,6 +325,13 @@ MsgOption		:	LookString syMsgOption syString
 }
 			;
 
+UserTypeLimit           :       syUserTypeLimit syNumber 
+				{UserTypeLimit = $2; }
+                        ;            
+OnStackLimit            :       syOnStackLimit syNumber 
+				{MaxMessSizeOnStack = $2; }
+                        ;            
+
 WaitTime		:	LookString syWaitTime syString
 {
     WaitTime = $3;
@@ -375,6 +392,8 @@ Import			:	LookFileName ImportIndicant syFileName
 ImportIndicant		:	syImport	{ $$ = skImport; }
 			|	syUImport	{ $$ = skUImport; }
 			|	sySImport	{ $$ = skSImport; }
+			|	syIImport	{ $$ = skIImport; }
+			|	syDImport	{ $$ = skDImport; }
 			;
 
 RCSDecl			:	LookQString syRCSId syQString
@@ -507,6 +526,17 @@ TypeSpec		:	BasicTypeSpec
 				{ $$ = itStructDecl($1, $2); }
 			|	CStringSpec
 				{ $$ = $1; }
+                        |       NativeTypeSpec
+				{ $$ = $1; }
+			;
+
+NativeTypeSpec          :       syPointerTo syLParen TypePhrase syRParen
+                                { $$ = itNativeType($3, TRUE, 0); }
+                        |       syPointerToIfNot syLParen TypePhrase syComma 
+                                TypePhrase syRParen
+                                { $$ = itNativeType($3, TRUE, $5); }
+                        |       syValueOf syLParen TypePhrase syRParen
+                                { $$ = itNativeType($3, FALSE, 0); }
 			;
 
 BasicTypeSpec		:	IPCType
@@ -586,6 +616,12 @@ CStringSpec		:	syCString syLBrack IntExp syRBrack
 				{ $$ = itCStringDecl($5, TRUE); }
 			;
 
+TypePhrase              :       syIdentifier
+                                { $$ = $1; }
+                        |       TypePhrase syIdentifier
+                                { $$ = strphrase($1, $2); strfree($2); }
+			;
+
 IntExp			: 	IntExp	syPlus	IntExp
 				{ $$ = $1 + $3;	}
 			| 	IntExp	syMinus	IntExp
@@ -643,6 +679,17 @@ Argument		:	Direction syIdentifier ArgumentType IPCFlags
     $$->argName = $2;
     $$->argType = $3;
     $$->argFlags = $4;
+    if ($3->itNative)
+    {
+        if ($1 != akIn && $1 != akOut && $1 != akInOut)
+	    error("Illegal direction specified");
+       
+        if (!($3->itNativePointer) && $1 != akIn)
+	    error("ValueOf only valid for in");
+
+        if (($3->itBadValue) != NULL && $1 != akIn)
+	    error("PointerToIfNot only valid for in");
+    }
 }
 			;
 
@@ -692,6 +739,8 @@ ArgumentType		:	syColon syIdentifier
 	error("type '%s' not defined", $2);
 }
 			|	syColon NamedTypeSpec
+				{ $$ = $2; }
+                        |       syColon NativeTypeSpec
 				{ $$ = $2; }
 			;
 
@@ -745,6 +794,10 @@ import_name(sk)
 	return "SImport";
       case skUImport:
 	return "UImport";
+      case skIImport:
+	return "IImport";
+      case skDImport:
+	return "DImport";
       default:
 	fatal("import_name(%d): not import statement", (int) sk);
 	/*NOTREACHED*/

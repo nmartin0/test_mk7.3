@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -452,11 +452,6 @@ typedef struct routine
     boolean_t rtSimpleRequest;
     boolean_t rtSimpleReply;	
 
-    u_int rtRequestMinSize;	/* minimal size of a legal request msg */
-    u_int rtReplyMinSize;	/* minimal size of a legal reply msg */
-    u_int rtRequestMaxSize;	/* maximum size of a legal request msg */
-    u_int rtReplyMaxSize;	/* maximum size of a legal reply msg */
-
     u_int rtNumRequestVar;	/* number of variable/inline args in request */
     u_int rtNumReplyVar;	/* number of variable/inline args in reply */
 
@@ -471,7 +466,14 @@ typedef struct routine
     boolean_t rtNoReplyArgs;	/* if so, no reply message arguments beyond
 				   what the server dispatch routine inserts */
 
-    boolean_t rtMessOnStack;	/* is message buffer allocated on stack */
+    boolean_t rtRequestFits;	/* Request fits within onstack limit */
+    boolean_t rtReplyFits;	/* Reply fits within onstack limit */
+    boolean_t rtRequestUsedLimit;/* User type limit used in deciding whether 
+                                    request fits within onstack limit */
+    boolean_t rtReplyUsedLimit; /* User type limit used in deciding whether 
+                                   reply fits within onstack limit */
+    u_int rtRequestSizeKnown;   /* Max size of known portion of request */
+    u_int rtReplySizeKnown;     /* Max size of known portion of request */
 
     u_int rtServerImpl;		/* Implicit data requested */
     u_int rtUserImpl;		/* Implicit data requested */
@@ -504,11 +506,19 @@ typedef struct routine
 #define argNULL		((argument_t *) 0)
 #define argKPD_NULL	((mach_msg_descriptor_type_t) -1)
 
+#define rtMessOnStack(rt) ((rt)->rtRequestFits && (rt)->rtReplyFits)
+
 /*
  * These are the ways MiG organizes stub parameters
  */
-#define IS_VARIABLE_SIZED_UNTYPED(x)  ((x)->itVarArray && (x)->itInLine && !(x)->itPortType)
+#define IS_VARIABLE_SIZED_UNTYPED(x)  ((x)->itVarArray && \
+                                       (x)->itInLine  && \
+                                      !(x)->itPortType)
 #define IS_KERN_PROC_DATA(x)	     (!(x)->itInLine || (x)->itPortType)
+#define IS_OPTIONAL_NATIVE(x)        ((x)->itNative && \
+                                      (x)->itNativePointer && \
+                                      (x)->itBadValue != NULL)
+
 /*
  * I consider the case of fixed/variable bounded arrays of ports or ool or oolport
  */
@@ -545,6 +555,9 @@ extern void rtCheckRoutine(/* routine_t *rt */);
 extern char *rtRoutineKindToStr(/* routine_kind_t rk */);
 
 extern int rtCountArgDescriptors(/* argument_t *args, int *argcount */);
+
+extern void rtMinRequestSize(/* FILE *file, routine_t *rt, char *str */);
+extern void rtMinReplySize(/* FILE *file, routine_t *rt, char *str */);
 
 #define RPCUserStruct(arg)    (arg->argType->itStruct && arg->argType->itInLine)
 

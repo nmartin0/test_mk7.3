@@ -147,6 +147,7 @@ so at the site.
 | `file_systems/AT386/machdep.mk` and `fs_switch.c`: the bootstrap task's file systems cut to UFS | A build change: `minixfs` (partly GPL) and `ext2fs` (derived from Linux's header) are MkLinux's additions and are no longer compiled for AT386; their sources stay as imported. The nearest precedent is OSF's own `HP700/fs_switch.c`, which has no minix reader. `docs/provenance/precedent.md`, "What OSF booted from" |
 | `kern/bootstrap.c`, `do_bootstrap_compat()`: read-only PT_LOAD segments mapped read-only; `regions[]` sized by `NREGIONS`, five, and the bound tested | No tree we can read has this loader with a read-only arm; `dev`'s `11ecb84` is the nearest, and its `p_vaddr > e_entry` test is replaced by the bound it was unknowingly avoiding (verdict 26). The arms beside it were taken to be OSF's; they are not -- the whole ELF `PT_LOAD` parser in `do_bootstrap_compat()` is `slp/osfmk-mklinux`'s `444954a` (2011), which replaced OSF's `loader_info` code (corrected 12 October 2026; `docs/provenance/precedent.md`, "Where the two imports came from") |
 | `lites/Makefile` added, `lites/Makeconf` removed: Lites' configure build run by ODE | No tree builds Lites under OSFMK's ODE. Nearest: Lites' own `OSF_ENVIRONMENT` block in `conf/Makerules`, which pointed the same build at an OSF sandbox's tools, and OSF's step 8, `build ... osf1_server`. The file says so in its AI-ONLY NOTE. `docs/provenance/precedent.md`, "How Lites meets ODE" |
+| `mach_services/lib/migcom/AT386/machdep.mk` and `mach_services/cmds/config/AT386/machdep.mk`, new: the two host programs built for AT386 on a Linux host | Both `Makefile`s include `${TARGET_MACHINE}/machdep.mk` when it exists, and OSF wrote one only for `POWERMAC`, the target MkLinux built on Linux. Ours follow those: `migcom`'s adds `-I.`, as `POWERMAC`'s does, because `yacc` writes `parser.c` in the object directory and it includes `"lexxer.h"` from the source directory; `config`'s names the host's `yacc` as `POWERMAC`'s names its `lex` -- `byacc`, because `gram.y` writes actions in the old `= { }` form, which bison rejects -- and empties `LIBS`, because `-lln` was OSF/1's lex library and `parse.l` supplies its own `yywrap` |
 | `lites/conf/config.guess`, `lites/conf/move-if-change`, mode 644 to 755 | The import carries every Lites file as 644, and no copy of Lites 1.1.u3 with its modes has been found to restore them from (that would be kind F). These two are run by path by `configure`; both are GNU scripts whose upstreams ship them executable |
 
 **Both are build-level, not source.** No line of Lites' code changes;
@@ -183,7 +184,27 @@ order in `precedent.md`.
 
 ## F -- an upstream's own file, restored
 
-*(none yet)*
+| what | from |
+|---|---|
+| `mach_services/lib/migcom/` and `mach_services/cmds/config/`, the sources of the two host programs the build runs, replacing `slp/osfmk-mklinux`'s `4df2e7d` (2011) | The MkLinux project's CVS repository, `:pserver:public@cvs.mklinux.org:/MkLinux`, module `osfmk`, as checked out on 24 December 1999 (the maintainer's copy; the server is gone): `migcom` at revision 1.1 of 16 May 1999, its `Makefile` 1.2 of the same day; `config` at 1.1 of 20 June 1999. Each file's notice is "Copyright 1991-1998 by Open Software Foundation, Inc.", with CMU's; `config`'s files add Berkeley's of 1980 and 1990, from BSD's config(8). `diff -r -x CVS` against the checkout shows only the two `AT386/machdep.mk` files of kind C |
+
+**What they replace was older, not adapted.** `4df2e7d`'s files carry
+"OSF Research Institute MK6.1 (unencumbered) 1/31/1995" and 6.1's
+notice, the one with the advertising clause (kind A, the
+`bootstrap.c` notes). With them came their objects, their `yacc`
+output, two i386 binaries built from them, and a second copy of the
+binaries in `tools/i386/i386_linux/hostbin`. All of that is deleted.
+DR3's tarball had neither source, only PowerPC Linux binaries in
+`tools/ppc/ppc_linux/hostbin`. `docs/tools/mkhostbin.sh` builds both
+programs by DR3's own procedure, the `README` beside those binaries.
+
+**The difference reaches one generated file.** Built with the 1999
+programs, every MIG stub in the build is what slp's binaries produced,
+byte for byte apart from the comment giving the generation date.
+`confdep.h` loses four lines (`TIMEZONE`, `MAXUSERS`, `DST`,
+`MAXDSIZ`), and no source includes it. The kernel is the same size,
+1,008,208 bytes, and differs in seven bytes: a source path compiled
+into an assertion string, and the build time.
 
 ## G -- ours, outside any upstream's tree
 

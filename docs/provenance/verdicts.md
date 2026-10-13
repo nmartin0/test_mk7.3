@@ -195,8 +195,8 @@ as a second way in beside OSF's boot loader; the GNU Hurd graft goes.
 | `81429d0` | the old `.s` files removed | pending | with `18c9d31` |
 | `0d8ebab` | PCI disabled; `tu` and `fta` commented out | pending | `tu` and `fta` have no source in DR3 and stay out; PCI to be re-tested |
 | `2913827` | `register` to `register int` | pending | a toolchain adaptation, kept |
-| `f4fa636` | `link/tools`; `template.mk` line; two `register int` | pending | the `LOCORE_DEPS` line fixes a DR3 defect: a missing backslash and `386/cswitch.S` |
-| `4df2e7d` | `config` and `migcom` sources; built objects and binaries | pending | the build uses slp's prebuilt `hostbin/config` and `migcom`; to be built from source instead |
+| `f4fa636` | `link/tools`; `template.mk` line; two `register int` | pending | the `LOCORE_DEPS` line fixes a DR3 defect: a missing backslash and `386/cswitch.S`. `link/tools` is settled: DR3's tarball has it as a 13-byte file reading `link ../tools`, a symbolic link the archive flattened; the MkLinux CVS checkout has the link, `../tools`, and slp's `../tools/` is now spelt as CVS spells it |
+| `4df2e7d` | `config` and `migcom` sources; built objects and binaries | **replaced** | the sources are MK6.1's of 1995; OSF's 1999 sources from the MkLinux CVS repository take their place (kind F), and the objects and binaries, and the copy in `tools/i386/i386_linux/hostbin`, are deleted. `docs/tools/mkhostbin.sh` builds the two programs into the sandbox's `tools_base` by DR3's `hostbin/README` procedure; every MIG stub comes out the same |
 | `364472d` | `assym.s` to `assym.S` | pending | with `18c9d31` |
 | `444954a` | multiboot; an ELF loader in `do_bootstrap_compat()` | pending | kept as the second way in; OSF's `loader_info` code restored beside it in milestone 1 |
 | `7e81018` | `hd.c`: no recalibration, "hangs with qemu" | pending | re-tested under a BIOS boot |

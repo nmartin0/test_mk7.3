@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /*
  * Mach Operating System
@@ -101,7 +101,6 @@
  *	Created.
  */
 
-#include "type.h"
 #include <mach/message.h>
 #include <stdarg.h>
 #include "routine.h"
@@ -142,6 +141,38 @@ WriteImport(file, filename)
     fprintf(file, "#include %s\n", filename);
 }
 
+void 
+WriteImplImports(file, stats, isuser)
+    FILE *file;
+    statement_t *stats;
+    boolean_t isuser;
+{
+    register statement_t *stat;
+
+    for (stat = stats; stat != stNULL; stat = stat->stNext)
+	switch (stat->stKind)
+	{
+	  case skImport:
+          case skIImport:
+	    WriteImport(file, stat->stFileName);
+	    break;
+	  case skSImport:
+	    if (!isuser)
+	        WriteImport(file, stat->stFileName);
+	    break;
+	  case skUImport:
+	    if (isuser)
+	        WriteImport(file, stat->stFileName);
+	    break;
+	  case skRoutine:
+	  case skDImport:
+	    break;
+	  default:
+	    fatal("WriteImplImport(): bad statement_kind_t (%d)",
+		  (int) stat->stKind);
+	}
+}
+
 void
 WriteRCSDecl(file, name, rcs)
     FILE *file;
@@ -156,6 +187,48 @@ WriteRCSDecl(file, name, rcs)
     fprintf(file, "#endif\t/* UseExternRCSId */\n");
     fprintf(file, "#endif\t/* lint */\n");
     fprintf(file, "\n");
+}
+
+static void
+WriteOneApplDefault(file, word1, word2, word3)
+    FILE *file;
+    char *word1;
+    char *word2;
+    char *word3;
+{
+    char buf[50];
+
+    sprintf(buf, "__%s%s%s", word1, word2, word3);
+    fprintf(file, "#ifndef\t%s\n", buf);
+    fprintf(file, "#define\t%s(_NUM_, _NAME_)\n", buf);
+    fprintf(file, "#endif\t/* %s */\n", buf);
+    fprintf(file, "\n");
+}
+    
+void
+WriteApplDefaults(file, dir)
+    FILE *file;
+    char *dir;
+{
+    WriteOneApplDefault(file, "Declare", dir, "Rpc");
+    WriteOneApplDefault(file, "Before", dir, "Rpc");
+    WriteOneApplDefault(file, "After", dir, "Rpc");
+    WriteOneApplDefault(file, "Declare", dir, "Simple");
+    WriteOneApplDefault(file, "Before", dir, "Simple");
+    WriteOneApplDefault(file, "After", dir, "Simple");
+}
+
+void
+WriteApplMacro(file, dir, when, rt)
+    FILE *file;
+    char *dir;
+    char *when;
+    routine_t *rt;
+{
+    char *what = (rt->rtOneWay) ? "Simple" : "Rpc";
+
+    fprintf(file, "\t__%s%s%s(%d, \"%s\")\n", 
+	    when, dir, what, SubsystemBase + rt->rtNumber, rt->rtName);
 }
 
 void
@@ -173,8 +246,13 @@ WriteBogusDefines(file)
     fprintf(file, "\n");
 
     fprintf(file, "#ifndef\tTypeCheck\n");
-    fprintf(file, "#define\tTypeCheck 1\n");
+    fprintf(file, "#define\tTypeCheck 0\n");
     fprintf(file, "#endif\t/* TypeCheck */\n");
+    fprintf(file, "\n");
+
+    fprintf(file, "#ifndef\tLimitCheck\n");
+    fprintf(file, "#define\tLimitCheck 0\n");
+    fprintf(file, "#endif\t/* LimitCheck */\n");
     fprintf(file, "\n");
 
     fprintf(file, "#ifndef\tmin\n");
@@ -192,6 +270,10 @@ WriteBogusDefines(file)
     }    
     fprintf(file, "#endif\t/* UseStaticTemplates */\n");
     fprintf(file, "\n");
+
+    fprintf(file, "#define _WALIGN_(x) (((x) + %d) & ~%d)\n",
+	    itWordAlign - 1, itWordAlign - 1);
+    fprintf(file, "#define _WALIGNSZ_(x) _WALIGN_(sizeof(x))\n");
 }
 
 void
@@ -275,7 +357,8 @@ WriteUserVarDecl(file, arg)
     FILE *file;
     argument_t *arg;
 {
-    char *ref = arg->argByReferenceUser ? "*" : "";
+    char *ref = (arg->argByReferenceUser ||
+                 arg->argType->itNativePointer) ? "*" : "";
 
     fprintf(file, "\t%s %s%s", arg->argType->itUserType, ref, arg->argVarName);
 }
@@ -285,7 +368,8 @@ WriteServerVarDecl(file, arg)
     FILE *file;
     argument_t *arg;
 {
-    char *ref = arg->argByReferenceServer ? "*" : "";
+    char *ref = (arg->argByReferenceServer ||
+		 arg->argType->itNativePointer) ? "*" : "";
   
     fprintf(file, "\t%s %s%s",
 	    arg->argType->itTransType, ref, arg->argVarName);
@@ -376,6 +460,15 @@ WriteFieldDeclPrim(file, arg, tfunc)
     else if (IS_MULTIPLE_KPD(it))  
 	fprintf(file, "\t\t%s %s[%d];", (*tfunc)(it), arg->argMsgField,
 			it->itKPD_Number);
+    else if (IS_OPTIONAL_NATIVE(it)) {
+        fprintf(file, "\t\tboolean_t __Present__%s;\n",  arg->argMsgField);
+        fprintf(file, "\t\tunion {\n");
+	fprintf(file, "\t\t    %s __Real__%s;\n",
+		(*tfunc)(it), arg->argMsgField);
+	fprintf(file, "\t\t    char __Phony__%s[_WALIGNSZ_(%s)];\n",
+		arg->argMsgField, (*tfunc)(it));
+	fprintf(file, "\t\t} %s;", arg->argMsgField);
+    } 
     else  {
 	/* either simple KPD or simple in-line */
 	fprintf(file, "\t\t%s %s;", (*tfunc)(it), arg->argMsgField);
@@ -388,14 +481,14 @@ WriteFieldDeclPrim(file, arg, tfunc)
 
 
 void
-WriteStructDecl(file, args, func, mask, name, simple, trailer, isuser, template_only)
+WriteStructDecl(file, args, func, mask, name, simple, trailer, trailer_t, template_only)
     FILE *file;
     argument_t *args;
     void (*func)();
     u_int mask;
     char *name;
     boolean_t simple, trailer;
-    boolean_t isuser, template_only;
+    boolean_t trailer_t, template_only;
 {
     fprintf(file, "\ttypedef struct {\n");
     fprintf(file, "\t\tmach_msg_header_t Head;\n");
@@ -408,16 +501,15 @@ WriteStructDecl(file, args, func, mask, name, simple, trailer, isuser, template_
     	    WriteList(file, args, func, mask | akbReturnKPD, "\n", "\n");
 	fprintf(file, "\t\t/* end of the kernel processed data */\n");
     }
-    if (!template_only) 
-	if (mask == akbRequest) {
+    if (!template_only) {
+	if (mask == akbRequest) 
 	    WriteList(file, args, func, mask | akbSendBody, "\n", "\n");
-	    if (!isuser)
-		WriteTrailerDecl(file, trailer);
-	} else {
+
+	else
 	    WriteList(file, args, func, mask | akbReturnBody, "\n", "\n");
-	    if (isuser)
-		WriteTrailerDecl(file, trailer);
-	}
+	if (trailer)
+	    WriteTrailerDecl(file, trailer_t);    
+    }
     fprintf(file, "\t} %s;\n", name);
     fprintf(file, "\n");
 }
@@ -591,12 +683,14 @@ SkipVFPrintf(file, fmt, pvar)
 static void
 vWriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, va_list pvar)
 {
+  va_list pv2;
+  __va_copy(pv2,pvar);
     if (it->itStruct)
     {
 	fprintf(file, "\t");
 	(void) SkipVFPrintf(file, left, pvar);
 	fprintf(file, " = ");
-	(void) SkipVFPrintf(file, right, pvar);
+	(void) SkipVFPrintf(file, right, pv2);
 	fprintf(file, ";\n");
     }
     else if (it->itString)
@@ -604,7 +698,7 @@ vWriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, va_list pvar
 	fprintf(file, "\t(void) mig_strncpy(");
 	(void) SkipVFPrintf(file, left, pvar);
 	fprintf(file, ", ");
-	(void) SkipVFPrintf(file, right, pvar);
+	(void) SkipVFPrintf(file, right, pv2);
 	fprintf(file, ", %d);\n", it->itTypeSize);
     }
     else
@@ -614,7 +708,7 @@ vWriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, va_list pvar
 	fprintf(file, "\t    * (sp) ");
 	(void) SkipVFPrintf(file, left, pvar);
 	fprintf(file, " = * (sp) ");
-	(void) SkipVFPrintf(file, right, pvar);
+	(void) SkipVFPrintf(file, right, pv2);
 	fprintf(file, ";\n\t}\n");
     }
 }
@@ -628,7 +722,7 @@ WriteCopyType(FILE *file, ipc_type_t *it, char *left, char *right, ...)
     va_list pvar;
     va_start(pvar, right);
 
-    vWriteCopyType(file, it, left, right, pvar)
+    vWriteCopyType(file, it, left, right, pvar);
 
     va_end(pvar);
 }
@@ -640,15 +734,17 @@ void
 WriteCopyArg(FILE *file, argument_t *arg, char *left, char *right, ...)
 {
     va_list pvar;
+  va_list pv2;
     va_start(pvar, right);
 
     {
 	ipc_type_t *it = arg->argType;
 	if (it->itVarArray && !it->itString) {
+	  __va_copy(pv2,pvar);
 	    fprintf(file, "\t    (void)memcpy(");
 	    (void) SkipVFPrintf(file, left, pvar);
 	    fprintf(file, ", ");
-	    (void) SkipVFPrintf(file, right, pvar);
+	    (void) SkipVFPrintf(file, right, pv2);
 	    fprintf(file, ", %s);\n", arg->argCount->argVarName);
 	} else
 	    vWriteCopyType(file, it, left, right, pvar);
@@ -843,7 +939,7 @@ WriteReturnMsgError(file, rt, isuser, arg, error)
     fprintf(file, "\t\t{ ");
 
     if (isuser) {
-   	if (! rt->rtMessOnStack)
+   	if (! rtMessOnStack(rt))
 		fprintf(file, "%s((char *) Mess, sizeof(*Mess)); ", MessFreeRoutine);
 
         fprintf(file, "%sreturn %s; }\n", string, error);
@@ -892,3 +988,4 @@ WriteCheckTrailerSize(file, isuser, arg)
     }
     fprintf(file, "#endif\t/* TypeCheck */\n");
 }
+

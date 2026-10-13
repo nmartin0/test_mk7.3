@@ -1,25 +1,25 @@
 /*
- * Copyright (c) 1995, 1994, 1993, 1992, 1991, 1990  
- * Open Software Foundation, Inc. 
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
  *  
  * Permission to use, copy, modify, and distribute this software and 
  * its documentation for any purpose and without fee is hereby granted, 
  * provided that the above copyright notice appears in all copies and 
  * that both the copyright notice and this permission notice appear in 
- * supporting documentation, and that the name of ("OSF") or Open Software 
- * Foundation not be used in advertising or publicity pertaining to 
- * distribution of the software without specific, written prior permission. 
+ * supporting documentation. 
  *  
  * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
  * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
- * FOR A PARTICULAR PURPOSE. IN NO EVENT SHALL OSF BE LIABLE FOR ANY 
- * SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES 
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN 
- * ACTION OF CONTRACT, NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING 
- * OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
  */
 /*
- * OSF Research Institute MK6.1 (unencumbered) 1/31/1995
+ * cmk1.1
  */
 /* 
  * Mach Operating System
@@ -128,13 +128,18 @@
  */
 
 #include "type.h"
+#include <sys/types.h>
 #include <mach/message.h>
+#include <mach/std_types.h>
 #include <mach/ndr.h>
+#include "mig_machine.h"
 #include "routine.h"
 #include "error.h"
 #include "alloc.h"
 #include "global.h"
 #include <stdio.h>
+
+#define	PortSize	(sizeof (mach_port_t) * NBBY)
 
 ipc_type_t *itRetCodeType;	/* used for return codes */
 ipc_type_t *itNdrCodeType;	/* used for NDR format labels */
@@ -147,6 +152,10 @@ ipc_type_t *itWaitTimeType;	/* used for dummy WaitTime args */
 ipc_type_t *itMsgOptionType;	/* used for dummy MsgOption args */
 
 static ipc_type_t *list = itNULL;
+
+static char *machine_integer_name;
+static u_int machine_integer_size;
+static u_int machine_integer_bits;
 
 /*
  *  Searches for a named type.  We use a simple
@@ -210,6 +219,8 @@ itAlloc()
 	FALSE,			/* boolean_t itString */
 	FALSE,			/* boolean_t itVarArray */
 	FALSE,			/* boolean_t itNoOptArray */
+	FALSE,			/* boolean_t itNative */
+	FALSE,			/* boolean_t itNativePointer */
 	itNULL,			/* ipc_type_t *itElement */
 	strNULL,		/* identifier_t itUserType */
 	strNULL,		/* identifier_t itServerType */
@@ -254,7 +265,7 @@ itCalculateSizeInfo(it)
     if (!IS_KERN_PROC_DATA(it))
     {
 	u_int bytes = (it->itNumber * it->itSize + 7) / 8;
-	u_int padding = (4 - bytes%4)%4;
+	u_int padding = machine_padding(bytes);
 
 	it->itTypeSize = bytes;
 	it->itPadSize = padding;
@@ -264,13 +275,13 @@ itCalculateSizeInfo(it)
 	     * therefore we need to account here for the space of the count
 	     * (itMinTypeSize is used only in rtFindSize)
 	     */
-	    it->itMinTypeSize = 4;
+	    it->itMinTypeSize = sizeof (mach_msg_type_number_t);
 	    /* 
 	     * NDR encoded VarString carry the extra offset 4-bytes fields
 	     * for MIG, it should be always 0;
 	     */
 	    if (it->itString)
-		it->itMinTypeSize += 4;
+		it->itMinTypeSize += sizeof (mach_msg_type_number_t);
 	} else
 	    it->itMinTypeSize = bytes + padding;
     } else {
@@ -292,7 +303,7 @@ itCalculateSizeInfo(it)
     /* Unfortunately, these warning messages can't give a type name;
        we haven't seen a name yet (it might stay anonymous.) */
 
-    if ((it->itTypeSize == 0) && !it->itVarArray)
+    if ((it->itTypeSize == 0) && !it->itVarArray && !it->itNative)
 	warn("sizeof(%s) == 0");
 }
 
@@ -720,11 +731,11 @@ itMakeSubCountType(count, varying, name)
     register ipc_type_t *it;
     register ipc_type_t *itElement;
 
-    itElement = itShortDecl(MACH_MSG_TYPE_INTEGER_32,
-			    "MACH_MSG_TYPE_INTEGER_32",
-			    MACH_MSG_TYPE_INTEGER_32,
-			    "MACH_MSG_TYPE_INTEGER_32",
-			    32);
+    itElement = itShortDecl(machine_integer_size,
+			    machine_integer_name,
+			    machine_integer_size,
+			    machine_integer_name,
+			    machine_integer_bits);
     itCheckDecl("mach_msg_type_number_t", itElement);
 
     it = itResetType(itCopyType(itElement));
@@ -756,11 +767,11 @@ itMakeCountType()
     ipc_type_t *it = itAlloc();
 
     it->itName = "mach_msg_type_number_t";
-    it->itInName = MACH_MSG_TYPE_INTEGER_32;
-    it->itInNameStr = "MACH_MSG_TYPE_INTEGER_32";
-    it->itOutName = MACH_MSG_TYPE_INTEGER_32;
-    it->itOutNameStr = "MACH_MSG_TYPE_INTEGER_32";
-    it->itSize = 32;
+    it->itInName = machine_integer_size;
+    it->itInNameStr = machine_integer_name;
+    it->itOutName = machine_integer_size;
+    it->itOutNameStr = machine_integer_name;
+    it->itSize = machine_integer_bits;
 
     itCalculateSizeInfo(it);
     itCalculateNameInfo(it);
@@ -773,11 +784,11 @@ itMakePolyType()
     ipc_type_t *it = itAlloc();
 
     it->itName = "mach_msg_type_name_t";
-    it->itInName = MACH_MSG_TYPE_INTEGER_32;
-    it->itInNameStr = "MACH_MSG_TYPE_INTEGER_32";
-    it->itOutName = MACH_MSG_TYPE_INTEGER_32;
-    it->itOutNameStr = "MACH_MSG_TYPE_INTEGER_32";
-    it->itSize = 32;
+    it->itInName = machine_integer_size;
+    it->itInNameStr = machine_integer_name;
+    it->itOutName = machine_integer_size;
+    it->itOutNameStr = machine_integer_name;
+    it->itSize = machine_integer_bits;
 
     itCalculateSizeInfo(it);
     itCalculateNameInfo(it);
@@ -794,7 +805,32 @@ itMakeDeallocType()
     it->itInNameStr = "MACH_MSG_TYPE_BOOLEAN";
     it->itOutName = MACH_MSG_TYPE_BOOLEAN;
     it->itOutNameStr = "MACH_MSG_TYPE_BOOLEAN";
-    it->itSize = 32;
+    it->itSize = machine_integer_bits;
+
+    itCalculateSizeInfo(it);
+    itCalculateNameInfo(it);
+    return it;
+}
+
+extern ipc_type_t *
+itNativeType(id, ptr, badval)
+    identifier_t id;
+    boolean_t ptr;
+    identifier_t badval;
+{
+    ipc_type_t *it = itAlloc();
+
+    it->itInName = MACH_MSG_TYPE_BYTE;    
+    it->itInNameStr = "MACH_MSG_TYPE_BYTE";    
+    it->itOutName = MACH_MSG_TYPE_BYTE;    
+    it->itOutNameStr = "MACH_MSG_TYPE_BYTE";    
+    it->itInLine = TRUE;
+    it->itNative = TRUE;
+    it->itNativePointer = ptr;
+    it->itServerType = id;
+    it->itUserType = id;
+    it->itTransType = id;
+    it->itBadValue = badval;
 
     itCalculateSizeInfo(it);
     itCalculateNameInfo(it);
@@ -807,13 +843,29 @@ itMakeDeallocType()
 void
 init_type()
 {
+    u_int size;
+
+    size = NBBY * sizeof (natural_t);
+    if (size == 32) {
+	machine_integer_name = "MACH_MSG_TYPE_INTEGER_32";
+	machine_integer_size = MACH_MSG_TYPE_INTEGER_32;
+    }
+    else if (size == 64) {
+	machine_integer_name = "MACH_MSG_TYPE_INTEGER_64";
+	machine_integer_size = MACH_MSG_TYPE_INTEGER_64;
+    }
+    else
+	error("init_type unknown size %d", size);
+
+    machine_integer_bits = size;
+
     itRetCodeType = itAlloc();
     itRetCodeType->itName = "kern_return_t";
-    itRetCodeType->itInName = MACH_MSG_TYPE_INTEGER_32;
-    itRetCodeType->itInNameStr = "MACH_MSG_TYPE_INTEGER_32";
-    itRetCodeType->itOutName = MACH_MSG_TYPE_INTEGER_32;
-    itRetCodeType->itOutNameStr = "MACH_MSG_TYPE_INTEGER_32";
-    itRetCodeType->itSize = 32;
+    itRetCodeType->itInName = machine_integer_size;
+    itRetCodeType->itInNameStr = machine_integer_name;
+    itRetCodeType->itOutName = machine_integer_size;
+    itRetCodeType->itOutNameStr = machine_integer_name;
+    itRetCodeType->itSize = machine_integer_bits;
     itCalculateSizeInfo(itRetCodeType);
     itCalculateNameInfo(itRetCodeType);
 
@@ -833,17 +885,17 @@ init_type()
     itDummyType->itInNameStr = "MACH_MSG_TYPE_UNSTRUCTURED";
     itDummyType->itOutName = MACH_MSG_TYPE_UNSTRUCTURED;
     itDummyType->itOutNameStr = "MACH_MSG_TYPE_UNSTRUCTURED";
-    itDummyType->itSize = 32;
+    itDummyType->itSize = PortSize;
     itCalculateSizeInfo(itDummyType);
     itCalculateNameInfo(itDummyType);
 
     itTidType = itAlloc();
     itTidType->itName = "tid_t";
-    itTidType->itInName = MACH_MSG_TYPE_INTEGER_32;
-    itTidType->itInNameStr = "MACH_MSG_TYPE_INTEGER_32";
-    itTidType->itOutName = MACH_MSG_TYPE_INTEGER_32;
-    itTidType->itOutNameStr = "MACH_MSG_TYPE_INTEGER_32";
-    itTidType->itSize = 32;
+    itTidType->itInName = machine_integer_size;
+    itTidType->itInNameStr = machine_integer_name;
+    itTidType->itOutName = machine_integer_size;
+    itTidType->itOutNameStr = machine_integer_name;
+    itTidType->itSize = machine_integer_bits;
     itTidType->itNumber = 6;
     itCalculateSizeInfo(itTidType);
     itCalculateNameInfo(itTidType);
@@ -854,7 +906,7 @@ init_type()
     itRequestPortType->itInNameStr = "MACH_MSG_TYPE_COPY_SEND";
     itRequestPortType->itOutName = MACH_MSG_TYPE_PORT_SEND;
     itRequestPortType->itOutNameStr = "MACH_MSG_TYPE_PORT_SEND";
-    itRequestPortType->itSize = 32;
+    itRequestPortType->itSize = PortSize;
     itCalculateSizeInfo(itRequestPortType);
     itCalculateNameInfo(itRequestPortType);
 
@@ -864,7 +916,7 @@ init_type()
     itZeroReplyPortType->itInNameStr = "0";
     itZeroReplyPortType->itOutName = 0;
     itZeroReplyPortType->itOutNameStr = "0";
-    itZeroReplyPortType->itSize = 32;
+    itZeroReplyPortType->itSize = PortSize;
     itCalculateSizeInfo(itZeroReplyPortType);
     itCalculateNameInfo(itZeroReplyPortType);
 
@@ -874,7 +926,7 @@ init_type()
     itRealReplyPortType->itInNameStr = "MACH_MSG_TYPE_MAKE_SEND_ONCE";
     itRealReplyPortType->itOutName = MACH_MSG_TYPE_PORT_SEND_ONCE;
     itRealReplyPortType->itOutNameStr = "MACH_MSG_TYPE_PORT_SEND_ONCE";
-    itRealReplyPortType->itSize = 32;
+    itRealReplyPortType->itSize = PortSize;
     itCalculateSizeInfo(itRealReplyPortType);
     itCalculateNameInfo(itRealReplyPortType);
 
@@ -907,11 +959,14 @@ itCheckRequestPortType(name, it)
     identifier_t name;
     ipc_type_t *it;
 {
+/*    error("Port size = %d %d name = %s\n", PortSize, it->itSize, it->itName);
+    error("server = %s user = %x\n",it->itServerType, it->itUserType);
+*/
     if (((it->itOutName != MACH_MSG_TYPE_PORT_SEND) &&
 	 (it->itOutName != MACH_MSG_TYPE_PORT_SEND_ONCE) &&
 	 (it->itOutName != MACH_MSG_TYPE_POLYMORPHIC)) ||
 	(it->itNumber != 1) ||
-	(it->itSize != 32) ||
+	(it->itSize != PortSize) ||
 	!it->itInLine ||
 	!it->itStruct ||
 	it->itVarArray)
@@ -933,7 +988,7 @@ itCheckReplyPortType(name, it)
 	 (it->itOutName != MACH_MSG_TYPE_POLYMORPHIC) &&
 	 (it->itOutName != 0)) ||
 	(it->itNumber != 1) ||
-	(it->itSize != 32) ||
+	(it->itSize != PortSize) ||
 	!it->itInLine ||
 	!it->itStruct ||
 	it->itVarArray)
@@ -943,17 +998,17 @@ itCheckReplyPortType(name, it)
 
 /******************************************************
  *  Used by routine.c to check that WaitTime is a
- *  simple bit 32 integer.
+ *  simple bit machine_integer_bits integer.
  ******************************************************/
 void
 itCheckIntType(name, it)
     identifier_t name;
     ipc_type_t *it;
 {
-    if ((it->itInName != MACH_MSG_TYPE_INTEGER_32) ||
-	(it->itOutName != MACH_MSG_TYPE_INTEGER_32) ||
+    if ((it->itInName != machine_integer_size) ||
+	(it->itOutName != machine_integer_size) ||
 	(it->itNumber != 1) ||
-	(it->itSize != 32) ||
+	(it->itSize != machine_integer_bits) ||
 	!it->itInLine ||
 	!it->itStruct ||
 	it->itVarArray)

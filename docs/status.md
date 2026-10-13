@@ -13,14 +13,20 @@ From a clean clone of this branch, with `docs/tools/bootstrap-ode.sh`
 and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 `sandboxrc.template`:
 
-	cd osfmk/src && sh ../../build_world
+	cd osfmk/src
+	sh ../../docs/tools/mkhostbin.sh	# once per sandbox
+	sh ../../build_world
+
+`mkhostbin.sh` builds `config` and `migcom` from OSF's sources into the
+sandbox's `tools_base`, outside the tree; the host needs `flex`, its
+32-bit library and `byacc`.
 
 | | |
 | --- | --- |
 | `mach_kernel.PRODUCTION` | 1,008,208 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 203,052 bytes, same format; two PT_LOAD segments, R+X and R+W; reads UFS only |
 | errors | 0 |
-| vendor files modified | 20 in `osfmk/` against `f8fee21`, 261 insertions and 1,585 deletions, seven of them returning files to DR3 exactly (`kern/boot_script.[ch]` deleted, `conf/files`, `ext2fs/ext2_fs.h`, `kern/lock.c`, `i386/proc_reg.h`, `mach/i386/vm_param.h`), because `f8fee21` is `slp/osfmk-mklinux`'s 2012 tree, not DR3 (`docs/provenance/verdicts.md`, "slp's eighteen commits"); in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
+| vendor files modified | 83 in `osfmk/` against `f8fee21`, 2,128 insertions and 6,799 deletions. 63 of them, 1,867 insertions and 5,214 deletions, are `config` and `migcom` -- OSF's 1999 sources restored from the MkLinux CVS repository, slp's 1995 ones, built objects and binaries deleted, two `AT386/machdep.mk` added -- and `link/tools`, spelt as CVS spells it (`docs/provenance/imports.md`, kinds C and F). Seven of the rest return files to DR3 exactly (`kern/boot_script.[ch]` deleted, `conf/files`, `ext2fs/ext2_fs.h`, `kern/lock.c`, `i386/proc_reg.h`, `mach/i386/vm_param.h`), because `f8fee21` is `slp/osfmk-mklinux`'s 2012 tree, not DR3 (`docs/provenance/verdicts.md`, "slp's eighteen commits"); in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
 | kernel text | 809,426 bytes |
 
 The kernel text was 818,058 after `2508bd3` and 818,102 after
