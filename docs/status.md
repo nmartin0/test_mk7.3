@@ -26,11 +26,11 @@ sandbox's `tools_base`, outside the tree. The host needs `flex`, its
 
 | | |
 | --- | --- |
-| `mach_kernel.PRODUCTION` | 1,008,208 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
-| `bootstrap` | 203,052 bytes, same format; two PT_LOAD segments, R+X and R+W; reads UFS only |
+| `mach_kernel.PRODUCTION` | 976,084 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
+| `bootstrap` | 203,732 bytes, same format; two PT_LOAD segments, R+X and R+W; reads UFS only |
 | errors | 0 |
 | vendor files modified | 107 in `osfmk/` against `f8fee21`, 3,393 insertions and 8,048 deletions. 63 of them, 1,867 insertions and 5,214 deletions, are `config` and `migcom` -- OSF's 1999 sources restored from the MkLinux CVS repository, slp's 1995 ones, built objects and binaries deleted, two `AT386/machdep.mk` added -- and `link/tools`, spelt as CVS spells it (`docs/provenance/imports.md`, kinds C and F). 24, 1,273 insertions and 1,261 deletions, put DR3's assembler files back -- the kernel's sixteen under their `.s` names and with OSF's comments, and `libsa_mach`'s six -- with `template.mk`'s lines that name them and all of `conf/AT386/files`; `config.devices` keeps PCI out, because its sources are not in DR3. Against DR3 they differ by a 60-line diff in three files, `locore.s`, `i386_lock.s` and `start.s`: operand fixes no current GNU as lets pass, and the multiboot entry (`docs/provenance/verdicts.md`, `18c9d31`). Seven of the rest return files to DR3 exactly (`kern/boot_script.[ch]` deleted, `conf/files`, `ext2fs/ext2_fs.h`, `kern/lock.c`, `i386/proc_reg.h`, `mach/i386/vm_param.h`), because `f8fee21` is `slp/osfmk-mklinux`'s 2012 tree, not DR3 (`docs/provenance/verdicts.md`, "slp's eighteen commits"); in Lites, at `osfmk/src/lites` against `9d1c98a`, Utah's 1.1.u3 release, one file removed (`Makeconf`), one replaced (`makefile`), and the source fixes for today's compiler and for OSFMK 7.3 that `docs/provenance/imports.md` lists under kinds B and C, each with a note at its site |
-| kernel text | 809,426 bytes |
+| kernel text | 777,345 bytes |
 
 The kernel text was 818,058 after `2508bd3` and 818,102 after
 `752cba4`, whose `mods_count` guards added 44 bytes; 809,290 once the
@@ -40,7 +40,9 @@ compiled ("The boot" below); 809,310 with
 809,498 linked with `-z noseparate-code` (verdict 26), which puts
 `.rodata` in the text segment, so `size` counts it there; 809,426 once
 the graft's last compiled pieces were deleted and slp's Page Global
-Extensions removed.
+Extensions removed; 777,345 with GCC's automatic inlining off in
+`CARGS`, as GCC 2.7's -O2 had it, for the era's variadic functions
+(`docs/tools/mksandbox.sh`).
 
 ### Lites
 
@@ -59,8 +61,8 @@ succeeds.
 | --- | --- |
 | configure | succeeds; server configuration `STD+WS+osfmach3` selects 150 of `conf/files`' 287 sources. xMach's copy selected 157: its `conf/i386/MASTER` added `extfs` and with it the seven `cd9660` sources |
 | `include/`, `liblites/` | build; `liblites.a` and `liblites_p.a` |
-| `server/` | builds: `startup.Lites.1.1.u3.STD+WS+osfmach3`, 883,308 bytes stripped, ELF 32-bit, entered at `__start_mach`, linked with OSFMK 7.3's `libcthreads`, `libmach` and `libsa_mach` |
-| `emulator/` | builds: `emulator.Lites.1.1.u3`, 220,867 bytes of text, linked at `0xa0001000` by `emulator_base` |
+| `server/` | builds: `startup.Lites.1.1.u3.STD+WS+osfmach3`, 866,924 bytes stripped, ELF 32-bit, entered at `__start_mach`, linked with OSFMK 7.3's `libcthreads`, `libmach` and `libsa_mach` |
+| `emulator/` | builds: `emulator.Lites.1.1.u3`, 217,359 bytes of text, linked at `0xa0001000` by `emulator_base` |
 | `bin/` | nothing to build in this configuration |
 | kernel and bootstrap | not affected by building Lites |
 
@@ -189,14 +191,18 @@ continues past `(default_pager): started`:
 	Base is Mon Oct 12 20:14:56 2026
 	Time is set to Sun Oct 11 20:15:0 2026
 	timer: 4 timeouts adjusted by 0.720000 seconds
+	panic: first program (/dev/boot_device/mach_servers/mach_init) exec failed: xc002 (os/unix) file or directory does not exist
+	panic: init died
 
 It has mounted partition a, an FFS root, read its time, and then
-panics, as it must with no userland: `system_setup()` calls
-`panic("first program (%s) exec failed: x%x %s",
-"/dev/boot_device/mach_servers/mach_init", 0xc002, ...)`, and the
-reap of the dead init panics again, "init died" -- both caught with
-gdb on QEMU's stub at `panic`'s address. What reaches the screen is
-"panic:" and three bytes of garbage, not those messages; why is open.
+panics, as it must with no userland: there is no `mach_init` to run
+as the first program, and the reap of the dead init panics again.
+Until automatic inlining was turned off the screen showed "panic:"
+and three bytes of garbage: GCC had inlined `printf` into `panic`, and
+the era's `va_start`, address arithmetic on the last argument, read
+arguments that were never stored (`docs/tools/mksandbox.sh`, `CARGS`).
+Both panics were first caught with gdb on QEMU's stub, at `panic`'s
+address, which is how the arguments were known to be right.
 The next thing is a userland, NetBSD 1.0's, and `mach_init` linked
 to its `/sbin/init`.
 
