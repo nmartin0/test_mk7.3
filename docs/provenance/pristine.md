@@ -26,12 +26,15 @@ copy, `e31a69d:lites`).  A tree's id is its content's, so it is the
 same in every clone, where a commit's id depends on who applied it
 and when.
 
-The second shows two entries and no changed source line: CMU's
-`Makeconf` deleted, and Utah's `makefile` replaced by the ODE
-makefile that runs Lites' own build.  `docs/provenance/precedent.md`,
-"How Lites meets ODE", has the reason for each; the makefile is level
-2 of the order below, a build change, and carries an AI-ONLY NOTE as the
-kernel's `template.mk` change does.
+When the release was restored the second showed two entries and no
+changed source line: CMU's `Makeconf` deleted, and Utah's `makefile`
+replaced by the ODE makefile that runs Lites' own build.
+`docs/provenance/precedent.md`, "How Lites meets ODE", has the reason
+for each; the makefile is level 2 of the order below, a build change,
+and carries an AI-ONLY NOTE as the kernel's `template.mk` change does.
+The source fixes since -- for today's compiler and for OSFMK 7.3 -- are
+each listed in `imports.md` under kinds B and C, with a note at the
+site.
 
 That is the deviation record. "We changed two files" becomes something
 a reader can verify instead of a claim in a commit message. It only

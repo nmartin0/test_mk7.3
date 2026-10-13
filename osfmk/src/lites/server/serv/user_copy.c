@@ -211,8 +211,22 @@ copyinstr(from, to, max_len, len_copied)
 	    cp = data + ((vm_offset_t)from - start);
 	    while (count < cur_max) {
 		count++;
-		if ((*((char *)to)++ = *cp++) == 0) {
-		    goto done;
+		/*
+		 * AI-ONLY NOTE: was "if ((*((char *)to)++ = *cp++) == 0)".
+		 * GCC 2.7 let a cast be incremented as an lvalue; GCC 4
+		 * removed that, and "to" is a register variable, so its
+		 * address cannot be taken instead.  The same three steps,
+		 * spelled out: copy one byte, advance both pointers, stop
+		 * after the NUL.  From test_mk7.3 dev's
+		 * tools/lites/lites-osfmk73.patch.  Compile-blocking.
+		 */
+		{
+		    char _c = *cp++;
+
+		    *(char *)to = _c;
+		    to = (char *)to + 1;
+		    if (_c == 0)
+			goto done;
 		}
 	    }
 	    (void) vm_deallocate(mach_task_self(),

@@ -135,6 +135,10 @@ be copied, and the commit names it with its release or tag.
 |---|---|
 | `i386/i386_lock.s`, `i_bit_set` and `i_bit_clear`: `bts %dl` and `btr %dl` become `%edx` | `slp/osfmk-mklinux` `18c9d31`. Neither instruction has a byte-register form and no current GNU as accepts one; the bit number is all of `S_ARG0`, which each routine loads into `%edx` first. The rest of that commit is reverted (`verdicts.md`, "slp's eighteen commits"), so this is the one line kept from it outside `start.s`, and the site says so |
 | `conf/AT386/config.devices`: `pci` 2 to 0; `ncr810`, `tu` and `fta` commented out | `slp/osfmk-mklinux` `0d8ebab`, narrowed: the six sources these name are not in DR3 or in the MkLinux CVS tree, so OSF's configuration cannot be built from what OSF published. Configuration, not code; `conf/AT386/files` stays DR3's. The site says so |
+| `lites/conf/gensym.awk`: each `asm` string begins `"\n"` instead of a newline | `test_mk7.3` `dev`'s `tools/lites/lites-osfmk73.patch`. A string literal may not span lines since GCC 3.3; the assembler sees the same text |
+| `lites/conf/newvers.sh`: `printf "%s\n"` for five `echo`s | the same patch. Debian's `/bin/sh` has a System V `echo`, which turns `\\n` into a newline inside `vers.c`'s strings |
+| `lites/server/serv/user_copy.c`, `copyinstr()`: the byte copy spelled out | the same patch. GCC 4 dropped the cast-as-lvalue `(*((char *)to)++ = *cp++)`, and `to` is a register variable, so `*(char **)&to` is not open |
+| `lites/server/kern/kern_sig.c`, `lites/server/serv/serv_syscalls.c`: `case (integer_t)SIG_DFL:` and its kind, cast to each switch's own type | 4.4BSD-Lite2's `kern/kern_sig.c`, `issignal()`, which casts its labels `(long)SIG_DFL`; 4.4BSD-Lite, Lites' base, did not. Function-pointer constants are not case labels to current GCC |
 
 ## C -- our judgement, no donor line
 
@@ -146,11 +150,12 @@ so at the site.
 | `file_systems/AT386/machdep.mk` and `fs_switch.c`: the bootstrap task's file systems cut to UFS | A build change: `minixfs` (partly GPL) and `ext2fs` (derived from Linux's header) are MkLinux's additions and are no longer compiled for AT386; their sources stay as imported. The nearest precedent is OSF's own `HP700/fs_switch.c`, which has no minix reader. `docs/provenance/precedent.md`, "What OSF booted from" |
 | `kern/bootstrap.c`, `do_bootstrap_compat()`: read-only PT_LOAD segments mapped read-only; `regions[]` sized by `NREGIONS`, five, and the bound tested | No tree we can read has this loader with a read-only arm; `dev`'s `11ecb84` is the nearest, and its `p_vaddr > e_entry` test is replaced by the bound it was unknowingly avoiding (verdict 26). The arms beside it were taken to be OSF's; they are not -- the whole ELF `PT_LOAD` parser in `do_bootstrap_compat()` is `slp/osfmk-mklinux`'s `444954a` (2011), which replaced OSF's `loader_info` code (corrected 12 October 2026; `docs/provenance/precedent.md`, "Where the two imports came from") |
 | `lites/makefile` replaced, `lites/Makeconf` removed: Lites' configure build run by ODE | No tree builds Lites under OSFMK's ODE. Utah's `makefile`, which drove the same configure build with Utah's paths, gives the name and the role; CMU's ODE `Makefile`s stay as shipped. Nearest: Lites' own `OSF_ENVIRONMENT` block in `conf/Makerules`, which pointed the same build at an OSF sandbox's tools, and OSF's step 8, `build ... osf1_server`. The file says so in its AI-ONLY NOTE. `docs/provenance/precedent.md`, "How Lites meets ODE" |
+| `lites/server/Makerules`: `bsd_server.o: bsd_1_server.c`, was `bsd_server.c: bsd_1_server.c` | No tree has it. `serv/bsd_server.c` is a wrapper that `#include`s MIG's `bsd_1_server.c`; written on the source, the rule makes GNU make remake a VPATH file and look for it in the object directory. The site says so |
 | `mach_services/lib/migcom/AT386/machdep.mk` and `mach_services/cmds/config/AT386/machdep.mk`, new: the two host programs built for AT386 on a Linux host | Both `Makefile`s include `${TARGET_MACHINE}/machdep.mk` when it exists, and OSF wrote one only for `POWERMAC`, the target MkLinux built on Linux. Ours follow those: `migcom`'s adds `-I.`, as `POWERMAC`'s does, because `yacc` writes `parser.c` in the object directory and it includes `"lexxer.h"` from the source directory; `config`'s names the host's `yacc` as `POWERMAC`'s names its `lex` -- `byacc`, because `gram.y` writes actions in the old `= { }` form, which bison rejects -- and empties `LIBS`, because `-lln` was OSF/1's lex library and `parse.l` supplies its own `yywrap` |
 
-**Both are build-level, not source.** No line of Lites' code changes;
-`git diff 9d1c98a HEAD:osfmk/src/lites` shows exactly these two
-entries.
+**The two Lites rows above are build-level, not source.** Lites'
+source changes are the `lites/` rows of kinds B and C, each with a note
+at its site; `git diff 9d1c98a HEAD:osfmk/src/lites` shows them all.
 
 ## D -- transplanted, never in the receiving tree
 
