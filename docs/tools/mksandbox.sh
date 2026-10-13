@@ -232,7 +232,30 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # a place where the assumption was used, on code written for a
 # compiler that made none.
 #
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -Wno-error=overflow -Wno-endif-labels"
+#
+# -fno-inline-functions -fno-inline-small-functions
+# -fno-inline-functions-called-once -fno-partial-inlining: REQUIRED for
+# every variadic function, and the same kind of flag again.  GCC 2.7's
+# -O2 inlined only what was declared inline.  GCC 13's inlines any
+# function it judges small, variadic ones included when their va_start
+# is the era's address arithmetic rather than a builtin -- and this
+# tree's are: sa_mach/i386/stdarg.h, which the kernel compiles with,
+# and Lites' include/i386/stdarg.h both define
+#
+#	va_start(ap, last)  (ap = (char *)&(last) + <its size>)
+#
+# which assumes the arguments sit on the stack after "last".  Inlined,
+# they do not: the call's arguments are never stored, and va_arg reads
+# whatever is there.  Found in Lites' panic(), where GCC inlined
+# printf("panic: %r\n", fmt, ap) and the screen showed "panic:" and
+# three bytes of garbage; with these flags it shows the message.
+# The same inlining was in the kernel: kern/printf.c's printf, inlined
+# in 7 of its 8 uses in that file, and scsi_hba_hdw.c's PDI_cmn_err.
+# The four flags are the four ways GCC 13's -O2 inlines a function not
+# declared inline; "inline" itself is still honoured, as GCC 2.7 did.
+# The kernel's text shrinks from 809,426 to 777,345 bytes.
+#
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -Wno-error=overflow -Wno-endif-labels"
 
 #
 # NO_STRICT_ANSI: a hook osf.gcc.mk line 94 provides --
