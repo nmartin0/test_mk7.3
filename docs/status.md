@@ -59,7 +59,7 @@ succeeds.
 | --- | --- |
 | configure | succeeds; server configuration `STD+WS+osfmach3` selects 150 of `conf/files`' 287 sources. xMach's copy selected 157: its `conf/i386/MASTER` added `extfs` and with it the seven `cd9660` sources |
 | `include/`, `liblites/` | build; `liblites.a` and `liblites_p.a` |
-| `server/` | stops; 146 objects compiled, with `GMAKE="gmake -k"` -- xMach's 145 less the seven `cd9660`, and the eight the fixes for today's compiler, make and sh unblocked (`docs/provenance/imports.md`, kinds B and C) |
+| `server/` | compiles: all 151 objects, `vers.o` with them. The link stops (below) |
 | `emulator/`, `bin/` | not reached |
 | kernel and bootstrap | not affected by building Lites |
 
@@ -67,30 +67,27 @@ What stops it, every error, from a clean object directory:
 
 | where | what | kind |
 |---|---|---|
-| `conf/files:347` | `# Linux file systems`, a `#` comment in a file configure runs through the C preprocessor, reported as an invalid directive; the configuration is written all the same. xMach's copy has it as `/* */` | compiler era |
-| `serv/device_reply_hdlr.c:87` | `mig_reply_header_t`; OSFMK has `mig_reply_error_t` | OSFMK interface |
-| `serv/xmm_interface.c:109,111` | `memory_object_attr_info` has no `object_ready`, `may_cache` | OSFMK interface |
-| `serv/vn_pager_misc.c:396` | `memory_object_behave_info` has no `write_completions` | OSFMK interface |
-| `serv/ux_server_loop.c:49` | Lites' own `cthread_mach_msg`, "missing from cthreads"; OSFMK 7.3's cthreads has one, with a struct argument | OSFMK interface |
+| `conf/files:347` | `# Linux file systems`, a `#` comment in a file configure runs through the C preprocessor, reported as an invalid directive; the configuration is written all the same. xMach's copy has it as `/* */` | compiler era, harmless |
+| the server's link | `crt0-not-found`: `conf/Makerules` looks for a CMU `mach_crt0.o` or `lib/crt0.o` in the release; OSFMK 7.3 has its crt0 in `libsa_mach.a`, entered at `__start_mach` (`osf.gcc.mk` line 41), where Lites' `conf/i386/MASTER` asks for `-e __start` | OSFMK interface |
+| the server's link | `-lthreads -lmach_sa`, CMU's names; OSFMK 7.3 exports `libcthreads`, `libmach` and `libsa_mach`. `server/Makerules` and `emulator/Makerules` have an `OSF_ENVIRONMENT` branch naming OSF's of 1995, `-lcthreadsZ -lmachZ -lsa_machZ`, beside Grenoble's tool paths in `conf/Makerules` | OSFMK interface |
 
 `serv/xmm_interface.c` is Utah's post-release copy of 5 May 1996,
 which implements `memory_object_data_return`, the call OSFMK's
 pageout makes; the release's panics there (`docs/provenance/imports.md`,
-kind F). It stops on the same two lines as the release's.
+kind F). It compiled once OSFMK 7.3's memory object interface was given to it
+(`docs/provenance/imports.md`, kind B).
 
-The compiler-era errors are fixed: `gensym.awk`, `newvers.sh`,
+The compiler-era errors are fixed -- `gensym.awk`, `newvers.sh`,
 `kern_sig.c`, `serv_syscalls.c`, `user_copy.c`, and a GNU make
-dependency in `server/Makerules`. What is left is OSFMK 7.3's
-interfaces. Two more are known to be ahead, both found by `dev` first. The link:
-`server/Makerules` names `-lthreads -lmach_sa` (or `-lcthreadsZ
--lmachZ -lsa_machZ` under `OSF_ENVIRONMENT`), and this export area has
-`libcthreads`, `libmach` and `libsa_mach`. And `-Ulinux`: `-std=gnu89`,
-which `CARGS` passes, predefines `linux`, and Lites tests it
-(`dev`'s `ec33ce7`).
+dependency in `server/Makerules` -- and so are OSFMK 7.3's changed
+names and messages in `xmm_interface.c`, `vn_pager_misc.c`,
+`device_reply_hdlr.c` and `ux_server_loop.c`. The link is next, and
+how Lites should name OSFMK's crt0 and libraries is the open choice.
+One more is known to be ahead, found by `dev` first: `-Ulinux`.
+`-std=gnu89`, which `CARGS` passes, predefines `linux`, and Lites tests
+it (`dev`'s `ec33ce7`).
 
-Reproduced four times: during the walk, from a clean clone with the
-changes copied in, from the patch applied to a clean clone, and from
-the pushed branch.
+Measured from a clean clone at each commit, with `GMAKE="gmake -k"`.
 
 The remaining `build_world` step is `makeboot`, which reports "not
 found".  `setup.sh` does not build it and it is PowerMac-specific:

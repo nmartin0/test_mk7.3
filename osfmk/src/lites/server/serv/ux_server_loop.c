@@ -45,6 +45,18 @@
 
 #if OSFMACH3
 
+/*
+ * AI-ONLY NOTE: OSFMK 7.3's cthreads is no longer missing this one.
+ * It has cthread_mach_msg, with the nine arguments below gathered into
+ * a struct cthread_mach_msg_struct (cthreads.h), and the declaration
+ * collides with the definition here.  The name is moved aside for this
+ * file, which holds the definition and all four calls, so the server
+ * keeps the stub its authors wrote: mach_msg, with min and max unused.
+ * OSFMK's version keeps the receive-thread accounting those two
+ * arguments are for; docs/deferred.md has it.  Compile-blocking.
+ */
+#define cthread_mach_msg	lites_cthread_mach_msg
+
 /* These are missing from cthreads */
 mach_error_t cthread_mach_msg(
 	mach_msg_header_t *msg,

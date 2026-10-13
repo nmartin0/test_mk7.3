@@ -393,7 +393,14 @@ void vnode_pager_uncache(struct vnode *vn)
 	behavior.copy_strategy = pager->copy_strategy;
 	behavior.temporary = FALSE;
 	behavior.invalidate = FALSE;
-	behavior.write_completions = FALSE;
+	/*
+	 * AI-ONLY NOTE: was "behavior.write_completions = FALSE".  OSFMK
+	 * 7.3's memory_object_behave_info has no write_completions; it
+	 * has silent_overwrite and advisory_pageout in its place, and
+	 * both are off as write_completions was.  Compile-blocking.
+	 */
+	behavior.silent_overwrite = FALSE;
+	behavior.advisory_pageout = FALSE;
 	kr = memory_object_change_attributes(pager->control_port,
 					     MEMORY_OBJECT_BEHAVIOR_INFO,
 					     (memory_object_info_t) &behavior,

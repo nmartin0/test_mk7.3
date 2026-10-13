@@ -433,6 +433,33 @@ emulator flag is configuration, outside the tree, and costs nothing;
 taken up if a run without `-icount`, on hardware or under KVM, needs
 it.
 
+### Lites' receive threads: OSFMK's `cthread_mach_msg`
+
+**Deferred, 13 October 2026.** Lites' server loop calls
+`cthread_mach_msg` with a minimum and a maximum of server threads to
+keep waiting on its port set, and under `OSFMACH3` supplies the call
+itself as a stub that ignores both and calls `mach_msg` -- its comment
+says the call was "missing from cthreads". OSFMK 7.3's cthreads has
+it, with the nine arguments in `struct cthread_mach_msg_struct`, and
+it does the accounting (`cthread_msg_busy`, `cthread_msg_active`,
+which Lites also stubs). The stub is kept under another name for now
+(`imports.md`, kind C), so the server behaves as its authors ran it.
+
+**What would make it worth taking:** a server that runs out of
+threads to receive with, or that keeps too many. Using OSFMK's call
+means building the struct at the four call sites in
+`serv/ux_server_loop.c` and dropping the three stubs.
+
+### Lites' `memory_object_synchronize`
+
+**Deferred, 13 October 2026.** Lites panics in
+`seqnos_memory_object_synchronize`, "unimplemented", as it shipped.
+OSFMK 7.3 sends it for `vm_msync` on a mapped file (`vm/vm_user.c`
+line 795), so an `msync(2)` on a file Lites backs stops the server.
+OSF's `default_pager` implements it by answering
+`memory_object_synchronize_completed`; Lites would answer it after
+writing the range back. Taken up when something calls `msync`.
+
 ## 2a. Tooling defects, to fix in a later patch
 
 Found while auditing `nmartin0/test_mk7.3` `dev`'s build scripts.  The

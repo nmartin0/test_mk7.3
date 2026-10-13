@@ -75,20 +75,33 @@ void consume_control(mach_port_t port)
 }
 
 #if OSFMACH3
-kern_return_t seqnos_memory_object_notify (
-	mach_port_t memory_object, /* representative */
+/*
+ * AI-ONLY NOTE: OSFMK 7.3 opens an object with memory_object_init, as
+ * Mach 3 did, and has neither the memory_object_notify this function
+ * answered nor the memory_object_establish it replied with
+ * (memory_object.defs, "skip; was memory_object_notify"; mach.defs,
+ * "skip; was memory_object_establish").  So this is notify's body under
+ * init's name and arguments -- no host port -- and the reply is
+ * memory_object_change_attributes, which marks the object ready.  The
+ * attributes are the three Lites always set, in the structure and
+ * flavor OSFMK 7.3 keeps for them, old_memory_object_attr_info and
+ * OLD_MEMORY_OBJECT_ATTRIBUTE_INFO; OSF's default_pager answers init
+ * with the same call (dp_memory_object.c, seqnos_memory_object_init).
+ * The other handlers below whose arguments changed are marked.
+ */
+kern_return_t seqnos_memory_object_init (
+	mach_port_t memory_object,
 	mach_port_seqno_t seqno,
 	mach_port_t memory_control,
-	host_name_port_t host_name,
 	vm_size_t memory_object_page_size)
 {
 	struct vnode *vn;
 	vn_pager_t pager;
 	kern_return_t kr;
-	memory_object_attr_info_data_t attributes;
+	old_memory_object_attr_info_data_t attributes;
 
 	XMM_START_SERVER();
-	DEBUG_PRINT(("seqnos_memory_object_notify(x%x) start\n", memory_object));
+	DEBUG_PRINT(("seqnos_memory_object_init(x%x) start\n", memory_object));
 	vn = port_to_vnode_lookup(memory_object, seqno);
 	if (!vn)
 	    panic("seqnos_memory_object_init no vn");
@@ -110,20 +123,13 @@ kern_return_t seqnos_memory_object_notify (
 	attributes.copy_strategy = pager->copy_strategy;
 	attributes.may_cache     = pager->may_cache;
 
-	kr = memory_object_establish(host_name,
-				     memory_object,
-#if OSF_LEDGERS
-				     MACH_PORT_NULL,
-#endif /* OSF_LEDGERS */
-				     memory_control,
-				     memory_object,
-				     VM_PROT_ALL,
-				     security_id,
-				     MEMORY_OBJECT_ATTRIBUTE_INFO,
+	kr = memory_object_change_attributes(memory_control,
+				     OLD_MEMORY_OBJECT_ATTRIBUTE_INFO,
 				     (memory_object_info_t) &attributes,
-				     MEMORY_OBJECT_ATTR_INFO_COUNT);
+				     OLD_MEMORY_OBJECT_ATTR_INFO_COUNT,
+				     MACH_PORT_NULL);
 	assert(kr == KERN_SUCCESS);
-	DEBUG_PRINT(("seqnos_memory_object_notify(x%x) end\n", memory_object));
+	DEBUG_PRINT(("seqnos_memory_object_init(x%x) end\n", memory_object));
 	XMM_END_SERVER();
 }
 
@@ -172,8 +178,16 @@ kern_return_t seqnos_memory_object_init (
 kern_return_t seqnos_memory_object_terminate (
 	mach_port_t memory_object,
 	mach_port_seqno_t seqno,
+#if OSFMACH3
+	/*
+	 * AI-ONLY NOTE: OSFMK 7.3 sends no name port with terminate; the
+	 * control port is the only right moved (memory_object.defs).
+	 */
+	mach_port_t memory_control)
+#else /* OSFMACH3 */
 	mach_port_t memory_control,
 	mach_port_t memory_object_name)
+#endif /* OSFMACH3 */
 {
 	struct vnode *vn;
 	kern_return_t kr;
@@ -190,16 +204,20 @@ kern_return_t seqnos_memory_object_terminate (
 
 	/* consume send rights from memory_object_init */
 	consume_control(memory_control);
+#if !OSFMACH3
 	kr = mach_port_deallocate(mach_task_self(), memory_object_name);
 	assert(kr == KERN_SUCCESS);
+#endif /* !OSFMACH3 */
 
 	/* get rid of the receive rights this upcall returns */
 	kr = mach_port_mod_refs(mach_task_self(), memory_control,
 				 MACH_PORT_RIGHT_RECEIVE, -1);
 	assert(kr == KERN_SUCCESS);
+#if !OSFMACH3
 	kr = mach_port_mod_refs(mach_task_self(), memory_object_name,
 				 MACH_PORT_RIGHT_RECEIVE, -1);
 	assert(kr == KERN_SUCCESS);
+#endif /* !OSFMACH3 */
 
 	pager = vn->v_vmdata;
 	if (!pager)
@@ -570,6 +588,32 @@ kern_return_t seqnos_memory_object_data_return (
 	XMM_END_SERVER();
 }
 
+#if OSFMACH3
+/*
+ * AI-ONLY NOTE: OSFMK 7.3 replies to memory_object_change_attributes
+ * with the control port and the flavor changed, where Mach 3 sent the
+ * new may_cache and copy_strategy (memory_object.defs).  It replies
+ * only to a reply port, and every change_attributes here passes
+ * MACH_PORT_NULL, so this is not called; its arguments are OSFMK's so
+ * that it would be read correctly if it were.
+ */
+kern_return_t seqnos_memory_object_change_completed (
+	mach_port_t memory_object,
+	mach_port_seqno_t seqno,
+	mach_port_t memory_control,
+	memory_object_flavor_t flavor)
+{
+	struct vnode *vn;
+
+	XMM_START_SERVER();
+	vn = port_to_vnode_lookup(memory_object, seqno);
+	unix_master();		/* XXX */
+	printf("seqnos_memory_object_change_completed(%x %x) vn=x%x\n",
+	       memory_object, flavor, vn);
+	consume_control(memory_control);
+	XMM_END_SERVER();
+}
+#else /* OSFMACH3 */
 kern_return_t seqnos_memory_object_change_completed (
 	mach_port_t memory_object,
 	mach_port_seqno_t seqno,
@@ -585,6 +629,7 @@ kern_return_t seqnos_memory_object_change_completed (
 	       memory_object, may_cache, copy_strategy, vn);
 	XMM_END_SERVER();
 }
+#endif /* OSFMACH3 */
 
 #if OSFMACH3
 kern_return_t seqnos_memory_object_rejected (
@@ -607,6 +652,26 @@ kern_return_t seqnos_memory_object_synchronize (
 	vm_sync_t sync_flags)
 {
 	panic("seqnos_memory_object_synchronize unimplemented");
+	consume_control(memory_control);
+	return ENOSYS;
+}
+
+/*
+ * AI-ONLY NOTE: new in OSFMK 7.3's memory_object.defs, for advisory
+ * pageout, and sent only for an object whose behavior asks for it
+ * (vm_pageout.c); vnode_pager_uncache sets advisory_pageout FALSE and
+ * nothing here sets it TRUE.  Unimplemented as Lites' own stubs are,
+ * and as OSF's default_pager has it ("illegal").  Link-blocking:
+ * libmach's Smem_svr.o names it.
+ */
+kern_return_t seqnos_memory_object_discard_request (
+	mach_port_t memory_object,
+	mach_port_seqno_t seqno,
+	mach_port_t memory_control,
+	vm_offset_t offset,
+	vm_size_t length)
+{
+	panic("seqnos_memory_object_discard_request unimplemented");
 	consume_control(memory_control);
 	return ENOSYS;
 }
