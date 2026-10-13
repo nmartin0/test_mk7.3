@@ -46,16 +46,15 @@ Extensions removed; 777,345 with GCC's automatic inlining off in
 
 ### Lites
 
-Built separately, after `build_world`, as OSF's step 8 built its
-server:
+Built by `build_world`, after the kernel and its libraries, as OSF's
+step 8 built its server; on its own,
 
 	cd osfmk/src && build -here lites
 
 `osfmk/src/lites/makefile` runs Lites' own `configure` and GNU make in
 `obj/at386/lites/STD+WS+osfmach3/`, with the sandbox's compiler, MIG
 and export area; `docs/provenance/precedent.md`, "How Lites meets
-ODE". The line is not yet in `build_world`, and goes in when it
-succeeds.
+ODE". The line went into `build_world` once the build completed.
 
 | | |
 | --- | --- |

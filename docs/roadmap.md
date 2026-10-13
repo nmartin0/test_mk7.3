@@ -36,7 +36,7 @@ Measured against the trees as they stand:
 | Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
 | the three are one repository | **done** for two of them — the kernel at `osfmk/`, and Lites at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was |
-| one build drives all three | **in part** — `build -here lites` builds Lites under ODE and stops at Lites' own source, 145 server objects in; not yet in `build_world`. The blocking item is now the source fixes |
+| one build drives all three | **done** for the kernel and Lites -- `build_world` builds both, Lites with `build -here lites`, OSF's step 8; the server starts on OSFMK 7.3 and mounts its root (`docs/status.md`, "Lites starts") |
 | the two Utah traps checked for | **done** — trap 1 fires, trap 2 does not on the generic path; `docs/status.md` |
 
 Two of those rows moved since this file was written.
@@ -55,17 +55,16 @@ belongs to the runtime slot in `/mach_servers`, not to a source
 directory. `docs/provenance/precedent.md`, "Where the server lives,
 and why", has the sources.
 
-**The build driver exists; the source fixes are the blocking item.**
+**Lites builds and starts; a userland is the blocking item.**
 `osfmk/src/lites/makefile` runs Lites' own configure build under ODE
 (`docs/provenance/precedent.md`, "How Lites meets ODE"; option A,
-reviving Lites' CMU ODE build, is held in `docs/deferred.md` §2). The
-server stops on errors in six files, listed in `docs/status.md`; `dev`'s
-Lites patch has fixes for all but one, and the walk adopts them as it
-reaches them. The boot no longer waits on it: since verdicts 22–24 the
-kernel starts OSF's bootstrap task instead of the two GNU Hurd servers
-a graft had wired in, and `name_server` and `default_pager` — OSF's
-own, needing nothing from Lites — are the next things for it to load.
-`docs/deferred.md` §2, "The bootstrap fork".
+reviving Lites' CMU ODE build, is held in `docs/deferred.md` §2), and
+`build_world` runs it. Utah's 1.1.u3 needed fixes for today's compiler
+and for OSFMK 7.3's interfaces, each recorded in
+`docs/provenance/imports.md`; its `OSF_ENVIRONMENT` switch, brought to
+7.3, links it the way OSF linked its own servers. Started by OSF's
+bootstrap task as `startup`, it mounts its root and stops where a
+system with no userland must: there is no `mach_init` to exec.
 
 **Trap 1 fires, and it is a constraint on Tier 1 item 2.** C-threads
 finds a thread's identity by masking its stack pointer to a fixed
@@ -95,7 +94,7 @@ the order:
 	makeboot
 
 Our server builds after `mach_kernel`, linking against those four
-libraries: `build -here lites`, joining this list once it succeeds. That answers "where do the Mach libraries live" by OSF's
+libraries: `build -here lites`, in this list since 13 October 2026. That answers "where do the Mach libraries live" by OSF's
 precedent rather than by preference: they stay in `osfmk7.3/` and the
 server links against them.
 

@@ -31,6 +31,13 @@ makeboot
 # Build	the default pager
 #build -here default_pager
 
+# Build the Lites server and its emulator
+# AI-ONLY NOTE: not MkLinux's; OSF's MK7.3 release notes build the
+# server as step 8, after the kernel and the libraries it links with,
+# and the header above invites the edit.  osfmk/src/lites/makefile runs
+# Lites' own configure build; docs/status.md, "Lites".
+build -here lites
+
 # Build	the name_server and its libraries
 #build -here mach_services/lib/libservice
 #build -here mach_services/lib/libnetname
