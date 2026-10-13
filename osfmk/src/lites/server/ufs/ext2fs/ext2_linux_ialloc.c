@@ -228,7 +228,7 @@ void ext2_free_inode (struct inode * inode)
 	bit = (inode->i_number - 1) % EXT2_INODES_PER_GROUP(sb);
 	bitmap_nr = load_inode_bitmap (ITOV(inode)->v_mount, block_group);
 	bh = sb->s_inode_bitmap[bitmap_nr];
-	if (!test_and_clear_bit (bit, bh->b_data))	
+	if (!clear_bit (bit, bh->b_data))	
 		printf ( "ext2_free_inode:"
 		      "bit already cleared for inode %lu", inode->i_number);
 	else {
@@ -250,8 +250,7 @@ void ext2_free_inode (struct inode * inode)
 	unlock_super (DEVVP(inode));
 }
 
-//#if linux
-#if 0
+#if linux
 /*
  * This function increments the inode version number
  *
@@ -404,7 +403,7 @@ repeat:
 	if ((j = find_first_zero_bit ((unsigned long *) bh->b_data,
 				      EXT2_INODES_PER_GROUP(sb))) <
 	    EXT2_INODES_PER_GROUP(sb)) {
-		if (test_and_set_bit (j, bh->b_data)) {
+		if (set_bit (j, bh->b_data)) {
 			printf ( "ext2_new_inode:"
 				      "bit already set for inode %d", j);
 			goto repeat;

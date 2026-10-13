@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: emul_vector.s,v $
- * Revision 1.2  2000/10/27 01:55:28  welchd
- *
- * Updated to latest source
- *
 # Revision 1.1.1.2  1995/03/23  01:15:38  law
 # lites-950323 from jvh.
 #
@@ -85,34 +81,6 @@ emul_exit:
 	popf				/* restore flags */
 	ret				/* return to user */
 
-
-	.globl _emul_linux_trampoline_3
-	.globl emul_linux_trampoline_3
-_emul_linux_trampoline_3:
-emul_linux_trampoline_3:
-	pushl	%eax			/* save registers that C does not */
-	pushl	%ecx
-	pushl	%edx
-
-	pushl	%ebx			/* save the remaining registers */
-	pushl	%esi
-	pushl	%edi
-	pushl	%ebp
-
-	pushl	%esp			/* push argument (pointer to regs) */
-	call	EXT(emul_linux_syscall3)		/* call C code */
-	addl	$4,%esp			/* pop parameter */
-
-	popl	%ebp			/* restore registers */
-	popl	%edi
-	popl	%esi
-	popl	%ebx
-
-	popl	%edx			/* restore regs that C does not save */
-	popl	%ecx
-	popl	%eax
-	popf				/* restore flags */
-	ret				/* return to user */
 
 
 

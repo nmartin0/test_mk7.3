@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: e_stat.c,v $
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.5  1995/11/30  03:44:06  mike
  * HP-UX compat changes from Jeff (with a couple of minor additions by mike)
  *

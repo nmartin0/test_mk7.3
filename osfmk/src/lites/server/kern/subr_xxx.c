@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: subr_xxx.c,v $
- * Revision 1.2  2000/10/27 01:58:45  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1996/03/14  21:08:27  sclawson
  * Ian Dall's signal fixes.
  *

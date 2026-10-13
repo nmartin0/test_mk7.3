@@ -25,18 +25,6 @@
  *	PA RISC support from Mike Hibler.
  *
  * $Log: emul_exec.c,v $
- * Revision 1.4  2000/11/26 01:35:55  welchd
- *
- * Fixed to getdents interface
- *
- * Revision 1.3  2000/11/07 00:41:25  welchd
- *
- * Added support for executing dynamically linked Linux ELF binaries
- *
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.3  1995/09/01  23:27:54  mike
  * HP-UX compatibility support from Jeff F.
  *
@@ -77,203 +65,7 @@ errno_t emul_exec_open(const char *file, int *fd,
 mach_error_t emul_exec_map_section(struct exec_section	*section);
 errno_t emul_exec_load(int fd, enum binary_type bt,
 		       union exec_data *hdr, struct exec_load_info *li,
-		       vm_offset_t *heap_end, mach_port_t image_port,
-		       signed int load_bias);
-
-noreturn emul_exec_linux_start_new(
-	int			*kframe,
-	enum binary_type	binary_type,
-	int			argc,
-	char			*argv[],
-	char			*envp[],
-	struct exec_load_info	*interpreter_li,
-	struct exec_load_info   *li,
-	union exec_data         *hdr,
-        unsigned int            load_addr,
-	unsigned int            interp_load_addr);
-
-errno_t emul_linux_exec_load(
-	int			fd,
-	enum binary_type	bt,
-	mach_port_t		image_port,
-        integer_t*              kframe,
-	int                     argc,
-	char*                   argv[],
-	char*                   envp[],
-	union exec_data*        hdr)
-{
-   errno_t err;
-   char iname[256];
-   unsigned int phdr;
-   elf_exec* elf;
-   size_t result;
-   int nread;
-   int interpreter_fd;
-   enum binary_type interpreter_bt;
-   union exec_data interpreter_hdr;
-   char cfname[PATH_LENGTH], cfarg[PATH_LENGTH];
-   struct exec_load_info li_data;
-   struct exec_load_info interpreter_li_data;
-   vm_offset_t interpreter_heap_end;
-   vm_offset_t heap_end;
-   unsigned int load_addr;
-   unsigned int interp_load_addr;
-   
-   /*
-    * Load the main executable
-    */
-   err = emul_exec_load(fd, bt, hdr, &li_data, &heap_end,
-			image_port, 0);
-   if (err)
-     exit(-1);
-   
-   /*
-    * Find the load address
-    */
-   phdr = 0;
-   elf = &hdr->elf;
-   while (elf->phdrs[phdr].p_type != PT_LOAD)
-     {
-	phdr++;
-     }
-//   e_emulator_error("elf->phdrs[phdr].p_vaddr %x",
-//		    elf->phdrs[phdr].p_vaddr);
-//   e_emulator_error("elf->phdrs[phdr].p_offset %x",
-//		    elf->phdrs[phdr].p_offset);
-   load_addr = elf->phdrs[phdr].p_vaddr - elf->phdrs[phdr].p_offset;
-//   e_emulator_error("load_addr: 0x%x", load_addr);
-   
-   /*
-    * Get the interpreter name
-    */		     		     
-//   e_emulator_error("Finding interpreter name");
-   for (phdr = 0; phdr < elf->ehdr.e_phnum; phdr++) 
-     {
-	if (elf->phdrs[phdr].p_type == PT_INTERP)
-	  {
-//	     e_emulator_error("Found interpreter at %d", phdr);
-//	     e_emulator_error("elf->phdrs[phdr].p_offset 0x%x",
-//			      elf->phdrs[phdr].p_offset);
-//	     e_emulator_error("fd %d", fd);
-//	     e_emulator_error("image_port %d", image_port);
-	     if (MACH_PORT_VALID(image_port)) {
-		vm_address_t mapped_addr = 0;
-		vm_size_t mapped_size = round_page(elf->phdrs[phdr].p_filesz);
-//		e_emulator_error("elf->phdrs[phdr].p_filesz %d %d",
-//				 elf->phdrs[phdr].p_filesz, mapped_size);
-		err = bsd_vm_map(process_self(), &mapped_addr,
-				 mapped_size, 0,
-				 TRUE, image_port, 
-				 elf->phdrs[phdr].p_offset, TRUE,
-				 VM_PROT_READ, VM_PROT_ALL, VM_INHERIT_NONE);
-		if (err != KERN_SUCCESS) {
-			e_emulator_error("emul_exec_open: bsd_vm_map image:%s",
-					 mach_error_string(err));
-			return ENOEXEC;
-		}
-		bcopy((void *)mapped_addr, iname, elf->phdrs[phdr].p_filesz);
-		err = vm_deallocate(mach_task_self(), mapped_addr,
-				    mapped_size);
-		if (err != KERN_SUCCESS) {
-			e_emulator_error("emul_exec_open: vm_dealloc image:%s",
-					 mach_error_string(err));
-			return ENOEXEC;
-		}
-	     } else {
-		err = e_lite_lseek(fd, 0, elf->phdrs[phdr].p_offset, 0, 
-				   &nread);
-		if (err != 0)
-		  {
-		     e_emulator_error("err %d", err);
-		     return(-1);
-		  }
-//		e_emulator_error("elf->phdrs[phdr].p_filesz %d",
-//				 elf->phdrs[phdr].p_filesz);
-		err = e_read(fd, iname, elf->phdrs[phdr].p_filesz, &result);
-		if (err != 0 || result != elf->phdrs[phdr].p_filesz)
-		  {
-		  return(-1);
-		  }		
-	     }	     	     
-//	     e_emulator_error("iname: %s", iname);
-	     break;
-	  }
-     }
-//   strcpy(iname, "/xmach/lib/ld-linux.so.2");
-   
-   /*
-    * FIXME: Check the interpreter
-    */
-   
-   /*
-    * Open the interpreter
-    */ 
-//   e_emulator_error("Opening interpreter");
-   err = emul_exec_open(iname, 
-			&interpreter_fd, 
-			&interpreter_bt, 
-			&interpreter_hdr,
-			cfname, 
-			cfarg, 
-			MACH_PORT_NULL);
-   if (err) {
-      e_emulator_error("emul_exec_open failed: %s",
-		       mach_error_string(unix_err(err)));
-      exit(-1);
-   }
-   
-   /*
-    * Load the interpreter
-    */
-//   e_emulator_error("Loading interpreter\n");
-   err = emul_exec_load(interpreter_fd, 
-			interpreter_bt, 
-			&interpreter_hdr, 
-			&interpreter_li_data, 
-			&interpreter_heap_end,
-			MACH_PORT_NULL,
-			0x40000000);
-   if (err)
-     exit(-1);
-   
-   /*
-    * Find the interpreter load address
-    */
-   phdr = 0;
-   elf = &interpreter_hdr.elf;
-   while (elf->phdrs[phdr].p_type != PT_LOAD)
-     {
-	phdr++;
-     }
-   interp_load_addr = elf->phdrs[phdr].p_vaddr + 0x40000000 - 
-     elf->phdrs[phdr].p_offset ;
-//   e_emulator_error("interp_load_addr: 0x%x", interp_load_addr);
-   interpreter_li_data.pc = interpreter_li_data.pc + 0x40000000;
-   
-   /*
-    * Hook for mach3 GDB.
-    *
-    * GDB wants to gain control after the address space has been
-    * initialized but before transfering control.
-    */
-   err = bsd_exec_done(process_self());
-   
-   /* And start running it */
-//   e_emulator_error("About to start interpreter");
-   emul_exec_linux_start_new(kframe, 
-			     bt,
-			     argc, 
-			     argv, 
-			     envp,
-			     &interpreter_li_data,
-			     &li_data,
-			     hdr,
-			     load_addr,
-			     interp_load_addr);
-   e_emulator_error("emul_exec_start returned (%d)", err);
-   emul_panic("XXX about to exit");
-   return err;
-}
+		       vm_offset_t *heap_end, mach_port_t image_port);
 
 errno_t emul_trap_run(
 	int		argc,
@@ -319,9 +111,9 @@ errno_t emul_trap_run(
 				 mach_error_string(unix_err(err)));
 		exit(-1);
 	}
-   
-	e_my_binary_type = binary_type;  
-   
+
+	e_my_binary_type = binary_type;
+
 	/* Set expansion for @bin in namei */
 	bsd_set_atexpansion(process_self(), "@bin", 5,
 			    atbin_names[binary_type], 
@@ -331,22 +123,10 @@ errno_t emul_trap_run(
 	 * Set up the emulator vectors.
 	 */
 	emul_setup(mach_task_self(), binary_type);
-   
-        if (binary_type == BT_LINUX_DYN_ELF) {
-//	   e_emulator_error("Dynamic ELF binary encountered");
-	   return(emul_linux_exec_load(fd, 
-				       binary_type, 
-				       image_port,
-				       kframe,
-				       argc,
-				       argv,
-				       envp,
-				       &hdr));
-        }
-   
+
 	/* Load the program */
 	err = emul_exec_load(fd, binary_type, &hdr, &li_data, &heap_end,
-			     image_port, 0);
+			     image_port);
 	if (err)
 	    exit(-1);
 
@@ -413,7 +193,7 @@ errno_t emul_exec_open(
 			return err;
 		}
 		err = e_read(*fd, (char *) hdr, sizeof(*hdr), &result);
- 		if (err || result != sizeof(*hdr)) {
+		if (err || result != sizeof(*hdr)) {
 			/* Handle small scripts correctly XXX */
 			e_emulator_error("emul_exec_open read=%d n=%d\n",
 					 err, result);
@@ -452,8 +232,7 @@ errno_t emul_exec_load(
 	union exec_data		*hdr,
 	struct exec_load_info	*li,		/* OUT (space by caller) */
 	vm_offset_t		*heap_end,	/* OUT */
-	mach_port_t		image_port,
-	signed int              load_bias)
+	mach_port_t		image_port)
 {
 #define NSECTIONS 6		/* generous: 4 is needed for known binaries */
 	mach_error_t kr;
@@ -480,7 +259,6 @@ errno_t emul_exec_load(
 	for (i = 0; (i < NSECTIONS) && (secs[i].how != EXEC_M_STOP); i++) {
 		/* Just go ahead and fill all slots. Could be more selective */
 		secs[i].file = image_port;
-	        secs[i].va = secs[i].va + load_bias;
 		kr = emul_exec_map_section(&secs[i]);
 		if (kr) {
 			e_emulator_error("emul_exec_load: map section #%d: %s\n",
@@ -494,7 +272,7 @@ errno_t emul_exec_load(
 
 	/* Clear BSS beginning */
 	if (li->zero_count > 0)
-	    bzero((caddr_t) (li->zero_start + load_bias), li->zero_count);
+	    bzero((caddr_t) li->zero_start, li->zero_count);
 
 	return kr;
 }

@@ -1,5 +1,5 @@
-/* $Header: /cvsroot/xmach/lites/server/netiso/xebec/main.h,v 1.2 2000/10/27 01:58:49 welchd Exp $ */
-/* $Source: /cvsroot/xmach/lites/server/netiso/xebec/main.h,v $ */
+/* $Header: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/xebec/main.h,v 1.1.1.1 1995/03/02 21:49:58 mike Exp $ */
+/* $Source: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/xebec/main.h,v $ */
 
 #define TRUE 1
 #define FALSE 0

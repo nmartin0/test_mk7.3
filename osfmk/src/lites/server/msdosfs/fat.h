@@ -1,4 +1,4 @@
-/*	$Id: fat.h,v 1.2 2000/10/27 01:58:47 welchd Exp $ */
+/*	$Id: fat.h,v 1.1 1995/08/13 03:35:25 gback Exp $ */
 /*	$NetBSD: fat.h,v 1.4 1994/08/21 18:43:57 ws Exp $	*/
 
 /*-

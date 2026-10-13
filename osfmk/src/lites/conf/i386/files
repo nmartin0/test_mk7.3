@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: files,v $
- * Revision 1.2  2000/10/27 01:53:08  welchd
- *
- * Updated to latest source
- *
 # Revision 1.1.1.1  1995/03/02  21:49:26  mike
 # Initial Lites release from hut.fi
 #
@@ -33,7 +29,6 @@
 
 fileif	ns		netns/ns_cksum.c
 
-#undef i386
 fileif	lites		i386/serv_machdep.c
 fileif	lites		i386/conf.c
 fileif	lites		i386/i386_exception.c

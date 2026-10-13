@@ -16,10 +16,6 @@
 #
 # HISTORY
 # $Log: Makerules,v $
-# Revision 1.2  2000/10/27 01:55:27  welchd
-#
-# Updated to latest source
-#
 # Revision 1.3  1995/09/01  23:24:23  mike
 # hack: add Nbsd_1_user.c new rpc user stubs.
 # When flick replaces mig, this will go away.
@@ -64,8 +60,7 @@ OBJFILES = ecrt0.o  e_mig_support.o emul_generic.o error_codes.o \
 	e_mach_msg_server.o e_stat.o e_bnr.o emul_exec.o \
 	signal_server.o e_uname.o e_mapped_time.o e_sysvipc.o \
 	${${TARGET_MACHINE}_OFILES} \
-	e_lite_sysent.o emul_vector.o e_trampoline.o \
-	e_linux_getcwd.o
+	e_lite_sysent.o emul_vector.o e_trampoline.o
 
 all: emulator.${VERSION}
 
@@ -89,8 +84,6 @@ install: $(INSTALL_SBINDIR)/emulator.${VERSION}
 $(INSTALL_SBINDIR)/emulator.${VERSION}: emulator.${VERSION}
 	${MKDIR} $(patsubst %/,%,$(dir $@))
 	${INSTALL} -m 755 $< $@
-	$(MKDIR) $(INSTALL_SBINDIR)/../mach_servers
-	ln -sf $@ $(INSTALL_SBINDIR)/../mach_servers/emulator
 
 
 CLEAN_FILES += ${OBJFILES} emulator_base signal_server.h signal.h \

@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: e_sysv.c,v $
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.2  1995/03/23  01:15:31  law
  * lites-950323 from jvh.
  *

@@ -26,10 +26,6 @@
 /*
  * HISTORY
  * $Log: block_io.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/08/29  01:07:23  gback
  * gross hack to ensure ioctl()'s on block devices work
  *

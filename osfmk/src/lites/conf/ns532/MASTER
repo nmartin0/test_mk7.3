@@ -1,0 +1,88 @@
+/* 
+ * Mach Operating System
+ * Copyright (c) 1994 Helsinki University of Technology
+ * All Rights Reserved.
+ * 
+ * Permission to use, copy, modify and distribute this software and its
+ * documentation is hereby granted, provided that both the copyright
+ * notice and this permission notice appear in all copies of the
+ * software, derivative works or modified versions, and any portions
+ * thereof, and that both notices appear in supporting documentation.
+ * 
+ * HELSINKI UNIVERSITY OF TECHNOLOGY ALLOWS FREE USE OF THIS SOFTWARE
+ * IN ITS 'AS IS' CONDITION.  HELSINKI UNIVERSITY OF TECHNOLOGY
+ * DISCLAIMS ANY LIABILITY OF ANY KIND FOR ANY DAMAGES WHATSOEVER
+ * RESULTING FROM THE USE OF THIS SOFTWARE.
+ * 
+ * Helsinki University of Technology requests users of this software
+ * to return to
+ * 
+ *  Software Distribution Coordinator  or  Software.Distribution@cs.hut.fi
+ *  Department of Computer Science
+ *  Helsinki University of Technology
+ *  FI-02150 Espoo, Finland
+ * 
+ * any improvements or extensions that they make and grant Helsinki
+ * University of Technology the rights to redistribute these changes.
+ */
+/* 
+ * HISTORY
+ * $Log: MASTER,v $
+# Revision 1.1.1.1  1995/03/02  21:49:27  mike
+# Initial Lites release from hut.fi
+#
+ *
+ */
+/* 
+ *	File:	conf/ns532/MASTER
+ *	Author:	Johannes Helander
+ *	Date:	October 1994
+ *
+ *	LITES configuration file for the ns532.
+ */
+
+/* 
+ * The master files are preprocessed and then run through an awk script that
+ * decides what to do.
+ * 
+ * The config statement must be first. Any preprocessor magic
+ * affecting the configuration should be done before it.
+ * 
+ * 
+ * config CONFIG
+ * specifies the configuration CONFIG is a list of options separated by
+ * spaces, plus (+) signs, or minus (-) signs.  Spaces and pluses add to
+ * the set, minuses remove.  Options are processed from left to right.
+ * 
+ * file FILENAME
+ * specifies that the given file name is always part of the program.
+ * 
+ * fileif OPTION FILENAME
+ * The file is included if the option is part of the configuration.
+ * 
+ * options OPTION DEFINE VALUE FILE
+ * The preprocessor symbol DEFINE is defined to be VALUE if OPTION is part of
+ * the configuration or zero otherwise. The definition is made in the file
+ * FILE.
+ * 
+ * makeoptions OPTION MAKEFILESTUFF
+ * MAKEFILESTUFF is read by make when the program is being built iff OPTION
+ * is part of the configuration.
+ */
+
+/* get global defines */
+#include <conf/MASTER.h>
+
+#define  ANY	du+ns532
+#define  WS	ns532+com
+
+/* Set LITES configuration */
+config CONFIG
+
+makeoptions	ns532	TARGET_LDFLAGS += -e __start
+/* Get other configuration files */
+/*#include <conf/ns532/MASTER.local>*/
+#include <conf/MASTER.local>
+#include <conf/MASTER>
+#include <conf/files>
+#include <conf/ns532/files>

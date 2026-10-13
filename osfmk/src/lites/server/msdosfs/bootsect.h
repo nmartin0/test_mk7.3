@@ -1,4 +1,4 @@
-/*	$Id: bootsect.h,v 1.2 2000/10/27 01:58:47 welchd Exp $ */
+/*	$Id: bootsect.h,v 1.1 1995/08/13 03:35:21 gback Exp $ */
 /*	$NetBSD: bootsect.h,v 1.4 1994/06/29 06:35:28 cgd Exp $	*/
 
 /*

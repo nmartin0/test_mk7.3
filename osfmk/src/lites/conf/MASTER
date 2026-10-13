@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: MASTER,v $
- * Revision 1.2  2000/10/27 01:53:08  welchd
- *
- * Updated to latest source
- *
 # Revision 1.6  1996/03/14  21:07:37  sclawson
 # Made slice option a true option.
 #
@@ -138,8 +134,6 @@ options		fifo	FIFO	1	fifo.h
 options		ext2fs	EXT2FS	1	ext2fs.h
 	/* Linux Minix File System */
 options		minixfs	MINIXFS	1	minixfs.h
-	/* Device File System */
-options		devfs	DEVFS	1	devfs.h
 
 /* Misc */
 options		sysvshm	SYSVSHM	1	sysvshm.h
@@ -188,10 +182,10 @@ profile		gprof
 makeoptions	lineno		TARGET_CFLAGS+=-g
 /*makeoptions	standard	DEFINES+=-DMACH_IPC_COMPAT=0*/
 
-/*makeoptions	machid_register	LIBMACHID=-lmachid */
-/*makeoptions	machid_register	LIBMACHID_P=-lmachid_p */
-/*makeoptions	machid_register	LIBNETNAME=-lnetname */
-/*makeoptions	machid_register	LIBNETNAME_P=-lnetname_p */
+makeoptions	machid_register	LIBMACHID=-lmachid
+makeoptions	machid_register	LIBMACHID_P=-lmachid_p
+makeoptions	machid_register	LIBNETNAME=-lnetname
+makeoptions	machid_register	LIBNETNAME_P=-lnetname_p
 
 	/* turn off all optimizations */
 makeoptions	noopt	TARGET_OPTIMIZE_CFLAGS = -O0 -Dregister=

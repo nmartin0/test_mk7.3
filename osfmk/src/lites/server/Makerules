@@ -19,10 +19,6 @@
 #
 # HISTORY
 # $Log: Makerules,v $
-# Revision 1.2  2000/10/27 01:58:44  welchd
-#
-# Updated to latest source
-#
 # Revision 1.1.1.2  1995/03/23  01:16:22  law
 # lites-950323 from jvh.
 #
@@ -89,20 +85,11 @@ syscalls.c: ../include/tmp/syscalls.c
 	-rm -f $@
 	cp $< $@
 
-bsd_1_server.h: bsd_server.h
-	ln -svf bsd_server.h bsd_1_server.h
-
-bsd.srv: bsd_1.srv
-	ln -svf $(SRCDIR)/server/serv/bsd_1.srv $(SRCDIR)/server/serv/bsd.srv
-
-bsd.defs: bsd_1.defs
-	ln -svf bsd_1.defs bsd.defs
-
 $(OBJFILES) bsd_types.gen: vnode_if.h
-bsd_server_side.o: bsd_server.h
-bsd_server.h: bsd_types_gen.h bsd.srv bsd.defs bsd_types.defs 
-bsd_server.c: bsd_types_gen.h bsd.srv bsd.defs bsd_types.defs bsd_1_server.h
+bsd_server_side.o: bsd_1_server.h
+bsd_1_server.h bsd_1_server.c: bsd_types_gen.h bsd_1.srv bsd_1.defs bsd_types.defs
 signal_user.c signal_user.h: signal_user.cli signal.defs bsd_types.defs
+bsd_server.c: bsd_1_server.c
 sendsig.o: signal_user.h
 # inhibit gmake autoremoval
 bsd_types_gen.h: bsd_types_gen.symc.o
@@ -113,7 +100,3 @@ install: $(INSTALL_SBINDIR)/$(LITES)
 $(INSTALL_SBINDIR)/$(LITES): $(LITES)
 	${MKDIR} $(patsubst %/,%,$(dir $@))
 	${INSTALL} -m 755 $< $@
-	$(MKDIR) $(patsubst %/,%/../mach_servers,$(dir $@))
-	ln -sf $@ $(INSTALL_SBINDIR)/../mach_servers/startup
-
-

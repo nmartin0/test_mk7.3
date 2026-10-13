@@ -16,25 +16,21 @@
 /*
  * HISTORY
  * $Log: files,v $
- * Revision 1.2  2000/10/27 01:53:08  welchd
- *
- * Updated to latest source
- *
- * Revision 1.5  1995/08/15  06:53:39  gback
- * minor screwup in files wrt to ext2fs filenames fixed
- *
- * Revision 1.4  1995/08/15  06:48:17  sclawson
- * modifications from lites-1.1-950808
- *
- * Revision 1.3  1995/08/13  03:39:31  gback
- * added files needed for MSDOS FS support server/msdosfs tree
- *
- * Revision 1.2  1995/08/10  23:27:10  gback
- * added files for EXT2FS option
- *
- * Revision 1.1.1.1  1995/03/02  21:49:26  mike
- * Initial Lites release from hut.fi
- *
+# Revision 1.5  1995/08/15  06:53:39  gback
+# minor screwup in files wrt to ext2fs filenames fixed
+#
+# Revision 1.4  1995/08/15  06:48:17  sclawson
+# modifications from lites-1.1-950808
+#
+# Revision 1.3  1995/08/13  03:39:31  gback
+# added files needed for MSDOS FS support server/msdosfs tree
+#
+# Revision 1.2  1995/08/10  23:27:10  gback
+# added files for EXT2FS option
+#
+# Revision 1.1.1.1  1995/03/02  21:49:26  mike
+# Initial Lites release from hut.fi
+#
  */
 /* 
  *	File:	conf/files
@@ -126,8 +122,6 @@ fileif	umapfs		miscfs/umapfs/umap_vnops.c
 fileif	union		miscfs/union/union_subr.c
 fileif	union		miscfs/union/union_vfsops.c
 fileif	union		miscfs/union/union_vnops.c
-fileif	devfs		miscfs/devfs/devfs_vfsops.c
-fileif	devfs		miscfs/devfs/devfs_vnops.c	
 fileif	bpfilter	net/bpf.c
 fileif	bpfilter	net/bpf_filter.c
 file			net/if.c
@@ -350,7 +344,7 @@ file			libkern/skpc.c
 file			libkern/mach_error.c
 file			libkern/queue.c
 
-/* Linux file systems */
+# Linux file systems
 fileif	ext2fs		ufs/ext2fs/ext2_vfsops.c
 fileif	ext2fs		ufs/ext2fs/ext2_vnops.c
 fileif	ext2fs		ufs/ext2fs/ext2_subr.c

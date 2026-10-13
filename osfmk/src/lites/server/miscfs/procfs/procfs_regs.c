@@ -37,7 +37,7 @@
  *	@(#)procfs_regs.c	8.3 (Berkeley) 1/27/94
  *
  * From:
- *	$Id: procfs_regs.c,v 1.2 2000/10/27 01:58:46 welchd Exp $
+ *	$Id: procfs_regs.c,v 1.1.1.1 1995/03/02 21:49:51 mike Exp $
  */
 
 #include <sys/param.h>

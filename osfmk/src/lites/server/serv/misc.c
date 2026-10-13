@@ -36,10 +36,6 @@
  *	Support for multi-threaded programs.
  *
  * $Log: misc.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/03/23  01:44:05  law
  * Update to 950323 snapshot + utah changes
  *
@@ -232,7 +228,7 @@ void boot(
 	register struct buf *bp;
 	int	iter, nbusy, obusy;
 	struct proc *p;
-   
+
 #if 0 /* Does not work if ETHER_AS_SYSCALL */
 	(void) splnet();
 #endif

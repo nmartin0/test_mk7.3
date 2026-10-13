@@ -23,10 +23,6 @@
 #	
 # HISTORY
 # $Log: Makerules,v $
-# Revision 1.2  2000/10/27 01:53:08  welchd
-#
-# Updated to latest source
-#
 # Revision 1.2  1995/07/12  00:37:39  sclawson
 # fixed to be more sane about cross compiling.
 #

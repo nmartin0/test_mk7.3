@@ -1,4 +1,4 @@
-/*
+/* 
  * Mach Operating System
  * Copyright (c) 1994 Johannes Helander
  * All Rights Reserved.
@@ -16,18 +16,6 @@
 /*
  * HISTORY
  * $Log: e_linux.c,v $
- * Revision 1.4  2000/11/26 01:35:55  welchd
- *
- * Fixed to getdents interface
- *
- * Revision 1.3  2000/11/07 00:41:25  welchd
- *
- * Added support for executing dynamically linked Linux ELF binaries
- *
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/09/03  21:22:05  gback
  * added support for Linux mount and reboot
  *
@@ -58,17 +46,6 @@ static sigset_t sigmask_bsd_to_linux(sigset_t omask);
 inline int signal_number_bsd_to_linux(int old_sig);
 inline int signal_number_linux_to_bsd(int old_sig);
 extern int syscall_debug;
-
-errno_t e_linux_pause(int* retval)
-{
-   return(e_sigsuspend(0xffff));
-}
-
-errno_t e_linux_nanosleep(const struct timespec* req, struct timespec* rem,
-			  int* retval)
-{
-   
-}
 
 /* Linux mount support */
 /*
@@ -187,69 +164,9 @@ struct linux_mmap_args {
 	unsigned long off;
 };
 
-#define LINUX_MAP_SHARED     (0x1)
-#define LINUX_MAP_PRIVATE    (0x2)
-#define LINUX_MAP_FIXED      (0x10)
-#define LINUX_MAP_ANON       (0x20)
-#define LINUX_MAP_GROWSDOWN  (0x100)
-#define LINUX_MAP_DENYWRITE  (0x800)
-#define LINUX_MAP_EXECUTABLE (0x1000)
-#define LINUX_MAP_LOCKED     (0x2000)
-#define LINUX_MAP_NORESERVE  (0x4000)
-
 errno_t e_linux_mmap(struct linux_mmap_args *args, caddr_t *addr)
-{  
-   errno_t err;
-   int flags;
-   unsigned long iaddr;
-   
-#if 0
-   e_emulator_error("e_linux_mmap(start 0x%x, length %d, prot %x, flags %x, "
-		    "fd %d, off %x", args->addr, args->len, args->prot,
-		    args->flags, args->fd, args->off);
-#endif   
-   
-   flags = 0;
-   if (args->flags & LINUX_MAP_SHARED)
-     {
-	flags = flags | MAP_SHARED;
-     }
-   if (args->flags & LINUX_MAP_PRIVATE)
-     {
-	flags = flags | MAP_PRIVATE;
-     }
-   if (args->flags & LINUX_MAP_FIXED)
-     {
-	flags = flags | MAP_FIXED;
-     }
-   if (args->flags & LINUX_MAP_ANON)
-     {
-	flags = flags | MAP_ANON;
-     }
-   /* FIXME: Handle the other flags to the linux system call */
-   
-   iaddr = args->addr;
-   if (iaddr == 0)
-     {
-	iaddr = 0x40000000;
-     }
-   
-   err = e_mmap(iaddr,
-		args->len,
-		args->prot,  /* Protection constants are same */
-		flags,
-		args->fd,
-		args->off,
-		addr);
-   if (err)
-     {
-	*addr = (caddr_t *)-1;
-	return(err);
-     }
-#if 0
-   e_emulator_error("e_linux_mmap() = 0x%x", *addr);
-#endif   
-   return(err);
+{
+	return ENOSYS;
 }
 
 extern vm_offset_t heap_end;
@@ -272,7 +189,7 @@ errno_t e_linux_brk(void *new, int *retval)
 
 struct linux_dirent {
         long		d_ino;
-        unsigned int 	d_off;
+        bnr_off_t	d_off;
         unsigned short	d_reclen;
         char		d_name[256];
 };
@@ -292,7 +209,6 @@ int readdir_last_fd = 0;
 int readdir_seek = 0;
 
 boolean_t linux_readdir_debug = FALSE;
-
 
 errno_t e_linux_readdir(
 	int			fd,
@@ -356,338 +272,19 @@ errno_t e_linux_readdir(
 	return ESUCCESS;
 }
 
-static unsigned int convert_dents(char* in_buf,
-				  char* out_buf,
-				  unsigned int nread,
-				  unsigned int count,
-				  unsigned int* last_offset)
-{
-   unsigned int j;
-   unsigned int i;
-   unsigned int k;
-   struct linux_dirent* lde;
-   struct dirent* de;
-   
-#if 0
-   j = 0;
-   while (j < nread)
-     {
-	de = (struct dirent *)(in_buf + j);
-	
-	if (de->d_reclen == 0)
-	  {
-	     break;
-	  }
-	
-	e_emulator_error("%d %d %s %d", 
-			 j, de->d_fileno, de->d_name, de->d_reclen);
-	
-	j = j + de->d_reclen;
-     }
-#endif
-   
-   j = 0;
-   k = 0;
-   memset(out_buf, 0, count);
-   while (j < nread)
-     {
-	de = (struct dirent *)(in_buf + j);
-	lde = (struct linux_dirent *)(out_buf + k);
-	
-	if (k + 10 + de->d_namlen + 1 >= count ||
-	    de->d_reclen == 0)
-	  {
-	     break;
-	  }
-	
-	memcpy(lde->d_name, de->d_name, de->d_namlen);
-	lde->d_name[de->d_namlen] = 0;
-	lde->d_ino = de->d_fileno;
-	lde->d_off = j + de->d_reclen; 
-	lde->d_reclen = 10 + de->d_namlen + 1;
-	if ((lde->d_reclen % 4) != 0)
-	  {
-	     lde->d_reclen = lde->d_reclen + 4 - (lde->d_reclen % 4);
-	  }
-	
-	j = j + de->d_reclen;
-	k = k + lde->d_reclen;
-     }
-   *last_offset = j;
-   
-#if 0
-   i = 0;
-   while (i < k)
-     {
-	lde = (struct linux_dirent *)(out_buf + i);
-	
-	e_emulator_error("%d %d %d %d %s", 
-			 i, lde->d_ino, lde->d_off, lde->d_reclen, 
-			 lde->d_name);
-	
-	i = i + lde->d_reclen;
-     }
-#endif   
-   
-   return(k);
-}
-
-errno_t e_linux_getdents(unsigned int fd, struct linux_dirent* dirp, 
-			 unsigned int count, unsigned int* retval)
-{
-   long offset;
-   int nread;
-   errno_t err;
-   void* tmp_buffer;   
-   unsigned int k;
-   bnr_off_t start_offset;
-   unsigned int last_offset;
-   
-//   e_emulator_error("e_linux_getdents(fd %d, dirp %x, count %d)",
-//		    fd, dirp, count);
-   
-   tmp_buffer = alloca(count);
-   if (tmp_buffer == NULL)
-     {
-	return(ENOMEM);
-     }
-   
-   err = e_bnr_lseek(fd, 0, SEEK_CUR, &start_offset);
-   if (err)
-     {
-	e_emulator_error("e_bnr_seek failed %d", err);
-	return(err);
-     }
-//   e_emulator_error("start_offset %d", start_offset);
-   
-   err = e_lite_getdirentries(fd, tmp_buffer, count, &offset, &nread);
-   
-//   e_emulator_error("nread %d err %d", nread, err);
-   
-   if (err)
-     {
-	return(err);
-     }
-   
-   if (nread <= 0)
-     {
-	*retval = 0;
-	return(ESUCCESS);
-     }
-   
-   k = convert_dents(tmp_buffer, (char*)dirp, nread, count, &last_offset);
-   
-   last_offset = last_offset + start_offset;
-//   e_emulator_error("last_offset %d", last_offset);
-   err = e_bnr_lseek(fd, last_offset, SEEK_SET, &start_offset);
-   if (err)
-     {
-	e_emulator_error("e_bnr_seek failed 2 err %d", err);
-	return(err);
-     }
-   
-//   e_emulator_error("k %d", k);
-   
-   *retval = k;
-  
-#if 0   
-   do
-     {
-	unsigned char c;
-	unsigned int n;
-	
-	(void)e_read(1, &c, 1, &n);
-     } while(0);
-#endif   
-   
-   return(ESUCCESS);
-}
-
 errno_t e_linux_open(const char *path, int flags, int mode, int *fd)
 {
-   errno_t err;
-   
-   err = e_open(path, flags, mode, fd);
-   if (*fd == readdir_last_fd)
-     readdir_seek = 0;
-   return err;
+	errno_t err;
+	err = e_open(path, flags, mode, fd);
+	if (*fd == readdir_last_fd)
+	    readdir_seek = 0;
+	return err;
 }
 
 #include <e_templates.h>
 DEF_STAT(linux)
 DEF_LSTAT(linux)
 DEF_FSTAT(linux)
-
-struct stat64
-{
-   unsigned long long st_dev;
-   unsigned short int  __pad1;
-   unsigned long  __st_ino;
-   
-   unsigned int   st_mode;
-   unsigned int   st_nlink;
-   unsigned int   st_uid;
-   unsigned int   st_gid;
-   
-   unsigned long long st_rdev;
-   unsigned short int  __pad2;
-   
-   long int      st_size;
-   long int st_blksize;
-   
-   long int  st_blocks; /* Number 512-byte blocks allocated */
-   
-   long int  linux_stat64_st_atime;
-   unsigned long int  __pad5;
-   
-   long int  linux_stat64_st_mtime;
-   unsigned long  __pad6;
-   
-   long int  linux_stat64_st_ctime;
-   unsigned long  __pad7;
-   
-   unsigned long int unused1;
-   unsigned long int usused2;
-};
-
-struct linux_stat {
-	short unsigned int st_dev;
-	short unsigned int __pad1;
-	long unsigned int st_ino;
-	short unsigned int st_mode;
-	short unsigned int st_nlink;
-	short unsigned int st_uid;
-	short unsigned int st_gid;
-	short unsigned int st_rdev;
-	short unsigned int __pad2;
-	long int st_size;
-	long unsigned int st_blksize;
-	long unsigned int st_blocks;
-	long int linux_st_atime;
-	long unsigned int __unused1;
-	long int linux_st_mtime;
-	long unsigned int __unused2;
-	long int linux_st_ctime;
-	long unsigned int __unused3;
-	long unsigned int __unused4;
-	long unsigned int __unused5;
-};
-
-errno_t e_linux_fstat64(unsigned long fd, struct stat64* statbuf, long flags,
-			errno_t* rerr)
-{
-   struct linux_stat tstatbuf;
-   errno_t err;
-   
-   err = e_linux_fstat(fd, &tstatbuf);
-   if (err)
-     {
-	*rerr = err;
-	return(err);
-     }
-   
-   statbuf->st_dev = tstatbuf.st_dev;
-   statbuf->__st_ino = tstatbuf.st_ino;
-   statbuf->st_mode = tstatbuf.st_mode;
-   statbuf->st_nlink = tstatbuf.st_nlink;
-   statbuf->st_uid = tstatbuf.st_uid;
-   statbuf->st_gid = tstatbuf.st_gid;
-   statbuf->st_rdev = tstatbuf.st_rdev;
-   statbuf->st_size = tstatbuf.st_size;
-   statbuf->st_blksize = tstatbuf.st_blksize;
-   statbuf->st_blocks = tstatbuf.st_blocks;
-   statbuf->linux_stat64_st_atime = tstatbuf.linux_st_atime;
-   statbuf->linux_stat64_st_mtime = tstatbuf.linux_st_mtime;
-   statbuf->linux_stat64_st_ctime = tstatbuf.linux_st_ctime;
-//   statbuf->st_ino = tstatbuf.st_ino;
-   
-   return(ESUCCESS);
-}
-
-errno_t e_linux_lstat64(char* filename, struct stat64* statbuf, long flags,
-			errno_t* rerr)
-{
-   struct linux_stat tstatbuf;
-   errno_t err;
-   
-   err = e_linux_lstat(filename, &tstatbuf);
-   if (err)
-     {
-	*rerr = err;
-	return(err);
-     }
-   
-   statbuf->st_dev = tstatbuf.st_dev;
-   statbuf->__st_ino = tstatbuf.st_ino;
-   statbuf->st_mode = tstatbuf.st_mode;
-   statbuf->st_nlink = tstatbuf.st_nlink;
-   statbuf->st_uid = tstatbuf.st_uid;
-   statbuf->st_gid = tstatbuf.st_gid;
-   statbuf->st_rdev = tstatbuf.st_rdev;
-   statbuf->st_size = tstatbuf.st_size;
-   statbuf->st_blksize = tstatbuf.st_blksize;
-   statbuf->st_blocks = tstatbuf.st_blocks;
-   statbuf->linux_stat64_st_atime = tstatbuf.linux_st_atime;
-   statbuf->linux_stat64_st_mtime = tstatbuf.linux_st_mtime;
-   statbuf->linux_stat64_st_ctime = tstatbuf.linux_st_ctime;
-//   statbuf->st_ino = tstatbuf.st_ino;
-   
-   return(ESUCCESS);
-}
-
-errno_t e_linux_stat64(char* filename, struct stat64* statbuf, long flags,
-			errno_t* rerr)
-{
-   struct linux_stat tstatbuf;
-   errno_t err;
-   
-   err = e_linux_stat(filename, &tstatbuf);
-   if (err)
-     {
-	*rerr = err;
-	return(err);
-     }
-   
-   statbuf->st_dev = tstatbuf.st_dev;
-   statbuf->__st_ino = tstatbuf.st_ino;
-   statbuf->st_mode = tstatbuf.st_mode;
-   statbuf->st_nlink = tstatbuf.st_nlink;
-   statbuf->st_uid = tstatbuf.st_uid;
-   statbuf->st_gid = tstatbuf.st_gid;
-   statbuf->st_rdev = tstatbuf.st_rdev;
-   statbuf->st_size = tstatbuf.st_size;
-   statbuf->st_blksize = tstatbuf.st_blksize;
-   statbuf->st_blocks = tstatbuf.st_blocks;
-   statbuf->linux_stat64_st_atime = tstatbuf.linux_st_atime;
-   statbuf->linux_stat64_st_mtime = tstatbuf.linux_st_mtime;
-   statbuf->linux_stat64_st_ctime = tstatbuf.linux_st_ctime;
-//   statbuf->st_ino = tstatbuf.st_ino;
-   
-   return(ESUCCESS);
-}
-
-errno_t e_linux_lchown32(const char* filename, unsigned long user, 
-			 unsigned long group, errno_t* rerr)
-{
-   errno_t err;
-   
-   err = e_chown(filename, user, group);
-   *rerr = err;
-   
-   return(err);
-}
-
-errno_t e_linux_fcntl64(unsigned int fd,
-			unsigned int cmd,
-			unsigned long arg,
-			int* ret)
-{
-   errno_t err;
-   
-   err = e_fcntl(fd, cmd, arg, ret);
-   
-   return(err);
-}
 
 errno_t e_linux_kill(linux_pid_t pid, int sig)
 {
@@ -707,7 +304,7 @@ errno_t e_linux_wait4(
 	errno_t err;
 	pid_t wpid;
 	int status;
-        
+
 	err = e_lite_wait4((pid_t) pid, &status, options, rusage, &wpid);
 	if (err)
 	    return err;
@@ -1739,5 +1336,4 @@ errno_t e_linux_sysvipc(int flavor, int a, int b, int c, void *d, int *retval)
 		return e_mach_error_to_errno(LITES_ENOSYS);
 	}
 }
-
 

@@ -35,7 +35,7 @@
  *
  *	@(#)portal.h	8.4 (Berkeley) 1/21/94
  *
- * $Id: portal.h,v 1.2 2000/10/27 01:58:46 welchd Exp $
+ * $Id: portal.h,v 1.1.1.1 1995/03/02 21:49:50 mike Exp $
  */
 
 struct portal_args {

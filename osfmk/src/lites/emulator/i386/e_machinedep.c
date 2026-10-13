@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: e_machinedep.c,v $
- * Revision 1.2  2000/10/27 01:55:28  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.2  1995/03/23  01:15:38  law
  * lites-950323 from jvh.
  *
@@ -249,7 +245,6 @@ boolean_t take_a_signal(struct i386_thread_state *state)
 			break;
 		}
 	      case BT_LINUX:
-	      case BT_LINUX_ELF:
 		{
 			struct linux_sigcontext sc;
 			/* Take care of one shot signals. XXX Breaks bash. */

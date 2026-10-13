@@ -19,14 +19,6 @@
  *	Elf support from Jeffrey Law.
  *
  * $Log: exec_file.c,v $
- * Revision 1.3  2000/11/07 00:41:29  welchd
- *
- * Added support for executing dynamically linked Linux ELF binaries
- *
- * Revision 1.2  2000/10/27 01:55:29  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/09/01  06:55:35  gback
  * added QMAGIC support for Linux
  *
@@ -111,35 +103,12 @@ void guess_binary_type_from_header(
 		return;
 	}
 
-        /* dwelch: Check for Linux ELF binaries as well */
-	if (hdr->magic == 0x464c457f) /* 'ELF\0177' little endian */
-	     {		
-		if ((unsigned) hdr->elf.ehdr.e_entry > 0x10000000)
-		  {
-		     *bt = BT_LITES_ELF;
-		     *ct = CPU_TYPE_I386; /* rather check the machine field */
-		     return;
-		  }
-		else
-		  {
-		     unsigned int phdr;
-		     elf_exec* elf;
-		     		     
-		     elf = &hdr->elf;
-		     for (phdr = 0; phdr < elf->ehdr.e_phnum; phdr++) 
-		       {
-			  if (elf->phdrs[phdr].p_type == PT_INTERP)
-			    {
-			       *bt = BT_LINUX_DYN_ELF;
-			       *ct = CPU_TYPE_I386;
-			       return;
-			    }
-		       }		     		     
-		     *bt = BT_LINUX_ELF;
-		     *ct = CPU_TYPE_I386;
-		     return;
-		  }
-	     }
+	if ((hdr->magic == 0x464c457f) /* 'ELF\0177' little endian */
+	    && (unsigned) hdr->elf.ehdr.e_entry > 0x10000000) {
+		*bt = BT_LITES_ELF;
+		*ct = CPU_TYPE_I386; /* rather check the machine field */
+		return;
+	}
 
 	/* Linked by FreeBSD or NetBSD linker or Linux with -qmagic */
 	if ((hdr->short_magic == QMAGIC || (hdr->magic>>16) == 0x0b01)
@@ -274,7 +243,7 @@ void guess_binary_type_from_header(
 		}
 		return;
 	}
-           
+
 	if (hdr->elf.ehdr.e_ident[0] == ELFMAG0
 	    && hdr->elf.ehdr.e_ident[1] == ELFMAG1
 	    && hdr->elf.ehdr.e_ident[2] == ELFMAG2
@@ -348,8 +317,6 @@ mach_error_t parse_exec_file(
 		break;
 	      case BT_LITES_ELF:
 	      case BT_ELF:
-	      case BT_LINUX_ELF:
-              case BT_LINUX_DYN_ELF:
 		return elf_parse_exec_file(&hdr->elf, bt, li, secs, nsecs);
 		break;
 	      default:
@@ -619,7 +586,8 @@ mach_error_t elf_parse_exec_file(
 		return LITES_EFBIG;
 
 	exec_load_info_clear(li);
-        
+
+
 	/* Now iterate over them filling in info as needed.  */
 	for (phdr = 0; phdr < elf->ehdr.e_phnum; phdr++) {
 		vm_size_t off;

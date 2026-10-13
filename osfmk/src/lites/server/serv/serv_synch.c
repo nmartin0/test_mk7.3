@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: serv_synch.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1996/03/14  21:08:36  sclawson
  * Ian Dall's signal fixes.
  *

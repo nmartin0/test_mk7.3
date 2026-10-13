@@ -47,20 +47,6 @@
 #error Provide an bitops.h file, please !
 #endif
 
-void * memscan(void * addr, int c, size_t size)
-{
-	unsigned char * p = (unsigned char *) addr;
-
-	while (size) {
-		if (*p == c)
-			return (void *) p;
-		p++;
-		size--;
-	}
-  	return (void *) p;
-}
-
-
 unsigned long ext2_count_free __P((struct buffer_head *, unsigned int));
 
 #define in_range(b, first, len)		((b) >= (first) && (b) <= (first) + (len) - 1)
@@ -230,7 +216,7 @@ void ext2_free_blocks (struct mount * mp, unsigned long block,
 			    block, count);
 
 	for (i = 0; i < count; i++) {
-		if (!test_and_clear_bit (bit + i, bh->b_data))
+		if (!clear_bit (bit + i, bh->b_data))
 			printf ("ext2_free_blocks: "
 				      "bit already cleared for block %lu", 
 				      block);
@@ -409,7 +395,7 @@ got_block:
 			    "Allocating block in system zone - "
 			    "%dth block = %u in group %u", j, tmp, i);
 
-	if (test_and_set_bit (j, bh->b_data)) {
+	if (set_bit (j, bh->b_data)) {
 		printf ( "ext2_new_block: "
 			 "bit already set for block %d", j);
 		goto repeat;
@@ -426,7 +412,7 @@ got_block:
 		*prealloc_block = tmp + 1;
 		for (k = 1;
 		     k < 8 && (j + k) < EXT2_BLOCKS_PER_GROUP(sb); k++) {
-			if (test_and_set_bit (j + k, bh->b_data))
+			if (set_bit (j + k, bh->b_data))
 				break;
 			(*prealloc_count)++;
 		}	

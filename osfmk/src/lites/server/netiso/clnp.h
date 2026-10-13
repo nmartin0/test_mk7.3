@@ -59,8 +59,8 @@ SOFTWARE.
 /*
  * ARGO Project, Computer Sciences Dept., University of Wisconsin - Madison
  */
-/* $Header: /cvsroot/xmach/lites/server/netiso/clnp.h,v 1.2 2000/10/27 01:58:48 welchd Exp $ */
-/* $Source: /cvsroot/xmach/lites/server/netiso/clnp.h,v $ */
+/* $Header: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/clnp.h,v 1.1.1.1 1995/03/02 21:49:57 mike Exp $ */
+/* $Source: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/clnp.h,v $ */
 
 /* should be config option but cpp breaks with too many #defines */
 #define	DECBIT

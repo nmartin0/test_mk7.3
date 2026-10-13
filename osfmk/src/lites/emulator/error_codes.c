@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: error_codes.c,v $
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.4  1995/09/02  05:38:31  mike
  * XXX parisc ifdefs to avoid compilation problems on i386
  *
@@ -148,7 +144,6 @@ errno_t e_mach_error_to_errno(mach_error_t kr)
 	      case BT_LINUX:
 	      case BT_LINUX_SHLIB:
 	      case BT_LINUX_O:
-	      case BT_LINUX_ELF:
 		return e_mach_error_to_linux_errno(kr);
 #ifdef parisc
 	      case BT_HPUX:

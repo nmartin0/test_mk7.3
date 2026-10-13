@@ -33,10 +33,6 @@
  *	Default to signal zero on unknown exceptions and EXC_SOFTWARE codes.
  *
  * $Log: ux_exception.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1996/03/14  21:08:38  sclawson
  * Ian Dall's signal fixes.
  *

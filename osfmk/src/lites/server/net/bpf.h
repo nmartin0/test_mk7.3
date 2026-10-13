@@ -37,7 +37,7 @@
  *
  *      @(#)bpf.h	8.1 (Berkeley) 6/10/93
  *
- * @(#) $Header: /cvsroot/xmach/lites/server/net/bpf.h,v 1.2 2000/10/27 01:58:47 welchd Exp $ (LBL)
+ * @(#) $Header: /n/fast/usr/lsrc/mach/CVS/lites/server/net/bpf.h,v 1.1.1.2 1995/03/23 01:17:20 law Exp $ (LBL)
  */
 
 /*

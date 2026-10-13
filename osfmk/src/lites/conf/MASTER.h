@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: MASTER.h,v $
- * Revision 1.2  2000/10/27 01:53:08  welchd
- *
- * Updated to latest source
- *
  * Revision 1.5  1996/02/17  01:05:43  sclawson
  * added --enable-slice option.
  *
@@ -51,10 +47,10 @@
 #define	BOOT	SERVER+ether+inet+ffs+pty
 
 /*  Standard configuration */
-#define	STD	BOOT+second_server+syscalltrace+compat_43+compat_oldsock+kernfs+nfs+atsys+cd9660
+#define	STD	BOOT+second_server+syscalltrace+compat_43+compat_oldsock+kernfs+nfs+atsys
 
 /*  Everything that is known to work */
-#define	LARGE	STD+union+msdosfs+ext2fs+slice
+#define	LARGE	STD+ext2fs+union+msdosfs+slice
 
 #define	DEBUG	debug+lineno+diagnostic+assertions+queue_assertions+machid_register/*+mutex_holder_assert*/
 

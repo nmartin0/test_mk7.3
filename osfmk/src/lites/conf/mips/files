@@ -1,0 +1,37 @@
+/* 
+ * Mach Operating System
+ * Copyright (c) 1994 Johannes Helander
+ * All Rights Reserved.
+ * 
+ * Permission to use, copy, modify and distribute this software and its
+ * documentation is hereby granted, provided that both the copyright
+ * notice and this permission notice appear in all copies of the
+ * software, derivative works or modified versions, and any portions
+ * thereof, and that both notices appear in supporting documentation.
+ * 
+ * JOHANNES HELANDER ALLOWS FREE USE OF THIS SOFTWARE IN ITS "AS IS"
+ * CONDITION.  JOHANNES HELANDER DISCLAIMS ANY LIABILITY OF ANY KIND
+ * FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
+ */
+/*
+ * HISTORY
+ * $Log: files,v $
+# Revision 1.1.1.1  1995/03/02  21:49:26  mike
+# Initial Lites release from hut.fi
+#
+ */
+/* 
+ *	File:	conf/mips/files
+ *	Author:	Johannes Helander, Helsinki University of Technology, 1994.
+ *
+ *	List of R3000 specific files that are part of the Lites server.
+ */
+
+fileif	inet		netinet/in_cksum.c
+fileif	ns		netns/ns_cksum.c
+
+fileif	lites		mips/serv_machdep.c
+fileif	lites		mips/conf.c
+fileif	lites		mips/mips_exception.c
+fileif	lites		mips/misc_asm.s
+fileif	second_server	mips/second_syscalls.s

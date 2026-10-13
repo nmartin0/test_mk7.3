@@ -50,7 +50,6 @@
 #include "ext2fs.h"
 #include "minixfs.h"
 #include "msdosfs.h"
-#include "devfs.h"
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -186,13 +185,6 @@ extern	struct vfsops msdosfs_vfsops;
 #define	PC_VFSOPS	NULL
 #endif
 
-#if DEVFS
-extern	struct vfsops devfs_vfsops;
-#define DEVFS_VFSOPS	&devfs_vfsops
-#else
-#define DEVFS_VFSOPS	NULL
-#endif
-
 struct vfsops *vfssw[] = {
 	NULL,			/* 0 = MOUNT_NONE */
 	UFS_VFSOPS,		/* 1 = MOUNT_UFS */
@@ -212,7 +204,6 @@ struct vfsops *vfssw[] = {
 	UNION_VFSOPS,		/* 15 = MOUNT_UNION */
 	EXT2FS_VFSOPS,		/* 16 = MOUNT_EXT2FS */
 	MINIXFS_VFSOPS,		/* 17 = MOUNT_MINIXFS */
-        DEVFS_VFSOPS,           /* 18 = MOUNT_DEVFS */
 	0
 };
 
@@ -254,8 +245,6 @@ extern struct vnodeopv_desc minixfs_vnodeop_opv_desc;
 extern struct vnodeopv_desc minixfs_specop_opv_desc;
 extern struct vnodeopv_desc minixfs_fifoop_opv_desc;
 extern struct vnodeopv_desc msdosfs_vnodeop_opv_desc;
-extern struct vnodeopv_desc devfs_vnodeop_opv_desc;
-extern struct vnodeopv_desc devfs_specop_opv_desc;
 
 struct vnodeopv_desc *vfs_opv_descs[] = {
 	&ffs_vnodeop_opv_desc,
@@ -330,10 +319,5 @@ struct vnodeopv_desc *vfs_opv_descs[] = {
 #if MSDOSFS
 	&msdosfs_vnodeop_opv_desc,
 #endif
-#if DEVFS
-	&devfs_vnodeop_opv_desc,
-        &devfs_specop_opv_desc,
-#endif
-
 	NULL
 };

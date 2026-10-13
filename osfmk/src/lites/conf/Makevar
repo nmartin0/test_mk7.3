@@ -1,2 +1,0 @@
-# Automatically generated. Do not edit.
-TARGET_LDFLAGS += -e __start

@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: kern_exit.c,v $
- * Revision 1.2  2000/10/27 01:58:45  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/03/23  01:44:39  law
  * Update to 950323 snapshot + utah changes
  *
@@ -128,7 +124,7 @@ void proc_died(struct proc *p)
 	mach_error_t kr;
 
 	if (proc_died_debug)
-	    printf ("proc_died: pid=%d\n", p->p_pid);
+	    printf ("proc_died: pid=%d", p->p_pid);
 
 	if (p->p_pid == 1) {
 		if (server_is_going_down)
@@ -394,7 +390,6 @@ int wait4(q, uap, retval)
 	if (uap->options &~ (WUNTRACED|WNOHANG))
 		return (EINVAL);
 #endif
-   
 loop:
 	nfound = 0;
 	for (p = q->p_cptr; p; p = p->p_osptr) {

@@ -16,14 +16,6 @@
 /*
  * HISTORY
  * $Log: e_uname.c,v $
- * Revision 1.3  2000/11/07 00:41:25  welchd
- *
- * Added support for executing dynamically linked Linux ELF binaries
- *
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.1  1995/03/02  21:49:28  mike
  * Initial Lites release from hut.fi
  *
@@ -216,7 +208,6 @@ errno_t e_linux_uname(struct linux_utsname *name)
 
 	rval = 0;
 
-#if 0   
 	mib[0] = CTL_KERN;
 	mib[1] = KERN_OSTYPE;
 	len = sizeof(name->sysname);
@@ -224,8 +215,6 @@ errno_t e_linux_uname(struct linux_utsname *name)
 		rval = err;
 		strcpy((void *) &name->sysname, "sysname");
 	}
-#endif
-        strcpy((void *) &name->sysname, "Linux");
 
 	mib[0] = CTL_KERN;
 	mib[1] = KERN_HOSTNAME;
@@ -235,7 +224,6 @@ errno_t e_linux_uname(struct linux_utsname *name)
 		strcpy((void *) &name->nodename, "nodename");
 	}
 
-#if 0   
 	mib[0] = CTL_KERN;
 	mib[1] = KERN_OSRELEASE;
 	len = sizeof(name->release);
@@ -243,10 +231,7 @@ errno_t e_linux_uname(struct linux_utsname *name)
 		rval = err;
 		strcpy((void *) &name->release, "sysname");
 	}
-#endif
-        strcpy(&name->release, "2.4.0-test8");
-   
-#if 0   
+
 	/* The version may have newlines in it, turn them into spaces. */
 	mib[0] = CTL_KERN;
 	mib[1] = KERN_VERSION;
@@ -261,10 +246,7 @@ errno_t e_linux_uname(struct linux_utsname *name)
 					*p = ' ';
 				else
 					*p = '\0';
-#endif
-        strcpy((void *) &name->version, "#9");
 
-#if 0   
 	mib[0] = CTL_HW;
 	mib[1] = HW_MACHINE;
 	len = sizeof(name->machine);
@@ -272,9 +254,7 @@ errno_t e_linux_uname(struct linux_utsname *name)
 		rval = err;
 		strcpy((void *) &name->sysname, "machine");
 	}
-#endif
-        strcpy((void *) &name->sysname, "i386");
-   
+
 	name->domainname[0] = '\0';
 
 	return ESUCCESS;	/* XXX */

@@ -22,18 +22,6 @@
  *	Detect 4.4 indirect syscall.
  *
  * $Log: e_trampoline.c,v $
- * Revision 1.4  2000/11/26 01:35:55  welchd
- *
- * Fixed to getdents interface
- *
- * Revision 1.3  2000/11/07 00:41:29  welchd
- *
- * Added support for executing dynamically linked Linux ELF binaries
- *
- * Revision 1.2  2000/10/27 01:55:28  welchd
- *
- * Updated to latest source
- *
  * Revision 1.3  1996/03/14  21:07:47  sclawson
  * Ian Dall's signal fixes.
  *
@@ -63,11 +51,9 @@
 #include <i386/eflags.h>
 
 int	emul_low_entry = -9;
-//int	emul_high_entry = 210;
-int     emul_high_entry = 222;
+int	emul_high_entry = 210;
 
 extern emul_trampoline();
-extern void emul_linux_setup3(task_t task, enum binary_type binary_type);
 
 int current_nsysent = 0;
 struct sysent *current_sysent = 0;
@@ -77,15 +63,12 @@ int	emul_linux_trap = 0;
 void emul_setup(task_t task, enum binary_type binary_type)
 {
 	int i;
-        kern_return_t	rc;
-
+	kern_return_t	rc;
 
 	switch (binary_type) {
 	      case BT_LINUX:
 	      case BT_LINUX_O:
 	      case BT_LINUX_SHLIB:
-	      case BT_LINUX_ELF:
-	      case BT_LINUX_DYN_ELF:
 		/* Linux uses a nonstandard system call calling convention */
 	        if (emul_linux_trap) {
 		    e_linux_setup(mach_task_self(), binary_type);
@@ -94,21 +77,7 @@ void emul_setup(task_t task, enum binary_type binary_type)
 	      default:
 		/* code below */
 	}
-   
-   	switch (binary_type) {
-	      case BT_LINUX:
-	      case BT_LINUX_O:
-	      case BT_LINUX_SHLIB:
-	      case BT_LINUX_ELF:
-	      case BT_LINUX_DYN_ELF:
-		/* Linux uses a nonstandard system call calling convention */
-	            emul_linux_setup3(mach_task_self(), binary_type);
-		    return;
-	      default:
-		/* code below */
-	}
-  
-   
+
 	for (i = emul_low_entry;
 	     i <= emul_high_entry;
 	     i++) {
@@ -133,7 +102,6 @@ void emul_setup(task_t task, enum binary_type binary_type)
 	      case BT_LINUX:
 	      case BT_LINUX_O:
 	      case BT_LINUX_SHLIB:
-	      case BT_LINUX_ELF:
 	        current_nsysent = e_linux_nsysent;
 		current_sysent = e_linux_sysent;
 		break;
@@ -153,6 +121,7 @@ void emul_setup(task_t task, enum binary_type binary_type)
 		current_sysent = e_bsd_sysent;
 		break;
 	}
+
 }
 
 struct emul_regs {
@@ -302,13 +271,7 @@ emul_syscall(struct emul_regs *regs)
 restart_system_call:
 	interrupt = FALSE;
 	error = ESUCCESS;
-   
-        args = (int *)(regs);
-        if (syscall_debug > 2)
-	    e_emulator_error("emul_syscall (x%x, x%x, x%x, x%x, x%x, x%x, x%x, x%x)",
-			     args[0], args[1], args[2],
-			     args[3], args[4], args[5], args[6], args[7]);
-   
+
 	args = (int *)(regs+1);	/* args on stack top */
 	args++;	/* point to first argument - skip return address */
 
@@ -511,7 +474,6 @@ noreturn emul_exec_start(
 	      case BT_LINUX:
 	      case BT_LINUX_O:
 	      case BT_LINUX_SHLIB:
-	      case BT_LINUX_ELF:
 		emul_exec_linux_start(kframe, binary_type,
 				      argc, argv, envp, li);
 	      default:

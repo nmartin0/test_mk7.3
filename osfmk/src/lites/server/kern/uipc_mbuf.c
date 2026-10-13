@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: uipc_mbuf.c,v $
- * Revision 1.2  2000/10/27 01:58:45  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.1  1995/03/02  21:49:45  mike
  * Initial Lites release from hut.fi
  *

@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: subr_prf.c,v $
- * Revision 1.2  2000/10/27 01:58:45  welchd
- *
- * Updated to latest source
- *
  * Revision 1.5  1995/08/15  06:49:01  sclawson
  * modifications from lites-1.1-950808
  *

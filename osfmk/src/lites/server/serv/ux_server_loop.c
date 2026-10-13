@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: ux_server_loop.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.7  1995/08/21  22:10:55  mike
  * nuke old leaky register code
  *

@@ -37,7 +37,7 @@
  *
  *      @(#)bpfdesc.h	8.1 (Berkeley) 6/10/93
  *
- * @(#) $Header: /cvsroot/xmach/lites/server/net/bpfdesc.h,v 1.2 2000/10/27 01:58:47 welchd Exp $ (LBL)
+ * @(#) $Header: /n/fast/usr/lsrc/mach/CVS/lites/server/net/bpfdesc.h,v 1.1.1.1 1995/03/02 21:49:53 mike Exp $ (LBL)
  */
 
 /*

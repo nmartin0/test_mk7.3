@@ -32,7 +32,7 @@
  *
  *	@(#)if_slvar.h	8.3 (Berkeley) 2/1/94
  *
- * $Header: /cvsroot/xmach/lites/server/net/if_slvar.h,v 1.2 2000/10/27 01:58:47 welchd Exp $
+ * $Header: /n/fast/usr/lsrc/mach/CVS/lites/server/net/if_slvar.h,v 1.1.1.1 1995/03/02 21:49:52 mike Exp $
  */
 
 #ifndef _NET_IF_SLVAR_H_

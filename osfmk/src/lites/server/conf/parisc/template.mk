@@ -26,9 +26,6 @@
 #
 # HISTORY
 # $Log: template.mk,v $
-# Revision 1.1.1.1  2000/05/06 20:54:04  xmach
-# Imported Source
-#
 # Revision 1.1.1.1  1995/03/02  21:49:42  mike
 # Initial Lites release from hut.fi
 #

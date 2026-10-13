@@ -21,10 +21,6 @@
  *    Make bsd_mon_switch and bsd_mon_dump call libprof1 functions.
  *
  * $Log: bsd_server_side.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.5  1995/08/30  22:15:25  mike
  * hack rpc for GDB support
  *

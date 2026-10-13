@@ -30,14 +30,6 @@
  *	Added "pad" to lseek arguments.  Offset is quad word aligned.
  *
  * $Log: e_bsd.c,v $
- * Revision 1.3  2000/11/07 00:41:24  welchd
- *
- * Added support for executing dynamically linked Linux ELF binaries
- *
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.6  1996/02/17  00:15:14  sclawson
  * e_mount() now checks for NetBSD-style mount strings by searching a table
  * of strings and mount numbers instead of assuming that the index into the
@@ -155,7 +147,7 @@ errno_t e_open(const char *path, int flags, int mode, int *fd_out)
 	kern_return_t kr;
 	int fd;
 
-	if (syscall_debug > 2)
+	if (syscall_debug > 1)
 	    e_emulator_error ("e_open(%s x%x x%x)", path, flags, mode);
 
 #ifdef notyet

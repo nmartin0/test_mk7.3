@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: port_object.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/08/18  18:02:49  mike
  * Add basic sanity check on sequence numbers.  If you get a bogus sequence number
  * (due to a malfunctioning RPC system :-) you can hang indefinately

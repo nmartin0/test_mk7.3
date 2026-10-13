@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: device_misc.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.6  1996/03/14  19:59:50  sclawson
  * Now #include "slice.h".
  *
@@ -772,7 +768,7 @@ disk_name_string(dev, part_count, str)
 	int minor_num = minor(dev);
 	char num[4];
 	int part;
-#if 	DISKSLICE
+#ifdef 	DISKSLICE
 	int slice;
 #endif 	/* DISKSLICE */
 	
@@ -794,19 +790,20 @@ disk_name_string(dev, part_count, str)
 	 * dkslice() always returns COMPATIBILITY_SLICE.
 	 */
 	part = minor_num % part_count;
-#if 	DISKSLICE
+#ifdef 	DISKSLICE
 	slice = dkslice(dev);
 	if (slice != WHOLE_DISK_SLICE) {
 	    if (slice != COMPATIBILITY_SLICE) {
-	        sprintf(num, "s%d", slice);
+	        sprintf(num, "s%d", slice - 1);
 		strcat(str, num);
-	    }
-	   if (part != RAW_PART || slice == COMPATIBILITY_SLICE) {
+	    } 
+
+	    if (part != RAW_PART || slice == COMPATIBILITY_SLICE) {
 #endif 	/* DISKSLICE */
 		num[0] = 'a' + part;
 		num[1] = 0;
 		strcat(str, num);
-#if 	DISKSLICE
+#ifdef 	DISKSLICE
 	    }
 	}
 #endif 	/* DISKSLICE */
@@ -939,7 +936,7 @@ parse_root_device(char *str)
 	if (major_num == nblkdev) {
 	    /* not found */
 	    return ((dev_t)-1);
-        }     
+        }
 	minor_num *= C_BLOCK_GET(bdevsw[major_num].d_flags);
 #ifdef 	DISKSLICE
 	if (c == 's') {

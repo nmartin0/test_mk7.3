@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: ether_io.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.3  1995/10/28  22:16:19  sclawson
  * Added support for the SIOCSIFMTU ioctl in ether_ioctl().
  *

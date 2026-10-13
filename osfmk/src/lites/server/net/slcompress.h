@@ -40,7 +40,7 @@
  *	- added sl_uncompress_tcp_part.
  *
  *	From: 	slcompress.h	7.4	90/06/28
- *	$Id: slcompress.h,v 1.2 2000/10/27 01:58:47 welchd Exp $
+ *	$Id: slcompress.h,v 1.2 1995/08/15 06:49:18 sclawson Exp $
  */
 
 #ifndef _SLCOMPRESS_H_

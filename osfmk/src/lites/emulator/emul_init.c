@@ -22,14 +22,6 @@
  *	Make sp aligned to an word boundary after args are loaded.
  *
  * $Log: emul_init.c,v $
- * Revision 1.3  2000/11/26 01:35:55  welchd
- *
- * Fixed to getdents interface
- *
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.2  1995/03/23  01:15:28  law
  * lites-950323 from jvh.
  *
@@ -51,7 +43,6 @@
 #include <mach/message.h>
 #include <bsd_types_gen.h>
 
-//int syscall_debug = 100;
 int syscall_debug = 0;
 
 void e_signal_child_setup(void);
@@ -88,7 +79,7 @@ int emulator_main(natural_t sp)
 	 * Initialize the emulator.
 	 */
 	emul_init();
-   
+
 	kr = emul_setup_argv(sp, &argv, &argc, &envp, &kframe, fname,
 			     &image_port);
 	if (kr) {		/* XXX */

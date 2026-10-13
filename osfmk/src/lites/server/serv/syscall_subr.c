@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: syscall_subr.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.3  1996/03/14  21:08:37  sclawson
  * Ian Dall's signal fixes.
  *
@@ -241,7 +237,7 @@ end_server_op(p, error, interrupt)
 	if (syscalltrace &&
 		(syscalltrace == p->p_pid || syscalltrace < 0)) {
 
-	    printf("    [%d] returns %d%s\n",
+	    printf("    [%d] returns %d%s",
 		p->p_pid,
 		error,
 		(interrupt && *interrupt) ? " Interrupt" : "");

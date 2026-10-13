@@ -1,5 +1,5 @@
-/* $Header: /cvsroot/xmach/lites/server/netiso/tp_driver.c,v 1.2 2000/10/27 01:58:48 welchd Exp $ */
-/* $Source: /cvsroot/xmach/lites/server/netiso/tp_driver.c,v $ */
+/* $Header: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/tp_driver.c,v 1.1.1.1 1995/03/02 21:49:56 mike Exp $ */
+/* $Source: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/tp_driver.c,v $ */
 #ifndef lint
 static char *rcsid = "$Header/**/$";
 #endif lint

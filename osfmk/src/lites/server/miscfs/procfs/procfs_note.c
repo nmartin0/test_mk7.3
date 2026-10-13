@@ -37,7 +37,7 @@
  *	@(#)procfs_note.c	8.2 (Berkeley) 1/21/94
  *
  * From:
- *	$Id: procfs_note.c,v 1.2 2000/10/27 01:58:46 welchd Exp $
+ *	$Id: procfs_note.c,v 1.1.1.1 1995/03/02 21:49:51 mike Exp $
  */
 
 #include <sys/param.h>

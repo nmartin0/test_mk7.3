@@ -16,10 +16,6 @@
 #
 # HISTORY
 # $Log: files,v $
-# Revision 1.2  2000/10/27 01:58:45  welchd
-#
-# Updated to latest source
-#
 # Revision 1.4  1995/08/15  06:53:53  gback
 # minor screwup in files wrt to ext2fs filenames fixed
 #
@@ -93,7 +89,6 @@ OPTIONS/union		optional union
 OPTIONS/fifo		optional fifo
 OPTIONS/ext2fs		optional ext2fs
 OPTIONS/minixfs		optional minixfs
-OPTIONS/devfs  		optional devfs
 
 OPTIONS/sysvshm		optional sysvshm
 OPTIONS/quota		optional quota
@@ -191,8 +186,6 @@ miscfs/umapfs/umap_vnops.c	optional umapfs
 miscfs/union/union_subr.c	optional union
 miscfs/union/union_vfsops.c	optional union
 miscfs/union/union_vnops.c	optional union
-miscfs/devfs/devfs_vfsops.c	optional devfs
-miscfs/devfs/devfs_vnops.c	optional devfs
 net/bpf.c		optional bpfilter
 net/bpf_filter.c	optional bpfilter
 net/if.c		standard

@@ -23,7 +23,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- *	$Id: diskslice.h,v 1.2 2000/10/27 01:55:29 welchd Exp $
+ *	$Id: diskslice.h,v 1.1 1996/02/17 01:07:01 sclawson Exp $
  */
 
 #ifndef _SYS_DISKSLICE_H_

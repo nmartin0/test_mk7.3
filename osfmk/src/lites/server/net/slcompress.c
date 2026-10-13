@@ -41,7 +41,7 @@
  *	- Initial distribution.
  *
  * static char rcsid[] =
- * "$Header: /cvsroot/xmach/lites/server/net/slcompress.c,v 1.2 2000/10/27 01:58:47 welchd Exp $";
+ * "$Header: /n/fast/usr/lsrc/mach/CVS/lites/server/net/slcompress.c,v 1.2 1995/08/15 06:49:15 sclawson Exp $";
  */
 
 #include <sys/types.h>
