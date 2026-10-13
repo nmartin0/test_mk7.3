@@ -193,10 +193,12 @@ and `bootstrap.conf`
 (`startup startup -s hd0a ...` for single-user). The last argument
 is the server directory, which `parse_arguments()` in
 `server/serv/server_init.c` takes as "server_dir_name (3.0 style)".
-Without it Lites derives one from its own name, which OSF's bootstrap
-gives as `/dev/boot_device/mach_servers/startup`, a path in the
-bootstrap's name space, not on the root, and the first program is not
-found (`xc002`).
+CMU's bootstrap passed it; OSF's passes only what `bootstrap.conf`
+gives, after `argv[0]`, `/dev/boot_device/mach_servers/startup`, from
+which Lites cannot derive it, and the first program is not found
+(`xc002`). The same vector is the one Lites' own `OSFMACH3` code
+hard-codes for OSF's microkernel (`docs/provenance/precedent.md`,
+"How Lites gets its arguments from OSF's bootstrap").
 
 `/sbin/init` runs as pid 1, the first program, as OSF's design has it
 on this bootstrap: "The OSF/1 server runs /sbin/init. There is no
