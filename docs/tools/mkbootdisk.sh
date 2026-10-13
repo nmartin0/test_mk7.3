@@ -33,6 +33,10 @@
 #   /mach_servers/<server>...       the files given, by basename
 #
 # BOOTSTRAP_CONF=<file> uses that file as bootstrap.conf instead.
+# ROOT_TREE=<dir> puts the tree in <dir> on the file system first --
+# a whole root, such as docs/tools/mklitesroot.sh makes for Lites --
+# with owners, modes, device nodes and symbolic links kept; run as
+# root for those.  The servers and bootstrap.conf go in on top.
 # ROOT_MB sets partition a's size, default 16; PAGING_MB partition b's,
 # default 16.
 #
@@ -62,6 +66,11 @@ TOTAL=$(( (END + 2047) / 2048 * 2048 ))	# whole megabytes
 U_SIZE=$((TOTAL - BASE))
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT INT TERM
+mkdir -p "$TMP/root"
+if [ -n "${ROOT_TREE:-}" ]; then
+	[ -d "$ROOT_TREE" ] || { echo "no directory $ROOT_TREE" >&2; exit 1; }
+	cp -a "$ROOT_TREE/." "$TMP/root/"
+fi
 mkdir -p "$TMP/root/mach_servers"
 for f in "$@"; do
 	[ -f "$f" ] || { echo "no such file: $f" >&2; exit 1; }
