@@ -41,8 +41,17 @@ options		VTOC_COMPAT
 
 options		CHAINED_IOS
 
+#
+# AI-ONLY NOTE: pci 2 -> 0, and ncr810, tu and fta commented out,
+# below.  Their sources are not in DR3 or the MkLinux CVS tree:
+# busses/pci/pci.h, device/dma_support.c and device/dma_direct_map.c
+# for pci; scsi/adapters/scsi_53C810_hdw.c; i386/AT386/if_tu.c and
+# if_fta.c.  conf/AT386/files names them all, and is DR3's.  From
+# slp/osfmk-mklinux 0d8ebab, which also commented out ncr825, already
+# 0, and the files' lines.
+#
 pseudo-device   pci             0
-#pseudo-device   "ncr825"	0
+pseudo-device   "ncr825"	0
 #pseudo-device   "ncr810"
 pseudo-device	cpus		1
 pseudo-device	"cyctm"		0
