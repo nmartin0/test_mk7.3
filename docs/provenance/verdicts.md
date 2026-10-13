@@ -178,3 +178,34 @@ reaches them and say so rather than discovering it later.
 `-fno-strict-aliasing` and `-fno-pic`. That is level 2 of four in
 `pristine.md` and the shape we want. Whether it is still needed with a
 pristine `lites/` is a question the walk must ask rather than assume.
+
+## slp's eighteen commits
+
+**Added 13 October 2026.** The kernel import is `slp/osfmk-mklinux` at
+its last commit, not MkLinux DR3 (`docs/provenance/precedent.md`,
+"Where the two imports came from"). Its first commit, `0f6f7e6`, with
+`i386/start.s~` as `start.s`, is DR3 as far as the MkLinux project's
+own CVS can check it, and is the baseline these verdicts are against.
+The maintainer's decisions of 12 October govern them: multiboot stays,
+as a second way in beside OSF's boot loader; the GNU Hurd graft goes.
+
+| commit | subject | verdict | reasoning |
+|---|---|---|---|
+| `18c9d31` | assembler files renamed `.s` to `.S`; comments | pending | DR3's `template.mk` copies each `.s` to `.S` and preprocesses it (lines 310-319); the rename is not needed. The comment rewrites are tested separately |
+| `81429d0` | the old `.s` files removed | pending | with `18c9d31` |
+| `0d8ebab` | PCI disabled; `tu` and `fta` commented out | pending | `tu` and `fta` have no source in DR3 and stay out; PCI to be re-tested |
+| `2913827` | `register` to `register int` | pending | a toolchain adaptation, kept |
+| `f4fa636` | `link/tools`; `template.mk` line; two `register int` | pending | the `LOCORE_DEPS` line fixes a DR3 defect: a missing backslash and `386/cswitch.S` |
+| `4df2e7d` | `config` and `migcom` sources; built objects and binaries | pending | the build uses slp's prebuilt `hostbin/config` and `migcom`; to be built from source instead |
+| `364472d` | `assym.s` to `assym.S` | pending | with `18c9d31` |
+| `444954a` | multiboot; an ELF loader in `do_bootstrap_compat()` | pending | kept as the second way in; OSF's `loader_info` code restored beside it in milestone 1 |
+| `7e81018` | `hd.c`: no recalibration, "hangs with qemu" | pending | re-tested under a BIOS boot |
+| `9335f94` | kernel-loaded addresses `0xE0000000`-`0xFFFFFFFF` | **reverted** | DR3's `0x0c000000`-`0x1fffffff` restored, with `63279d3`'s second change to the same lines. These are the addresses collocated servers load at; nothing here needs another range |
+| `090a2dc` | `libsa_mach` assembler comments | pending | with `18c9d31` |
+| `af5babc` | `i386/multiboot.h`, `mach/elf.h` | kept | the multiboot way in needs them; `mach/elf.h` is OSF's `bootstrap/elf.h`, byte for byte |
+| `ebdad63` | `ext2_dir_entry` for modern ext2 | **reverted** | ext2fs is not built (verdict for `772f3ca`); DR3's header restored |
+| `8105dd7` | `parse_arguments()` | kept | part of the multiboot way in |
+| `63279d3` | the GNU Hurd graft | **removed** | `kern/boot_script.[ch]` deleted, and every graft function in `kern/bootstrap.c` with `set_user_regs()`, `build_args_and_stack()`, `exec_start` and `exec_size`; `parse_multiboot()` reads one module. `kern/bootstrap.c` now differs from DR3 only by `444954a`'s loader and verdict 26. The start.S flag change stays with multiboot |
+| `55c7c1c` | the Linux server's Makefiles | not ours | `mklinux/`, not in the import |
+| `44e8969` | `usimple_lock_held()` checks commented out | **reverted** | DR3's restored; they run only under `USLOCK_DEBUG` |
+| `d4d387a` | Page Global Extensions | **reverted** | not OSF's; DR3's `proc_reg.h`, `pmap.[ch]` and `model_dep.c` lines restored |

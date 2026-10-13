@@ -170,9 +170,12 @@ Lites does not use.
 
 **Decided, 12 October 2026: OSF.** The kernel starts OSF's bootstrap
 task again, through OSF's `bootstrap_create()` and `user_bootstrap()`
-under their own names; the graft's functions stay in
+under their own names; the graft's functions stayed in
 `kern/bootstrap.c` behind `#if 0 /* GNU Hurd bootstrap graft */`, and
-`conf/files` no longer builds GNU Mach's `kern/boot_script.c`. Taken
+`conf/files` no longer built GNU Mach's `kern/boot_script.c`. *Since
+13 October 2026 the graft is deleted*, with `kern/boot_script.[ch]`,
+once its source was identified as `slp/osfmk-mklinux`'s `63279d3`
+(`docs/provenance/verdicts.md`, "slp's eighteen commits"). Taken
 in the verdict walk as rows 22 and 23, `dev`'s `c1620a0` and
 `856290c`, reworked; row 24, `8a15d03`, declined.
 `docs/provenance/verdicts.md` has the three shapes considered, why

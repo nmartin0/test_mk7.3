@@ -17,11 +17,11 @@ and `docs/tools/mksandbox.sh` run first and `~/.sandboxrc` written from
 
 | | |
 | --- | --- |
-| `mach_kernel.PRODUCTION` | 1,008,260 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
+| `mach_kernel.PRODUCTION` | 1,008,208 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 203,052 bytes, same format; two PT_LOAD segments, R+X and R+W; reads UFS only |
 | errors | 0 |
-| vendor files modified | 14 in `osfmk/`, 12 under `osfmk/src/mach_kernel` and 2 under `osfmk/src/file_systems/AT386`, with 317 insertions and 60 deletions against `f8fee21`; in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
-| kernel text | 809,498 bytes |
+| vendor files modified | 20 in `osfmk/` against `f8fee21`, 261 insertions and 1,585 deletions, seven of them returning files to DR3 exactly (`kern/boot_script.[ch]` deleted, `conf/files`, `ext2fs/ext2_fs.h`, `kern/lock.c`, `i386/proc_reg.h`, `mach/i386/vm_param.h`), because `f8fee21` is `slp/osfmk-mklinux`'s 2012 tree, not DR3 (`docs/provenance/verdicts.md`, "slp's eighteen commits"); in Lites, at `osfmk/src/lites` against `e31a69d`, one file removed (`Makeconf`), one added (`Makefile`) and two execute bits restored -- no source line changed |
+| kernel text | 809,426 bytes |
 
 The kernel text was 818,058 after `5af8713` and 818,102 after
 `c964add`, whose `mods_count` guards added 44 bytes; 809,290 once the
@@ -29,7 +29,9 @@ GNU Hurd bootstrap graft and `kern/boot_script.c` were no longer
 compiled ("The boot" below); 809,310 with
 `-fno-aggressive-loop-optimizations` in `CARGS` (verdict 25); and
 809,498 linked with `-z noseparate-code` (verdict 26), which puts
-`.rodata` in the text segment, so `size` counts it there.
+`.rodata` in the text segment, so `size` counts it there; 809,426 once
+the graft's last compiled pieces were deleted and slp's Page Global
+Extensions removed.
 
 ### Lites
 
