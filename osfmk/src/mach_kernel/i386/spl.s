@@ -137,7 +137,7 @@ WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #include <platforms.h>
 #include <mp_v1_1.h>
 
-#include <assym.S>
+#include <assym.s>
 #include <i386/asm.h>
 #include <i386/ipl.h>
 #include <i386/pic.h>
@@ -219,7 +219,7 @@ Entry(splsched)
 
 Entry(splhigh)
 Entry(splhi)
-	cli				/* disable interrupts */
+	cli				/ disable interrupts
 	MP_DISABLE_PREEMPTION(%edx)
 	CPU_NUMBER(%edx)
 	movl	CX(EXT(curr_ipl), %edx), %eax
@@ -235,11 +235,11 @@ Entry(getspl)
 	ret
 
 Entry(sploff)
-	pushf				/* Flags reg NOT accessable */
-	popl	%eax			/* push onto stk, pop it into reg. */
+	pushf				/ Flags reg NOT accessable
+	popl	%eax			/ push onto stk, pop it into reg.
 	movb	%ah,%al
 	andb	$2,%al
-	cli				/* DISABLE ALL INTERRUPTS */
+	cli				/ DISABLE ALL INTERRUPTS
 	ret
 
 
@@ -247,10 +247,10 @@ Entry(splon)
 	pushf
 	popl	%eax
 	orb	4(%esp),%ah
-	pushl	%eax			/* Flags regs not directly settable. */
-	popf				/* push value, pop into flags reg. */
-					/* IF ints were enabled before  */
-					/* then they are re-enabled now. */
+	pushl	%eax			/ Flags regs not directly settable.
+	popf				/ push value, pop into flags reg.
+					/ IF ints were enabled before 
+					/ then they are re-enabled now.
 	ret
 
 
@@ -292,22 +292,22 @@ Entry(splon)
 ///////////////////////////////////////////////////////////////////////////////
 
 Entry(splx)
-	movl	0x04(%esp),%eax			/* get interrupt level from stack */
+	movl	0x04(%esp),%eax			/ get interrupt level from stack
 
 #if	!MP_V1_1
 #if     (NCPUS > 1 && AT386)
         CPU_NUMBER(%edx)
         cmpl    CX(EXT(curr_ipl), %edx), %eax
 #else   /* NCPUS > 1 && AT386 */
-        cmpl    EXT(curr_ipl), %eax		/*  if equal to the current IPL, */
+        cmpl    EXT(curr_ipl), %eax		/  if equal to the current IPL,
 #endif  /* NCPUS > 1 && AT386 */
-        je      spl_done			/*       nothing to do */
+        je      spl_done			/       nothing to do
 #endif	/* !MP_V1_1 */
 
-	cmpl	$0x00,%eax			/* check if  < 0 */
+	cmpl	$0x00,%eax			/ check if  < 0
 	jl	splxpanic
 
-	cmpl	$(SPLHI),%eax			/* check if too high */
+	cmpl	$(SPLHI),%eax			/ check if too high
 	ja	splxpanic
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -324,7 +324,7 @@ LEXT(set_spl)
 
 	pushl	%ebp
 	movl	%esp,%ebp
-	cli				/* disable interrupts */
+	cli				/ disable interrupts
 	MP_DISABLE_PREEMPTION(%edx)
 	CPU_NUMBER(%edx)
 	CHECK_MISSED_CLOCK(%edx)
@@ -332,17 +332,17 @@ LEXT(set_spl)
 	cmpl	$0, %edx
 	jne	slave_set_spl
 #endif	/* NCPUS > 1 && AT386 && !MP_V1_1 */
-	movl	CX(EXT(curr_ipl), %edx), %edx	/* get OLD ipl level */
-	pushl	%edx			/* save old level for return */
+	movl	CX(EXT(curr_ipl), %edx), %edx	/ get OLD ipl level
+	pushl	%edx			/ save old level for return
 	CPU_NUMBER(%edx)
-	movl	%eax,CX(EXT(curr_ipl),%edx)/* set NEW ipl level */
+	movl	%eax,CX(EXT(curr_ipl),%edx)/ set NEW ipl level
 #if	!MP_V1_1
-	cmpl	$(SPLHI), %eax		/* if SPLHI */
+	cmpl	$(SPLHI), %eax		/ if SPLHI
 	jne	1f
 	MP_ENABLE_PREEMPTION(%edx)
-	popl	%eax			/* return old level */
+	popl	%eax			/ return old level
 	pop	%ebp
-	ret				/* return with interrupt off */
+	ret				/ return with interrupt off
 1:
 #else	/* !MP_V1_1 */
 	movl	EXT(mp_v1_1_initialized),%edx
@@ -358,9 +358,9 @@ LEXT(set_spl)
 	movl	4(%esp), %edx
 	movb	%dl, 2(%ecx)
 #endif
-	shll	$4, %eax		/* Switch to task priority */
+	shll	$4, %eax		/ Switch to task priority
 	addl	$0x5f, %eax
-	movl	EXT(lapic_start), %edx	/* Get lapic address */
+	movl	EXT(lapic_start), %edx	/ Get lapic address
 #if	TRAP_DEBUG
 	movb	%al, 3(%ecx)
 	movl	LAPIC_TPR(%edx), %edx
@@ -373,9 +373,9 @@ LEXT(set_spl)
 	leal	EXT(trap_hist), %edx
 	movl	%edx, EXT(cur_trap_hist)
 3:
-	movl	EXT(lapic_start), %edx	/* Get lapic address */
+	movl	EXT(lapic_start), %edx	/ Get lapic address
 #endif	/* TRAP_DEBUG */
-	movl	%eax, LAPIC_TPR(%edx)	/* Save priority */
+	movl	%eax, LAPIC_TPR(%edx)	/ Save priority
 	jmp	2f
 #endif	/* !MP_V1_1 */
 
@@ -385,7 +385,7 @@ LEXT(set_spl)
 	movw	%ax, EXT(curr_pic_mask)
 	SET_PIC_MASK
 
-2:	popl	%eax			/* return old level */
+2:	popl	%eax			/ return old level
 	pop	%ebp
 	sti
 spl_done:
@@ -399,7 +399,7 @@ slave_set_spl:
 	jl	1f
 	pop	%ebp
 	MP_ENABLE_PREEMPTION(%edx)
-	ret				/* return with interrupt masked */
+	ret				/ return with interrupt masked
 1:
 	pop	%ebp
 	sti
@@ -415,9 +415,9 @@ splxpanic:
 	shl	$2, %edx
 	pushl	EXT(curr_ipl)(%edx)
 #else	/* NCPUS > 1 && AT386 */
-	pushl	EXT(curr_ipl)		/* current level */
+	pushl	EXT(curr_ipl)		/ current level
 #endif	/* NCPUS > 1 && AT386 */
-	pushl	%eax			/* new level */
+	pushl	%eax			/ new level
 	pushl	$splxpanic2
 	MP_ENABLE_PREEMPTION(%edx)
 	call	EXT(panic)
@@ -446,11 +446,11 @@ LEXT(set_spl_noi)
 	cmpl	$0, %edx
 	jne	slave_set_spl_noi
 #endif	/* NCPUS > 1 && AT386 && !MP_V1_1 */
-	movl	%eax,CX(EXT(curr_ipl),%edx)	/* set new SPL level */
-	movw	EXT(pic_mask)(,%eax,2), %ax	/* get new pic mask */
-	cmpw	EXT(curr_pic_mask),%ax	/* if different, */
+	movl	%eax,CX(EXT(curr_ipl),%edx)	/ set new SPL level
+	movw	EXT(pic_mask)(,%eax,2), %ax	/ get new pic mask
+	cmpw	EXT(curr_pic_mask),%ax	/ if different,
 	je	1f
-	movw	%ax,EXT(curr_pic_mask)	/* change it */
+	movw	%ax,EXT(curr_pic_mask)	/ change it
 	SET_PIC_MASK
 1:
 	MP_ENABLE_PREEMPTION(%edx)
@@ -481,30 +481,30 @@ slave_set_spl_noi:
  */
 
 Entry(db_splhigh)
-	cli					/* disable interrupts */
+	cli					/ disable interrupts
 	CPU_NUMBER(%edx)
 	movl	CX(EXT(curr_ipl), %edx), %eax
 	movl	$(IPLHI), CX(EXT(curr_ipl), %edx) 
 	ret
 
 Entry(db_splx)
-	movl	0x04(%esp),%eax			/* get interrupt level from stack */
+	movl	0x04(%esp),%eax			/ get interrupt level from stack
 
 	MP_DISABLE_PREEMPTION(%edx)
 #if     (NCPUS > 1 && AT386)
         CPU_NUMBER(%edx)
         cmpl    EXT(curr_ipl)(, %edx, 4), %eax
 #else   /* NCPUS > 1 && AT386 */
-        cmpl    EXT(curr_ipl), %eax		/*  if equal to the current IPL, */
+        cmpl    EXT(curr_ipl), %eax		/  if equal to the current IPL,
 #endif  /* NCPUS > 1 && AT386 */
-        je      spl_done			/*       nothing to do */
+        je      spl_done			/       nothing to do
 
 	MP_ENABLE_PREEMPTION(%edx)
 	
-	cmpl	$0x00,%eax			/* check if  < 0 */
+	cmpl	$0x00,%eax			/ check if  < 0
 	jl	splxpanic
 
-	cmpl	$(SPLHI),%eax			/* check if too high */
+	cmpl	$(SPLHI),%eax			/ check if too high
 	ja	splxpanic
 
 	jmp	EXT(set_spl)

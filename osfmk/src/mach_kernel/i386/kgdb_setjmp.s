@@ -17,32 +17,14 @@
  * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
  * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
  * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
+ * 
  */
 /*
  * MkLinux
  */
-/* CMU_HIST */
-/*
- * Revision 2.5  91/05/14  16:03:58  mrt
- * 	Correcting copyright
- * 
- * Revision 2.4  91/02/05  17:10:49  mrt
- * 	Changed to new Mach copyright
- * 	[91/02/01  17:30:41  mrt]
- * 
- * Revision 2.3  90/11/05  14:26:58  rpd
- * 	Introduce bcopy16.  For 16bit copies to bus memory
- * 	[90/11/02            rvb]
- * 
- * Revision 2.2  90/05/03  15:24:53  dbg
- * 	From Bob Baron.
- * 	[90/04/30            dbg]
- * 
- */
-/* CMU_ENDHIST */
-/*
+/* 
  * Mach Operating System
- * Copyright (c) 1991,1990 Carnegie Mellon University
+ * Copyright (c) 1991,1990,1989 Carnegie Mellon University
  * All Rights Reserved.
  * 
  * Permission to use, copy, modify and distribute this software and its
@@ -68,62 +50,40 @@
 /*
  */
 
+/*
+ * Kernel remote gdb -- kgdb_setjmp, kgdb_longjmp
+ *
+ *	kgdb_longjmp(a,v)
+ * will generate a "return(v)" from
+ * the last call to
+ *	kgdb_setjmp(a)
+ * by restoring registers from the stack,
+ *
+ */
+
 #include <i386/asm.h>
 
-/* void *memcpy((void *) to, (const void *) from, (size_t) bcount) */
+ENTRY(kgdb_setjmp)
+	movl	4(%esp),%ecx		/ fetch buffer
+	movl	%ebx,0(%ecx)
+	movl	%esi,4(%ecx)
+	movl	%edi,8(%ecx)
+	movl	%ebp,12(%ecx)		/ save frame pointer of caller
+	popl	%edx
+	movl	%esp,16(%ecx)		/ save stack pointer of caller
+	movl	%edx,20(%ecx)		/ save pc of caller
+	xorl	%eax,%eax
+        jmp     *%edx
 
-ENTRY(memcpy)
-	pushl	%edi
-	pushl	%esi
-	movl	8+ 4(%esp),%edi		/* to */
-	movl	%edi,%eax		/* returns its first argument */
-	movl	8+ 8(%esp),%esi		/* from */
-memcpy_common:
-	movl	8+ 12(%esp),%edx	/* number of bytes */
-	cld
-/* move longs */
-	movl	%edx,%ecx
-	sarl	$2,%ecx
-	rep
-	movsl
-/* move bytes */
-	movl	%edx,%ecx
-	andl	$3,%ecx
-	rep
-	movsb
-	popl	%esi
-	popl	%edi
-	ret
-
-/* void bcopy((const char *) from, (char *) to, (unsigned int) count) */
-
-ENTRY(bcopy)
-	pushl	%edi
-	pushl	%esi
-	movl	8+ 8(%esp),%edi		/* to */
-	movl	8+ 4(%esp),%esi		/* from */
-	jmp	memcpy_common
-
-/* bcopy16(from, to, bcount) using word moves */
-
-ENTRY(bcopy16)
-	pushl	%edi
-	pushl	%esi
- 	movl	8+12(%esp),%edx		/*  8 for the two pushes above */
- 	movl	8+ 8(%esp),%edi
- 	movl	8+ 4(%esp),%esi
-/* move words */
-0:	cld
-	movl	%edx,%ecx
-	sarl	$1,%ecx
-	rep
-	movsw
-/* move bytes */
-	movl	%edx,%ecx
-	andl	$1,%ecx
-	rep
-	movsb
-	popl	%esi
-	popl	%edi
-	ret	
-
+ENTRY(kgdb_longjmp)
+	movl	8(%esp),%eax		/ return(v)
+	movl	4(%esp),%ecx		/ fetch buffer
+	movl	0(%ecx),%ebx
+	movl	4(%ecx),%esi
+	movl	8(%ecx),%edi
+	movl	12(%ecx),%ebp
+	movl	16(%ecx),%esp
+	orl	%eax,%eax
+	jnz	0f
+	incl	%eax
+0:	jmp	*20(%ecx)		/ done, return....

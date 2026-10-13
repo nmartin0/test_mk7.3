@@ -253,11 +253,23 @@ replace setenv NO_STRICT_ANSI 1
 # _ansi_CC_, which falls back to bare "cc" when ANSI_CC is unset -- no
 # -m32, so genassym is built 64-bit and queue.h's (integer_t)elt
 # truncates an 8-byte pointer.  genassym computes the struct offsets
-# that become assym.S, so a 64-bit genassym bakes 8-byte offsets into a
+# that become assym.s, so a 64-bit genassym bakes 8-byte offsets into a
 # 32-bit kernel.
 #
-replace setenv ANSI_CC "gcc -m32 -fno-builtin"
-replace setenv TRADITIONAL_CC "gcc -m32 -fno-builtin -traditional"
+# -B\${tools_base}/elf/: the target's assembler.  The kernel's and
+# libsa_mach's assembler sources are written for the System V i386
+# assembler, where "/" begins a comment ("movl %ss,%eax  / comment").
+# GNU as keeps that convention for i386-elf and drops it for
+# i386-linux, where the same line is a division and an error.  So the
+# assembler is GNU as built for i386-elf, by docs/tools/mkbinutils.sh,
+# into the directory Buildconf names ELF_CC_EXEC_PREFIX
+# (\${tools_base}/elf/) and osf.gcc.mk line 92 hands the compiler as
+# -B -- OSF's own place for the target's tools.  gcc finds its as
+# there and everything else where it always does.  HOST_CC has no -B:
+# config and migcom are host programs.
+#
+replace setenv ANSI_CC "gcc -m32 -B\${tools_base}/elf/ -fno-builtin"
+replace setenv TRADITIONAL_CC "gcc -m32 -B\${tools_base}/elf/ -fno-builtin -traditional"
 replace setenv HOST_CC "gcc -m32 -fno-builtin"
 
 #
@@ -318,6 +330,7 @@ sandbox ready.
 
 OSFMK_BUILD.README's own flow, which is what to use:
 
+  MK_BUILD=${MK_BUILD} sh ${REPO}/docs/tools/mkbinutils.sh   # once
   cp ${MK_BUILD}/sandboxrc ~/.sandboxrc
   . ${REPO}/set_ode_path.sh
   export PATH="${MK_BUILD}/ode-sandbox/tools/at386_linux/bin:\$PATH"

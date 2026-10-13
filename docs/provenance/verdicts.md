@@ -191,17 +191,17 @@ as a second way in beside OSF's boot loader; the GNU Hurd graft goes.
 
 | commit | subject | verdict | reasoning |
 |---|---|---|---|
-| `18c9d31` | assembler files renamed `.s` to `.S`; comments | pending | DR3's `template.mk` copies each `.s` to `.S` and preprocesses it (lines 310-319); the rename is not needed. The comment rewrites are tested separately |
-| `81429d0` | the old `.s` files removed | pending | with `18c9d31` |
-| `0d8ebab` | PCI disabled; `tu` and `fta` commented out | pending | `tu` and `fta` have no source in DR3 and stay out; PCI to be re-tested |
+| `18c9d31` | assembler files renamed `.s` to `.S`; comments; a multiboot entry in `start.S`; `bts`/`btr` widened | **reverted**, two parts kept | DR3's file names and text restored: `template.mk` copies each `.s` to `.S` and preprocesses it (lines 310-319), and the comments slp rewrote -- 1,232 lines -- are the System V assembler's `/` comments, which GNU as reads when built for i386-elf (`docs/tools/mkbinutils.sh`). The kernel's disassembly is unchanged and the bootstrap task is identical byte for byte. Kept: the multiboot header and the copy of the multiboot information in `start.s`, with `444954a`, as the second way in; and `%dl` to `%edx` in `i_bit_set` and `i_bit_clear`, which no current GNU as accepts, with a note at the site |
+| `81429d0` | the old `.s` files removed | **reverted** | with `18c9d31` |
+| `0d8ebab` | PCI disabled; `tu` and `fta` commented out; `.S` names in `conf/AT386/files` and `template.mk` | pending | `tu` and `fta` have no source in DR3 and stay out; PCI to be re-tested. The `.S` names are reverted with `18c9d31` |
 | `2913827` | `register` to `register int` | pending | a toolchain adaptation, kept |
-| `f4fa636` | `link/tools`; `template.mk` line; two `register int` | pending | the `LOCORE_DEPS` line fixes a DR3 defect: a missing backslash and `386/cswitch.S`. `link/tools` is settled: DR3's tarball has it as a 13-byte file reading `link ../tools`, a symbolic link the archive flattened; the MkLinux CVS checkout has the link, `../tools`, and slp's `../tools/` is now spelt as CVS spells it |
+| `f4fa636` | `link/tools`; `template.mk` line; two `register int` | pending | the `template.mk` lines are reverted with `18c9d31`. The `LOCORE_DEPS` line was taken to fix a DR3 defect, a missing backslash and `386/cswitch.S`; it fixes slp's own `0d8ebab`, which introduced both while renaming the files, and DR3's line is correct. The two `register int` go with `2913827`. `link/tools` is settled: DR3's tarball has it as a 13-byte file reading `link ../tools`, a symbolic link the archive flattened; the MkLinux CVS checkout has the link, `../tools`, and slp's `../tools/` is now spelt as CVS spells it |
 | `4df2e7d` | `config` and `migcom` sources; built objects and binaries | **replaced** | the sources are MK6.1's of 1995; OSF's 1999 sources from the MkLinux CVS repository take their place (kind F), and the objects and binaries, and the copy in `tools/i386/i386_linux/hostbin`, are deleted. `docs/tools/mkhostbin.sh` builds the two programs into the sandbox's `tools_base` by DR3's `hostbin/README` procedure; every MIG stub comes out the same |
-| `364472d` | `assym.s` to `assym.S` | pending | with `18c9d31` |
+| `364472d` | `assym.s` to `assym.S` | **reverted** | with `18c9d31` |
 | `444954a` | multiboot; an ELF loader in `do_bootstrap_compat()` | pending | kept as the second way in; OSF's `loader_info` code restored beside it in milestone 1 |
 | `7e81018` | `hd.c`: no recalibration, "hangs with qemu" | pending | re-tested under a BIOS boot |
 | `9335f94` | kernel-loaded addresses `0xE0000000`-`0xFFFFFFFF` | **reverted** | DR3's `0x0c000000`-`0x1fffffff` restored, with `63279d3`'s second change to the same lines. These are the addresses collocated servers load at; nothing here needs another range |
-| `090a2dc` | `libsa_mach` assembler comments | pending | with `18c9d31` |
+| `090a2dc` | `libsa_mach` assembler comments | **reverted** | with `18c9d31`; the six files are DR3's again |
 | `af5babc` | `i386/multiboot.h`, `mach/elf.h` | kept | the multiboot way in needs them; `mach/elf.h` is OSF's `bootstrap/elf.h`, byte for byte |
 | `ebdad63` | `ext2_dir_entry` for modern ext2 | **reverted** | ext2fs is not built (verdict for `daac4e2`); DR3's header restored |
 | `8105dd7` | `parse_arguments()` | kept | part of the multiboot way in |

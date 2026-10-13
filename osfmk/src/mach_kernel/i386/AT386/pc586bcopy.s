@@ -107,12 +107,12 @@
 	.text
 
 	.file	"pc586bcopy.s"
-/* pc586bcopy(p_from, p_to, count) */
-/* long *p_from, *p_to, count; /* count is in bytes */ */
-/* this routine is used to copy data on and off of pc586 board */
-/* the pc586 board MUST be accessed on 16 bit boundries only */
-/* see pc586 hardware ref man */
-/* this routine copies in 4 byte increments and rounds down  */
+/ pc586bcopy(p_from, p_to, count)
+/ long *p_from, *p_to, count; /* count is in bytes */
+/ this routine is used to copy data on and off of pc586 board
+/ the pc586 board MUST be accessed on 16 bit boundries only
+/ see pc586 hardware ref man
+/ this routine copies in 4 byte increments and rounds down 
 
 	.ident	"@(#)pc586.s 1.0"
 	.text

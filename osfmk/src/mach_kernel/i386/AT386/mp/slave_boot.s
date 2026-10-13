@@ -88,17 +88,17 @@
 	.long	address-EXT(slave_boot_base)
 
 ENTRY(slave_boot_base)
-	/* code is loaded at 0x0:0x1000 */
-	/* ljmp to the next instruction to set up %cs */
+	/ code is loaded at 0x0:0x1000
+	/ ljmp to the next instruction to set up %cs
 	data16
 	LJMP(MP_BOOTSEG, EXT(slave_pstart))
 
 ENTRY(slave_pstart)
-	/* set up %ds */
+	/ set up %ds
 	mov	%cs, %ax
 	mov	%ax, %ds
 
-	/* set up %ss and %esp */
+	/ set up %ss and %esp
 	data16
 	mov	$MP_BOOTSEG, %eax
 	mov	%ax, %ss
@@ -116,34 +116,34 @@ ENTRY(slave_pstart)
 	call	EXT(startprog)
 
 /
-/* real_to_prot() */
-/* 	transfer from real mode to protected mode. */
+/ real_to_prot()
+/ 	transfer from real mode to protected mode.
 /
 
 ENTRY(real_to_prot)
-	/* guarantee that interrupt is disabled when in prot mode */
+	/ guarantee that interrupt is disabled when in prot mode
 	cli
 
-	/* load the gdtr */
+	/ load the gdtr
 	addr16
 	data16
 	LGDT(EXT(gdtr))
 
-	/* set the PE bit of CR0 */
+	/ set the PE bit of CR0
 	mov	%cr0, %eax
 
 	data16
 	or	$CR0_PE_ON, %eax
 	mov	%eax, %cr0 
 
-	/* make intrasegment jump to flush the processor pipeline and */
-	/* reload CS register */
+	/ make intrasegment jump to flush the processor pipeline and
+	/ reload CS register
 	data16
 	LJMP(0x08, xprot)
 
 xprot:
-	/* we are in USE32 mode now */
-	/* set up the protective mode segment registers : DS, SS, ES */
+	/ we are in USE32 mode now
+	/ set up the protective mode segment registers : DS, SS, ES
 	mov	$0x10, %eax
 	movw	%ax, %ds
 	movw	%ax, %ss
@@ -152,7 +152,7 @@ xprot:
 	ret
 
 /
-/* startprog(phyaddr) */
+/ startprog(phyaddr)
 /	start the program on protected mode where phyaddr is the entry point
 /
 
@@ -160,12 +160,12 @@ ENTRY(startprog)
 	push	%ebp
 	mov	%esp, %ebp
 	
-	mov	0x8(%ebp), %ecx		/* entry offset  */
-	mov	$0x28, %ebx		/* segment */
+	mov	0x8(%ebp), %ecx		/ entry offset 
+	mov	$0x28, %ebx		/ segment
 	push	%ebx
 	push	%ecx
 
-	/* set up %ds and %es */
+	/ set up %ds and %es
 	mov	$0x20, %ebx
 	movw	%bx, %ds
 	movw	%bx, %es
@@ -173,7 +173,7 @@ ENTRY(startprog)
 	lret
 
 
-	. = MP_GDT-MP_BOOT	/* GDT location */
+	. = MP_GDT-MP_BOOT	/ GDT location
 ENTRY(Gdt)
 
 /*  Segment Descriptor
