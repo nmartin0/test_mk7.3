@@ -17,10 +17,6 @@
 #
 # HISTORY
 # $Log: newvers.sh,v $
-# Revision 1.2  2000/10/27 01:53:08  welchd
-#
-# Updated to latest source
-#
 # Revision 1.1.1.1  1995/03/02  21:49:26  mike
 # Initial Lites release from hut.fi
 #
@@ -34,7 +30,7 @@ fi
 CONFIG=`expr "$d" : '.*/\([^/]*\)$'`
 d=`expr "$d" : '.*/\([^/]*/[^/]*\)$'`
 (
-  echo "char ostype[] = \"xMach\";" ;
+  echo "char ostype[] = \"Lites\";" ;
   echo "char osrelease[] = \"${version}\";" ;
   echo "char version[] = \"${name} ${v}: ${t}; $config ($h)\\n\";" ;
   echo "char version_short[] = \"${version} ${config}\\n\";" ;

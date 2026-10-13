@@ -17,10 +17,6 @@
 #
 # HISTORY
 # $Log: doconfig.sh,v $
-# Revision 1.2  2000/10/27 01:53:08  welchd
-#
-# Updated to latest source
-#
 # Revision 1.1.1.2  1995/03/23  01:15:19  law
 # lites-950323 from jvh.
 #
@@ -99,10 +95,7 @@ awk "
 		} else {
 			val=0
 		}
-		if ($5 != "")
-		{
-		        printf("rm -f %s.tmp; echo \"#define %s %s\" > %s.tmp && %s %s.tmp %s\n\n", $5, $3, val, $5, moveifchange, $5, $5) > opt
-		}
+		printf("rm -f %s.tmp; echo \"#define %s %s\" > %s.tmp && %s %s.tmp %s\n\n", $5, $3, val, $5, moveifchange, $5, $5) > opt
 		printf("\\\n	%s ", $5) > cleanlist
 	}
 	$1 ~ /^makeoptions$/ {

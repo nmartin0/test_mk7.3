@@ -16,18 +16,6 @@
 /*
  * HISTORY
  * $Log: e_linux_sysent.c,v $
- * Revision 1.4  2000/11/26 01:35:55  welchd
- *
- * Fixed to getdents interface
- *
- * Revision 1.3  2000/11/07 00:41:29  welchd
- *
- * Added support for executing dynamically linked Linux ELF binaries
- *
- * Revision 1.2  2000/10/27 01:55:28  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/09/03  21:22:16  gback
  * added support for Linux mount and reboot
  *
@@ -72,23 +60,11 @@ int e_linux_sigprocmask(), e_linux_sigaction(), e_linux_ioctl();
 int e_linux_select(), e_linux_socketcall(), e_linux_uname();
 int e_linux_sigreturn(), e_linux_sysvipc(), e_linux_kill(), e_linux_wait4();
 
-int e_linux_getdents();
-
-int e_linux_getcwd();
-
 int e_bnr_lseek(), e_bnr_stat(), e_bnr_lstat(), e_bnr_fstat();
 int e_bnr_truncate(), e_bnr_ftruncate(), e_bnr_getdirentries();
 int e_bnr_getrlimit(), e_bnr_setrlimit(), e_bnr_wait4();
 
 int e_mapped_gettimeofday();
-
-int e_linux_pause();
-int e_linux_nanosleep();
-int e_linux_stat64();
-int e_linux_fstat64();
-int e_linux_lstat64();
-int e_linux_lchown32();
-int e_linux_fcntl64();
 
 struct sysent e_linux_sysent[] = {
 	SYS_NULL(e_setup),					/* 0 */
@@ -120,7 +96,7 @@ struct sysent e_linux_sysent[] = {
 	sysg(e_ptrace, 4),					/* 26 */
 	sysg(e_sysv_alarm, 1),	/* ALARM */			/* 27 */
 	sysg(e_linux_fstat, 2),	/* FSTAT */			/* 28 */
-	sysg(e_linux_pause, 0),	/* PAUSE */			/* 29 */
+	SYSG(e_sysv_pause, 0),	/* PAUSE */			/* 29 */
 	sysg(e_utimes, 2),	/* UTIME */			/* 30 */
 	SYSG(e_sysv_stty, ?),	/* STTY */			/* 31 */
 	SYSG(e_sysv_gtty, ?),	/* GTTY */			/* 32 */
@@ -226,94 +202,6 @@ struct sysent e_linux_sysent[] = {
 	SYSG(e_sysv_getpgid, ?),				/* 132 */
 	sysg(e_fchdir, 1),					/* 133 */
 	SYSG(e_linux_bdflush, ?),				/* 134 */
-        SYSG(e_linux_sysfs, ?),                                 /* 135 */
-        SYSG(e_linux_personality, ?),                           /* 136 */
-        SYSG(e_linux_afs_syscall, ?),                           /* 137 */
-        SYSG(e_linux_setfsuid, ?),                              /* 138 */
-        SYSG(e_linux_setfsgid, ?),                              /* 139 */
-        SYSG(e_linux__llseek, ?),                               /* 140 */
-        sysg(e_linux_getdents, 3),                              /* 141 */
-        SYSG(e_linux__newselect, ?),                            /* 142 */
-        SYSG(e_linux_flock, ?),                                 /* 143 */
-        SYSG(e_linux_msync, ?),                                 /* 144 */
-        SYSG(e_linux_readv, ?),                                 /* 145 */
-        SYSG(e_linux_writev, ?),                                /* 146 */
-        SYSG(e_linux_getsid, ?),                                /* 147 */
-        SYSG(e_linux_fdatasync, ?),                             /* 148 */
-        SYSG(e_linux__sysctl, ?),                               /* 149 */
-        SYSG(e_linux_mlock, ?),                                 /* 150 */
-        SYSG(e_linux_munlock, ?),                               /* 151 */
-        SYSG(e_linux_mlockall, ?),                              /* 152 */
-        SYSG(e_linux_munlockall, ?),                            /* 153 */
-        SYSG(e_linux_sched_setparam, ?),                        /* 154 */
-        SYSG(e_linux_sched_getparam, ?),                        /* 155 */
-        SYSG(e_linux_sched_setscheduler, ?),                    /* 156 */
-        SYSG(e_linux_sched_getscheduler, ?),                    /* 157 */
-        SYSG(e_linux_sched_yield, ?),                           /* 158 */
-        SYSG(e_linux_sched_get_priority_max, ?),                /* 159 */
-        SYSG(e_linux_sched_get_priority_min, ?),                /* 160 */
-        SYSG(e_linux_sched_get_rr_interval, ?),                 /* 161 */
-        sysg(e_linux_nanosleep, 2),                             /* 162 */
-        SYSG(e_linux_mremap, ?),                                /* 163 */
-        SYSG(e_linux_setresuid, ?),                             /* 164 */
-        SYSG(e_linux_getresuid, ?),                             /* 165 */
-        SYSG(e_linux_vm86, ?),                                  /* 166 */
-        SYSG(e_linux_query_module, ?),                          /* 167 */
-        SYSG(e_linux_poll, ?),                                  /* 168 */
-        SYSG(e_linux_nfsservctl, ?),                            /* 169 */
-        SYSG(e_linux_setresgid, ?),                             /* 170 */
-        SYSG(e_linux_getresgid, ?),                             /* 171 */
-        SYSG(e_linux_prctl, ?),                                 /* 172 */
-        SYSG(e_linux_rt_sigreturn, ?),                          /* 173 */
-        SYSG(e_linux_rt_sigaction, ?),                          /* 174 */
-        SYSG(e_linux_rt_sigprocmask, ?),                        /* 175 */
-        SYSG(e_linux_rt_sigpending, ?),                         /* 176 */
-        SYSG(e_linux_rt_sigtimedwait, ?),                       /* 177 */
-        SYSG(e_linux_rt_sigqueueinfo, ?),                       /* 178 */
-        SYSG(e_linux_rt_sigsuspend, ?),                         /* 179 */
-        SYSG(e_linux_pread, ?),                                 /* 180 */
-        SYSG(e_linux_pwrite, ?),                                /* 181 */
-        SYSG(e_linux_chown, ?),                                 /* 182 */
-        sysg(e_linux_getcwd, 2),                                /* 183 */
-        SYSG(e_linux_capget, ?),                                /* 184 */
-        SYSG(e_linux_capset, ?),                                /* 185 */
-        SYSG(e_linux_sigaltstack, ?),                           /* 186 */
-        SYSG(e_linux_sendfile, ?),                              /* 187 */
-        SYSG(e_linux_getpmsg, ?),                               /* 188 */
-        SYSG(e_linux_setpmsg, ?),                               /* 189 */
-        SYSG(e_linux_vfork, ?),                                 /* 190 */
-        SYSG(e_linux_ugetrlimit, ?),                            /* 191 */
-        SYSG(e_linux_mmap2, ?),                                 /* 192 */
-        SYSG(e_linux_truncate64, ?),                            /* 193 */
-        SYSG(e_linux_ftruncate64, ?),                           /* 194 */
-        sysg(e_linux_stat64, 3),                                /* 195 */
-        sysg(e_linux_lstat64, 3),                               /* 196 */
-        sysg(e_linux_fstat64, 3),                               /* 197 */
-        sysg(e_linux_lchown32, 3),                              /* 198 */
-        SYSG(e_linux_getuid32, ?),                              /* 199 */
-        SYSG(e_linux_getgid32, ?),                              /* 200 */
-        SYSG(e_linux_geteuid32, ?),                             /* 201 */
-        SYSG(e_linux_getegid32, ?),                             /* 202 */
-        SYSG(e_linux_setreuid32, ?),                            /* 203 */
-        SYSG(e_linux_setregid32, ?),                            /* 204 */
-        SYSG(e_linux_getgroups32, ?),                           /* 205 */
-        SYSG(e_linux_setgroups32, ?),                           /* 206 */
-        SYSG(e_linux_fchown32, ?),                              /* 207 */
-        SYSG(e_linux_setresuid32, ?),                           /* 208 */
-        SYSG(e_linux_getresuid32, ?),                           /* 209 */
-        SYSG(e_linux_setresgid32, ?),                           /* 210 */
-        SYSG(e_linux_getresgid32, ?),                           /* 211 */
-        SYSG(e_linux_chown32, ?),                               /* 212 */
-        SYSG(e_linux_setuid32, ?),                              /* 213 */
-        SYSG(e_linux_setgid32, ?),                              /* 214 */
-        SYSG(e_linux_setfsuid32, ?),                            /* 215 */
-        SYSG(e_linux_setfsgid32, ?),                            /* 216 */
-        SYSG(e_linux_pivot_root, ?),                            /* 217 */
-        SYSG(e_linux_mincore, ?),                               /* 218 */
-        SYSG(e_linux_madvise, ?),                               /* 219 */
-        SYSG(e_linux_getdents64, ?),                            /* 220 */
-        sysg(e_linux_fcntl64, 3),                               /* 221 */
-        SYSG(e_linux_invalid, ?),                               /* 222 */
 };
 
 int	e_linux_nsysent = sizeof(e_linux_sysent)/sizeof(struct sysent);

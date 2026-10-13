@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: proc_to_task.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/03/23  01:44:05  law
  * Update to 950323 snapshot + utah changes
  *

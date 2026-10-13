@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: vnode.h,v $
- * Revision 1.2  2000/10/27 01:55:29  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.1  1995/03/02  21:49:36  mike
  * Initial Lites release from hut.fi
  *
@@ -91,7 +87,7 @@ enum vtype	{ VNON, VREG, VDIR, VBLK, VCHR, VLNK, VSOCK, VFIFO, VBAD };
 enum vtagtype	{
 	VT_NON, VT_UFS, VT_NFS, VT_MFS, VT_PC, VT_LFS, VT_LOFS, VT_FDESC,
 	VT_PORTAL, VT_NULL, VT_UMAP, VT_KERNFS, VT_PROCFS, VT_AFS, VT_ISOFS,
-	VT_UNION, VT_DEVFS
+	VT_UNION
 };
 
 /*

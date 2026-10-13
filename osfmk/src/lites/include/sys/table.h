@@ -30,10 +30,6 @@
  *	TBL_ENVIRONMENT 22 instead of 11.
  *
  * $Log: table.h,v $
- * Revision 1.2  2000/10/27 01:55:29  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.1  1995/03/02  21:49:35  mike
  * Initial Lites release from hut.fi
  *

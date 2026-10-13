@@ -1,0 +1,6 @@
+
+#ifndef __GNUC__
+# error "Shuld use the GNU varargs.h"
+#else
+# include <varargs.h>
+#endif

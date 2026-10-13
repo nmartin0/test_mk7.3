@@ -36,7 +36,7 @@
  * SUCH DAMAGE.
  *
  *	@(#)buf.h	8.7 (Berkeley) 1/21/94
- * $Id: buf.h,v 1.2 2000/10/27 01:55:29 welchd Exp $
+ * $Id: buf.h,v 1.1.1.2 1995/03/23 01:15:54 law Exp $
  */
 
 #ifndef _SYS_BUF_H_

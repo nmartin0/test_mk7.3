@@ -19,10 +19,6 @@
 #
 # HISTORY
 # $Log: gensym.awk,v $
-# Revision 1.2  2000/10/27 01:53:08  welchd
-#
-# Updated to latest source
-#
 # Revision 1.1.1.1  1995/03/02  21:49:26  mike
 # Initial Lites release from hut.fi
 #

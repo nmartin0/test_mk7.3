@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: e_lite_sysent.c,v $
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/09/08  06:10:48  mike
  * the "fast" version of sigprocmask (e_bsd_sigprocmask has only 2 args
  *

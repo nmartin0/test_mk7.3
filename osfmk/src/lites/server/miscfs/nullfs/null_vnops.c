@@ -37,7 +37,7 @@
  *
  * Ancestors:
  *	@(#)lofs_vnops.c	1.2 (Berkeley) 6/18/92
- *	$Id: null_vnops.c,v 1.2 2000/10/27 01:58:46 welchd Exp $
+ *	$Id: null_vnops.c,v 1.1.1.1 1995/03/02 21:49:50 mike Exp $
  *	...and...
  *	@(#)null_vnodeops.c 1.20 92/07/07 UCLA Ficus project
  */

@@ -62,8 +62,8 @@ SOFTWARE.
 /* 
  * ARGO TP
  *
- * $Header: /cvsroot/xmach/lites/server/netiso/tp_subr2.c,v 1.2 2000/10/27 01:58:48 welchd Exp $
- * $Source: /cvsroot/xmach/lites/server/netiso/tp_subr2.c,v $
+ * $Header: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/tp_subr2.c,v 1.1.1.1 1995/03/02 21:49:55 mike Exp $
+ * $Source: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/tp_subr2.c,v $
  *
  * Some auxiliary routines:
  * 	tp_protocol_error: required by xebec- called when a combo of state,

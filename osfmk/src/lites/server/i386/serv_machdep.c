@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: serv_machdep.c,v $
- * Revision 1.2  2000/10/27 01:58:45  welchd
- *
- * Updated to latest source
- *
  * Revision 1.4  1995/08/29  19:48:18  mike
  * don't need include of i386/eflags.h anymore
  *

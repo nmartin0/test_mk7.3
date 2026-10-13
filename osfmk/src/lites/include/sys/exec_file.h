@@ -16,14 +16,6 @@
 /*
  * HISTORY
  * $Log: exec_file.h,v $
- * Revision 1.3  2000/11/07 00:41:29  welchd
- *
- * Added support for executing dynamically linked Linux ELF binaries
- *
- * Revision 1.2  2000/10/27 01:55:29  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.1  1995/03/02  21:49:35  mike
  * Initial Lites release from hut.fi
  *
@@ -49,7 +41,7 @@ typedef enum binary_type {
 	BT_386BSD, BT_NETBSD, BT_FREEBSD, BT_CMU_43UX,
 	BT_SCRIPT, BT_ISC4, BT_LINUX, BT_LINUX_SHLIB, BT_LINUX_O,
 	BT_MIPSEL, BT_MIPSEB, BT_HPBSD, BT_HPUX, BT_HPREREAD,
-	BT_ELF, BT_ALPHAOSF1, BT_LINUX_ELF, BT_LINUX_DYN_ELF
+	BT_ELF, BT_ALPHAOSF1
     } binary_type_t;
 
 /* Names for the above (for @bin expansion) */
@@ -59,7 +51,7 @@ typedef enum binary_type {
     m ## "bnr", m ## "netbsd", m ## "freebsd", m ## "ux", \
     "script", m ## "isc4", m ## "linux", m ## "linux", m ## "linux", \
     m ## "ultrix", m ## "riscos", m ## "hpbsd", m ## "hpux", m ## "hpkludge", \
-    m ## "hpelf", m ## "osf1", m ## "linux", m ## "linux (dynamic)"
+    m ## "hpelf", m ## "osf1"
 
 union exec_data {
 	unsigned short	short_magic;
@@ -111,4 +103,3 @@ struct exec_load_info {
 binary_type_t get_binary_type(union exec_data *hdr);
 void guess_binary_type_from_header(union exec_data *hdr, binary_type_t *bt,
 				   cpu_type_t *ct);
-

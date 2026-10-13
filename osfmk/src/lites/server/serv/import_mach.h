@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: import_mach.h,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/08/18  18:01:34  mike
  * add mutex_init call to ensure holder field is initialized
  * thought this might be the problem with mutex assertion triggering, but it wasn't

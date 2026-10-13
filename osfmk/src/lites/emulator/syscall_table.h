@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: syscall_table.h,v $
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/09/01  23:27:54  mike
  * HP-UX compatibility support from Jeff F.
  *

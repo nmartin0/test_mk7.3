@@ -33,10 +33,6 @@
  *    now seperate tape routines in tape_io.c.
  *
  * $Log: disk_io.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.3  1996/03/27  07:26:59  sclawson
  * added back in ``temp kludge for tape drives'' that Ian Dall removed in '94.
  *

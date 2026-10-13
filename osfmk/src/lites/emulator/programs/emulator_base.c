@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: emulator_base.c,v $
- * Revision 1.2  2000/10/27 01:55:28  welchd
- *
- * Updated to latest source
- *
  * Revision 1.5  1995/08/21  20:10:23  mike
  * further qualify HPBSD test
  *

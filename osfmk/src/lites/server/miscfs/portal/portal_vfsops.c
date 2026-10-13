@@ -35,7 +35,7 @@
  *
  *	@(#)portal_vfsops.c	8.6 (Berkeley) 1/21/94
  *
- * $Id: portal_vfsops.c,v 1.2 2000/10/27 01:58:46 welchd Exp $
+ * $Id: portal_vfsops.c,v 1.3 1996/02/17 00:17:21 sclawson Exp $
  */
 
 /*

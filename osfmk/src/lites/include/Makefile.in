@@ -19,10 +19,6 @@
 #
 # HISTORY
 # $Log: Makefile.in,v $
-# Revision 1.2  2000/10/27 01:55:28  welchd
-#
-# Updated to latest source
-#
 # Revision 1.1.1.1  1995/03/02  21:49:32  mike
 # Initial Lites release from hut.fi
 #
@@ -55,7 +51,7 @@ include $(SRCDIR)/conf/Makerules
 
 sys/syscall.h: $(SRCDIR)/server/kern/makesyscalls.sh \
 	       $(SRCDIR)/server/kern/syscalls.master
-	-rm -rf tmp libjacket libsys
+	-rm -rf tmp sys libjacket libsys
 	-mkdir tmp sys libjacket libsys
 	cd tmp;/bin/sh $(SRCDIR)/server/kern/makesyscalls.sh \
 		       $(SRCDIR)/server/kern/syscalls.master
@@ -66,8 +62,8 @@ machine:
 	ln -s $(SRCDIR)/include/$(TARGET_MACHINE) $@
 
 
-install: machine $(GEN_HFILES) $(INSTALL_INCDIR)/machine \
-         $(addprefix $(INSTALL_INCDIR)/, $(filter-out $(NOINSTALL), $(HFILES)))
+install: $(INSTALL_INCDIR)/machine $(addprefix $(INSTALL_INCDIR)/, \
+				     $(filter-out $(NOINSTALL), $(HFILES)))
 
 $(INSTALL_INCDIR)/%.h: %.h
 	$(MKDIR) $(patsubst %/,%,$(dir $@))

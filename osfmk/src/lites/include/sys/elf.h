@@ -20,10 +20,6 @@
 /*
  * HISTORY
  * $Log: elf.h,v $
- * Revision 1.2  2000/10/27 01:55:29  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.1  1995/03/02  21:49:36  mike
  * Initial Lites release from hut.fi
  *
@@ -41,7 +37,6 @@
 #define ELFMAG3 'F'
 
 #define PT_LOAD 1
-#define PT_INTERP 3
 
 #define PF_X 0x1
 #define PF_W 0x2

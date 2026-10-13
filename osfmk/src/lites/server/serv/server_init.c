@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: server_init.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.4  1995/08/15  06:49:37  sclawson
  * modifications from lites-1.1-950808
  *
@@ -487,8 +483,7 @@ void parse_arguments(
 	}
 	dprintf("(lites): emulator_path(%s)\r\n", emulator_path);
 	dprintf("(lites): init_program(%s)\r\n", init_program_path);
-   
-        dprintf("(lites): rootname %s\r\n", rootname);
+
 	rootdev = parse_root_device(rootname);
 }
 

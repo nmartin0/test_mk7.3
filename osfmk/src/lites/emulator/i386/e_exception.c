@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: e_exception.c,v $
- * Revision 1.2  2000/10/27 01:55:28  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/10/19  20:21:44  sclawson
  * get rid of the reference to EFL_USER_SET, which shouldn't have been
  * exported from Mach anyway.

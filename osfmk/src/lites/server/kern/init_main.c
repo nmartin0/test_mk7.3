@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: init_main.c,v $
- * Revision 1.2  2000/10/27 01:58:45  welchd
- *
- * Updated to latest source
- *
  * Revision 1.4  1995/08/23  18:33:44  mike
  * cleanup EXT2FS code: only one ifdef
  *
@@ -83,7 +79,6 @@
 #include "sl.h"
 #include "ppp.h"
 #include "ext2fs.h"
-#include "devfs.h"
 
 #include <serv/server_defs.h>
 #include <sys/param.h>
@@ -107,7 +102,6 @@
 #include <sys/kernel.h>
 #include <sys/fcntl.h>
 #include <ufs/ufs/quota.h>
-#include <miscfs/devfs/devfs.h>
 
 #include <machine/cpu.h>
 
@@ -373,7 +367,7 @@ noreturn system_setup()
 	}
 #endif
 	if (kr != KERN_SUCCESS)
-		panic("cannot mount root 0x%x %s", kr, mach_error_string(kr));
+		panic("cannot mount root x%x %s", kr, mach_error_string(kr));
 
 	/* Get the vnode for '/'.  Set fdp->fd_fd.fd_cdir to reference it. */
 	kr = VFS_ROOT(mountlist.tqh_first, &rootvnode);
@@ -393,14 +387,7 @@ noreturn system_setup()
 	 */
 	get_time(&boottime);
 	p->p_rtime.tv_sec = p->p_rtime.tv_usec = 0;
-        
-        /*
-	 * Mount the device filesystem if required
-	 */
-#if DEVFS
-        mount_devfs();
-#endif
-   
+
 	/* Initialize signal state for process 0. */
 	siginit(p);
 
@@ -427,6 +414,7 @@ noreturn system_setup()
 	 * Let ps know what we are
 	 */
 	strncpy(p->p_comm, "Lites server", sizeof(p->p_comm));
+
 #if MACHID_REGISTER && SECOND_SERVER
 	if(second_server) {
 	    kr = netname_look_up(name_server_port, "", "MachID", &mid_server);
@@ -475,7 +463,7 @@ noreturn system_setup()
 	/*
 	 * Become the first server thread
 	 */
-        server_thread_deregister(p);
+	server_thread_deregister(p);
 	ux_server_loop();
 	/* NOTREACHED */
 }

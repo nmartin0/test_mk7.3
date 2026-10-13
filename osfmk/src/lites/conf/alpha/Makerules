@@ -1,0 +1,66 @@
+# 
+# Mach Operating System
+# Copyright (c) 1994 Jukka Virtanen
+# Copyright (c) 1994, The University of Utah and
+# the Computer Systems Laboratory at the University of Utah (CSL).
+# All Rights Reserved.
+# 
+# Permission to use, copy, modify and distribute this software and its
+# documentation is hereby granted, provided that both the copyright
+# notice and this permission notice appear in all copies of the
+# software, derivative works or modified versions, and any portions
+# thereof, and that both notices appear in supporting documentation.
+# 
+# JUKKA VIRTANEN AND THE UNIVERSITY OF UTAH AND CSL ALLOWS FREE
+# USE OF THIS SOFTWARE IN ITS "AS IS" CONDITION.  JUKKA VIRTANEN
+# AND THE UNIVERSITY OF UTAH AND CSL DISCLAIMS ANY LIABILITY OF ANY
+# KIND FOR ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS
+# SOFTWARE.
+# 
+
+# This file contains alpha-specific make rules for all of Lites.
+#
+# SRCDIR must be set to the directory of the alpha source tree.
+# SECTIONS must be set to any optional sections to activate.
+# (The current directory is assumed to be the object directory.)
+
+DEFINES += -Dalpha
+
+# Required compiler/assembler flags.
+# Note that we don't have to bother with HOST_anything
+# for assembly language sources:
+# the host probably can't execute alpha assembly language anyway.
+TARGET_ASFLAGS	+= -DASSEMBLER
+
+# Don't optimize yet
+TARGET_OPTIMIZE_CFLAGS = -O0
+
+# the alpha requires libdivide.a from export libs
+# (build when MK is made)
+#
+TARGET_LIBS = -ldivide
+
+# The generic source tree doesn't know about assembly language,
+# so we work it out here.
+# The SRCDIRS variable isn't complete yet
+# (it doesn't have the generic directories in it),
+# but that's no problem because we know there's no assembly language
+# in the generic directories anyway.
+ifdef COLLECT_SFILES
+SFILES += $(filter %.s,$(FILES))
+endif
+
+GEN_OBJFILES += $(sort $(addsuffix .o,$(basename $(notdir $(SFILES)))))
+
+
+%.S: %.s
+	-rm -f $@
+	-cp $< $@
+ 
+%.o: %.S
+	@echo
+	$(TARGET_CC) -g -x assembler-with-cpp -c $(CPPFLAGS) $(ASFLAGS) $(TARGET_CPPFLAGS) $(TARGET_ASFLAGS) -MD $<
+ 
+%_p.o: %.S
+	@echo
+	$(TARGET_CC) -g -x assembler-with-cpp -pg -DGPROF -c $(CPPFLAGS) $(ASFLAGS) $(TARGET_CPPFLAGS) $(TARGET_ASFLAGS) -MD $< -o $@

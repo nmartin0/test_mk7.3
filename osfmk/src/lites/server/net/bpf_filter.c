@@ -38,7 +38,7 @@
  *      @(#)bpf_filter.c	8.1 (Berkeley) 6/10/93
  *
  * static char rcsid[] =
- * "$Header: /cvsroot/xmach/lites/server/net/bpf_filter.c,v 1.2 2000/10/27 01:58:47 welchd Exp $";
+ * "$Header: /n/fast/usr/lsrc/mach/CVS/lites/server/net/bpf_filter.c,v 1.1.1.1 1995/03/02 21:49:53 mike Exp $";
  */
 
 #include <sys/param.h>

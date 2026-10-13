@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: e_defs.h,v $
- * Revision 1.2  2000/10/27 01:55:27  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/08/23  18:33:04  mike
  * temporary: extra header file for mach4 stubs
  *

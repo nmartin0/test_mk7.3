@@ -30,10 +30,6 @@
  *	ttioctl to convert from old cmds to new cmds.
  *
  * $Log: tty_io.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/08/15  06:49:39  sclawson
  * modifications from lites-1.1-950808
  *

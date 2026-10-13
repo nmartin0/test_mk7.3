@@ -16,10 +16,6 @@
 /*
  * HISTORY
  * $Log: mach_error.c,v $
- * Revision 1.2  2000/10/27 01:58:46  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.1  1995/03/02  21:49:46  mike
  * Initial Lites release from hut.fi
  *

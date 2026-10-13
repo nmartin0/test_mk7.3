@@ -25,10 +25,6 @@
  *	Fixed loadavg to use host_info() and to print Mach factors on
  *	a second line.
  * $Log: kernfs_vnops.c,v $
- * Revision 1.2  2000/10/27 01:58:46  welchd
- *
- * Updated to latest source
- *
  * Revision 1.2  1995/06/25  04:16:48  law
  * Install fix for "update race in 4.4 filesystme code"
  *

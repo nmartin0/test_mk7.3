@@ -110,4 +110,4 @@ the debugger, the debugger should fork and the child should stop itself
 "attach".  as before, the child will hit a breakpoint on the first
 instruction in any newly exec'd image.
 
-$Id: README,v 1.2 2000/10/27 01:58:46 welchd Exp $
+$Id: README,v 1.1.1.1 1995/03/02 21:49:51 mike Exp $

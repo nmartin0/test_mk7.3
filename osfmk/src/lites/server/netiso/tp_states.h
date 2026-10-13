@@ -1,5 +1,5 @@
-/* $Header: /cvsroot/xmach/lites/server/netiso/tp_states.h,v 1.2 2000/10/27 01:58:48 welchd Exp $ */
-/* $Source: /cvsroot/xmach/lites/server/netiso/tp_states.h,v $ */
+/* $Header: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/tp_states.h,v 1.1.1.1 1995/03/02 21:49:56 mike Exp $ */
+/* $Source: /n/fast/usr/lsrc/mach/CVS/lites/server/netiso/tp_states.h,v $ */
 #define ST_ERROR 0x0
 #define TP_CLOSED 0x1
 #define TP_CRSENT 0x2

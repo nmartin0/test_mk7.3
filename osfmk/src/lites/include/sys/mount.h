@@ -105,8 +105,7 @@ struct statfs {
 #define MOUNT_UNION	15	/* Union (translucent) Filesystem */
 #define MOUNT_EXT2FS	16	/* Linux ext2 Filesystem */	
 #define MOUNT_MINIXFS	17	/* Linux minix Filesystem */
-#define MOUNT_DEVFS     18      /* Dev filesystem */
-#define	MOUNT_MAXTYPE	18
+#define	MOUNT_MAXTYPE	17
 
 #define INITMOUNTNAMES { \
 	{"none", 	MOUNT_NONE},		/*  0 MOUNT_NONE */ \
@@ -129,7 +128,6 @@ struct statfs {
 	{"union", 	MOUNT_UNION},		/* 15 MOUNT_UNION */ \
 	{"ext2fs", 	MOUNT_EXT2FS},		/* 16 MOUNT_EXT2FS */ \
 	{"minixfs", 	MOUNT_MINIXFS}, 	/* 17 MOUNT_MINIXFS */ \
-        {"devfs",       MOUNT_DEVFS},           /* 18 MOUNT_DEVFS */ \
 	{"adosfs", 	MOUNT_NONE},		/* UNIMPLEMENTED */ \
 }
 

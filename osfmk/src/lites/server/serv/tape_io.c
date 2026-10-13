@@ -18,10 +18,6 @@
 /*
  * HISTORY
  * $Log: tape_io.c,v $
- * Revision 1.2  2000/10/27 01:58:49  welchd
- *
- * Updated to latest source
- *
  * Revision 1.1.1.2  1995/03/23  01:16:52  law
  * lites-950323 from jvh.
  *

@@ -140,7 +140,7 @@ spec_open(ap)
 	dev_t bdev, dev = (dev_t)vp->v_rdev;
 	register int maj = major(dev);
 	int error;
-   
+
 	/*
 	 * Don't allow open if fs is mounted -nodev.
 	 */
