@@ -304,7 +304,15 @@ boolean_t take_a_signal(struct i386_thread_state *state)
 			state->uesp = sc.sc_sp;
 			state->ebp = sc.sc_fp;
 
-			state->eax = 1;
+			/*
+			 * AI-ONLY NOTE: was "state->eax = 1;".  That is the
+			 * setjmp test of take_signals_and_do_sigreturn(),
+			 * which makes it itself after this returns.  Here it
+			 * also reached e_i_got_a_signal(), whose state is a
+			 * thread interrupted anywhere -- by an asynchronous
+			 * signal, or since 0053 a caught fault -- and the
+			 * thread resumed with %eax 1.  docs/deferred.md, S-7.
+			 */
 		}
 	}
 
