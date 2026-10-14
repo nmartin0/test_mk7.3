@@ -256,8 +256,9 @@ int_check:
 /*
  * AI-ONLY NOTE: a spurious IRQ15 still put IRQ2, the cascade, in
  * service on the master, which then wants its EOI; returned without
- * one, the master blocks IRQ8-15 for good -- the disk's IRQ14 with
- * them, and every process ends in "biowait".  Seen under QEMU: master
+ * one, the master blocks IRQ2 and every line below it in priority --
+ * IRQ8-15 and IRQ3-7 -- for good, the disk's IRQ14 with them, and
+ * every process ends in "biowait".  Seen under QEMU: master
  * ISR 0x04 and slave IRR 0xc0 with the boot stopped.  NetBSD 1.0's
  * i386 vector.s EOIs IRQ2 at the master for every slave interrupt.
  * A spurious IRQ7 is the master's own, and gets none, as before.
