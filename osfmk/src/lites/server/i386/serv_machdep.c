@@ -297,3 +297,49 @@ void pagemove(
 #endif
 }
 
+
+#if OSFMACH3
+/*
+ * AI-ONLY NOTE: new, for the exception port's EXCEPTION_STATE_IDENTITY
+ * behaviour (kern/init_main.c): the flavour the kernel sends, and how
+ * a caught signal redirects a faulting thread in the reply
+ * (serv/ux_exception.c; docs/deferred.md, S-7).  The frame is the
+ * one the emulator's do_signal_notify() builds on the user stack
+ * (emulator/i386/e_signal.c) -- the old state, a pointer to it, a
+ * null return address -- with the thread sent to the entry the
+ * emulator recorded, e_i_got_a_signal(state).  FALSE, and the caller
+ * notifies as before, if there is no entry or the stack cannot take
+ * the frame.
+ */
+thread_state_flavor_t machine_exception_flavor = i386_THREAD_STATE;
+
+boolean_t machine_signal_redirect(
+	struct proc		*p,
+	thread_state_t		state,
+	mach_msg_type_number_t	count)
+{
+	struct i386_thread_state *ts = (struct i386_thread_state *) state;
+	struct {
+		int			 pc;
+		struct i386_thread_state *arg;
+		struct i386_thread_state ts;
+	} frame;
+	vm_offset_t entry, sp;
+
+	entry = p->p_shared_rw->us_sigtramp;
+	if (entry == 0 || count != i386_THREAD_STATE_COUNT)
+		return FALSE;
+
+	sp = ts->uesp - sizeof frame;
+	frame.pc = 0;
+	frame.arg = (struct i386_thread_state *) (sp + 2 * sizeof (int));
+	frame.ts = *ts;
+	if (vm_write(p->p_task, sp, (vm_offset_t) &frame, sizeof frame)
+	    != KERN_SUCCESS)
+		return FALSE;
+
+	ts->eip = entry;
+	ts->uesp = sp;
+	return TRUE;
+}
+#endif /* OSFMACH3 */

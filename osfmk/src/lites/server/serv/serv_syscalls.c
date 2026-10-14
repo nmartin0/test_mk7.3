@@ -482,7 +482,17 @@ void psig(int sig)
 	sig_default(p, sig);
 }
 
-boolean_t thread_signal(struct proc *p, thread_t thread, int sig, int code)
+#if OSFMACH3
+boolean_t machine_signal_redirect(struct proc *, thread_state_t,
+				 mach_msg_type_number_t);
+#endif
+boolean_t thread_signal(
+	struct proc		*p,
+	thread_t		thread,
+	int			sig,
+	int			code,
+	thread_state_t		state,
+	mach_msg_type_number_t	count)
 {
   	int mask;
 	boolean_t notified = FALSE;
@@ -565,6 +575,25 @@ boolean_t thread_signal(struct proc *p, thread_t thread, int sig, int code)
 		siglock(p);
 		p->p_siglist |= mask;
 		sigunlock(p);
+#if OSFMACH3
+		/*
+		 * AI-ONLY NOTE: a thread stopped in an exception is sent
+		 * to the emulator's signal entry by the exception reply,
+		 * not by a signal notification, whose thread_abort() would
+		 * end the task under OSFMK (serv/ux_exception.c,
+		 * catch_exception_raise_state_identity).  The entry takes
+		 * the pending signals with bsd_take_signal(), as after a
+		 * notification, which SAS_NOTIFY_DONE stands for.  Not
+		 * held back when the flag is already set: a handler left
+		 * by longjmp() never returns to the loop that clears it,
+		 * and the thread would fault for ever.
+		 */
+		if (state && machine_signal_redirect(p, state, count)) {
+		    p->p_sigacts->ps_flags |= SAS_NOTIFY_DONE;
+		    notified = TRUE;
+		    break;
+		}
+#endif /* OSFMACH3 */
 		notified = send_signal(p, thread, sig, code);
 		break;
 	}
@@ -576,10 +605,12 @@ boolean_t thread_signal(struct proc *p, thread_t thread, int sig, int code)
  * we have a thread per user exception, so it can wait.
  */
 boolean_t thread_psignal(
-	task_t		task,
-	thread_t	thread,
-	register int	sig,
-	int		code)
+	task_t			task,
+	thread_t		thread,
+	register int		sig,
+	int			code,
+	thread_state_t		state,	/* to redirect, or 0 */
+	mach_msg_type_number_t	count)
 {
 	register struct proc *p;
 	proc_invocation_t pk = get_proc_invocation();
@@ -611,7 +642,7 @@ boolean_t thread_psignal(
 	mutex_unlock(&p->p_lock);
 	unix_master();
 
-	notified = thread_signal(p, thread, sig, code);
+	notified = thread_signal(p, thread, sig, code, state, count);
 
 	unix_release();
 
