@@ -74,7 +74,13 @@ SETUP_PROGRAMS 		= rmelfhdr
 PROGRAMS		=${SETUP_PROGRAMS}
 .else
 DEPENDENCIES 		=
-CFLAGS 			= ${${OBJECT_FORMAT}_EXTRA_WARNINGS} -m386 -DPRIMARY=1
+# AI-ONLY NOTE: -mtune=i386 for -m386.  GCC 2.7's -m386 optimized
+# code for a 386; GCC 2.8 made it a synonym for -mcpu=i386, and 3.4
+# deprecated -mcpu for -mtune.  No current GCC accepts -m386.  Same
+# request: it tunes and does not restrict the instruction set.
+# Compile-blocking; docs/deferred.md, "Booting with OSF's own boot
+# loader".
+CFLAGS 			= ${${OBJECT_FORMAT}_EXTRA_WARNINGS} -mtune=i386 -DPRIMARY=1
 rboot.S_CFLAGS 		= ${CFLAGS} -DREMOTE=1
 .endif
 

@@ -389,10 +389,16 @@ system runs.
 `primary`, `secondary` and `lib` Makefiles all put in `CFLAGS`. In GCC
 2.7 `-m386` meant "tune for the 386"; GCC 2.8 replaced it with
 `-mcpu=i386`, and today's is `-mtune=i386` (or `-march=i386`).
-Changing the three Makefiles is a vendor edit, for the maintainer; a
-compiler wrapper that rewrites the flag would be a way round it, not
-a fix. Past that, the primary has to fit its 512-byte and 8 KB
-limits with today's code generation, which is not yet measured.
+Since 0052 the three Makefiles say `-mtune=i386`, the same request
+in today's spelling (each with an AI-ONLY note). The build then stops
+in `lib/disk.c` at `boot/include/boot.h`'s `#include <ufs/fs.h>`:
+nothing in this tree exports `ufs/fs.h` -- `file_systems` exports only
+`mach/fs/file_system.h`, and finds its own `ufs/fs.h` with `-I.` --
+and the HP700 boot includes it the same way, with only
+`-I../include`, so OSF's own tree had it exported from somewhere this
+one lacks. Not yet looked for. Past that, the primary has to fit its
+512-byte and 8 KB limits with today's code generation, which is not
+yet measured.
 
 ### Making disks on the running system, as OSF did
 
