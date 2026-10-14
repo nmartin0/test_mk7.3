@@ -139,10 +139,10 @@ The kernel now probes hardware and initialises the VM system:
 	battery clock configured
 	intnull(14)
 
-**OSF's bootstrap task starts `default_pager`.** With a boot disk:
+**OSF's bootstrap task starts `default_pager`**, which `build_world`
+builds since 0059. With a boot disk:
 
 	sh docs/tools/mknbmakefs.sh		# once
-	(cd osfmk/src && build -here default_pager)
 	sh docs/tools/mkbootdisk.sh disk.img \
 	    $MK_BUILD/obj/at386/default_pager/default_pager
 	sh docs/tools/boot.sh disk.img
