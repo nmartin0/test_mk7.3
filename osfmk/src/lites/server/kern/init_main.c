@@ -396,12 +396,24 @@ noreturn system_setup()
 	/* exception handler */
 	exception_port = ux_handler_setup();
 #if OSFMACH3
+	/*
+	 * AI-ONLY NOTE: EXCEPTION_STATE_IDENTITY with the machine's
+	 * thread state, for EXCEPTION_DEFAULT and no flavour.  Under
+	 * OSFMK a faulting thread is resumed only by the exception
+	 * reply, so a caught signal must redirect it there, with the
+	 * new state (serv/ux_exception.c,
+	 * catch_exception_raise_state_identity; docs/deferred.md, S-7).
+	 * Child tasks inherit the port, its behaviour and flavour.
+	 */
+	{
+	extern thread_state_flavor_t machine_exception_flavor;
 	/* set all exception types but EXC_MASK_MACH_SYSCALL */
 	kr = task_set_exception_ports(initproc->p_task,
 				      EXC_MASK_BAD_ACCESS|EXC_MASK_BAD_INSTRUCTION|EXC_MASK_ARITHMETIC|EXC_MASK_EMULATION|EXC_MASK_SOFTWARE|EXC_MASK_SOFTWARE|EXC_MASK_BREAKPOINT|EXC_MASK_SYSCALL,
 				      exception_port,
-				      EXCEPTION_DEFAULT,
-				      0);
+				      EXCEPTION_STATE_IDENTITY,
+				      machine_exception_flavor);
+	}
 #else /* OSFMACH3 */
 	kr = task_set_exception_port(initproc->p_task,
 				     exception_port);

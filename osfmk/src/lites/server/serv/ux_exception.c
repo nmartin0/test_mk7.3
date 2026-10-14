@@ -97,9 +97,35 @@ mach_port_t ux_handler_setup()
 }
 
 /* forward */
+boolean_t thread_psignal(task_t, thread_t, int, int, thread_state_t,
+			 mach_msg_type_number_t);
+#if OSFMACH3
+extern thread_state_flavor_t machine_exception_flavor;
+#endif
 void ux_exception(integer_t exception, integer_t code, integer_t subcode,
 		  int *ux_signal, int *ux_code);
 
+/*
+ * AI-ONLY NOTE: under OSFMACH3, OSFMK 7.3's exc.defs signature: the
+ * codes come as an array and its count, (exception, code[], codeCnt),
+ * where CMU's passed (exception, code, subcode).  Read with CMU's,
+ * code was the array's address and subcode its count, so
+ * KERN_INVALID_ADDRESS never matched and every bad access was SIGBUS
+ * (docs/deferred.md, S-3).  OSFMK's own servers take it so
+ * (bootstrap/bootstrap.c, catch_exception_raise).
+ */
+#if OSFMACH3
+kern_return_t catch_exception_raise(
+	mach_port_t		exception_port,
+	thread_t		thread,
+	task_t			task,
+	exception_type_t	exception,
+	exception_data_t	codes,
+	mach_msg_type_number_t	codeCnt)
+{
+	integer_t code = codeCnt > 0 ? codes[0] : 0;
+	integer_t subcode = codeCnt > 1 ? codes[1] : 0;
+#else /* OSFMACH3 */
 kern_return_t catch_exception_raise(
 	mach_port_t		exception_port,
 	thread_t		thread,
@@ -108,6 +134,7 @@ kern_return_t catch_exception_raise(
 	integer_t		code,
 	integer_t		subcode)
 {
+#endif /* OSFMACH3 */
 	int	signal = 0, ux_code = 0;
 	int	ret = KERN_SUCCESS;
 
@@ -125,7 +152,8 @@ kern_return_t catch_exception_raise(
 	     *	Send signal.
 	     */
 	    if (signal != 0) {
-		    if (thread_psignal(task, thread, signal, ux_code)) {
+		    if (thread_psignal(task, thread, signal, ux_code,
+				       (thread_state_t) 0, 0)) {
 		      /* The tasks signal thread has been notified and
 		       * it will unblock the thread which got the exception
 		       * so we don't want exc_server() reply.
@@ -149,30 +177,82 @@ kern_return_t catch_exception_raise(
 }
 
 #if OSFMACH3
+/*
+ * AI-ONLY NOTE: the two state routines take OSFMK 7.3's exc.defs
+ * arguments, which the stubs did not: a code array and count, the
+ * flavour, and each state with its count.  EXCEPTION_STATE, without
+ * the thread and task, names no process, so it stays a stub.
+ */
 kern_return_t catch_exception_raise_state(
 	mach_port_t		port,
 	exception_type_t	exception,
-	exception_type_t	code,
-	exception_data_t	subcode,
-	thread_state_flavor_t	*flavor,
-	thread_state_t		in_state,
-	thread_state_t		out_state)
+	exception_data_t	code,
+	mach_msg_type_number_t	codeCnt,
+	int			*flavor,
+	thread_state_t		old_state,
+	mach_msg_type_number_t	old_stateCnt,
+	thread_state_t		new_state,
+	mach_msg_type_number_t	*new_stateCnt)
 {
 	panic("catch_exception_raise_state");
 }
 
+/*
+ * AI-ONLY NOTE: new; was a panic stub.  The exception port is
+ * registered EXCEPTION_STATE_IDENTITY (kern/init_main.c), OSFMK's
+ * form in which the reply carries the thread's new state.  OSFMK's
+ * exception() resumes a faulting thread only by a reply: one aborted
+ * out of the exception RPC, as the emulator's do_signal_notify()
+ * does, goes on to the task's handler and then exception_no_server(),
+ * which terminates the task -- where Mach 3 and Mach4 resumed it
+ * (docs/deferred.md, S-7).  So a signal the process catches is sent
+ * here, in the reply: thread_psignal() is given the state, and
+ * machine_signal_redirect() points it at the emulator's signal entry
+ * with the old state on the stack, as do_signal_notify() would have.
+ * Any other outcome replies the state unchanged.
+ */
 kern_return_t catch_exception_raise_state_identity(
 	mach_port_t		port,
 	mach_port_t		thread,
 	mach_port_t		task,
 	exception_type_t	exception,
-	exception_type_t	code,
-	exception_data_t	subcode,
-	thread_state_flavor_t	*flavor,
-	thread_state_t		in_state,
-	thread_state_t		out_state)
+	exception_data_t	code,
+	mach_msg_type_number_t	codeCnt,
+	int			*flavor,
+	thread_state_t		old_state,
+	mach_msg_type_number_t	old_stateCnt,
+	thread_state_t		new_state,
+	mach_msg_type_number_t	*new_stateCnt)
 {
-	panic("catch_exception_raise_state_identity");
+	int	signal = 0, ux_code = 0;
+	kern_return_t ret = KERN_SUCCESS;
+
+	bcopy((char *) old_state, (char *) new_state,
+	      old_stateCnt * sizeof (natural_t));
+	*new_stateCnt = old_stateCnt;
+
+	if (MACH_PORT_VALID(task) && MACH_PORT_VALID(thread)) {
+	    ux_exception(exception,
+			 codeCnt > 0 ? code[0] : 0,
+			 codeCnt > 1 ? code[1] : 0,
+			 &signal, &ux_code);
+	    if (signal != 0)
+		(void) thread_psignal(task, thread, signal, ux_code,
+				      *flavor == machine_exception_flavor ?
+				      new_state : (thread_state_t) 0,
+				      *new_stateCnt);
+	} else {
+	    printf("catch_exception_raise_state_identity: task %x thread %x\n",
+		   task, thread);
+	    ret = KERN_INVALID_ARGUMENT;
+	}
+
+	if (MACH_PORT_VALID(task))
+		(void) mach_port_deallocate(mach_task_self(), task);
+	if (MACH_PORT_VALID(thread))
+		(void) mach_port_deallocate(mach_task_self(), thread);
+
+	return ret;
 }
 #endif /* OSFMACH3 */
 

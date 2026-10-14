@@ -239,8 +239,9 @@ and a 10 MB `dd` work; NetBSD's `newfs` makes a 100 MB file system on
 a second disk; a 200 MB root from `mkbootdisk.sh` passes `fsck` at
 boot (S-1, fixed). Not yet stable: `default_pager` has no paging
 space unless given `hd0b` (S-2, now `mkbootdisk.sh`'s default); every
-bad access becomes SIGBUS (S-3, S-4); a SIGSEGV or SIGBUS handler is
-never run (S-7); a shell sometimes drops the rest of its line after a
+NULL dereference is SIGBUS, not SIGSEGV (S-4; S-3 and S-7, the
+signal lost and the handler never run, fixed in 0053); a shell
+sometimes drops the rest of its line after a
 pipeline (S-8); `timed` dies (S-5). Where Lites
 differs from the OSF/1 server the MK7.3 documents describe is in the
 same file, O-1 to O-10.

@@ -531,26 +531,20 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   below, and it is required, not optional. **Done** in configuration:
   `mkbootdisk.sh` writes `default_pager default_pager hd0b`
   (`PAGING_DEV` for another), and `docs/status.md`'s example has it.
-- **S-3. Every bad access is SIGBUS, and its address is lost.** Lites'
-  `catch_exception_raise` (`server/serv/ux_exception.c`) has CMU's
-  arguments, `(exception, code, subcode)`; OSFMK 7.3's `exc.defs`
-  passes `(exception, code[], codeCnt)`. Caught with gdb: `code` was a
-  pointer, `subcode` the count, 2, and the array held
-  `KERN_PROTECTION_FAILURE` and the fault address. So
-  `code == KERN_INVALID_ADDRESS` never holds and SIGSEGV is never
-  sent. The same kind of interface port as `xmm_interface.c`'s.
-  **Proposed, not made** (a vendor change, waiting for the
-  maintainer): under `OSFMACH3`, `catch_exception_raise` takes
-  OSFMK's `(exception_type_t exception, exception_data_t codes,
-  mach_msg_type_number_t codeCnt)` and passes `codes[0]` and
-  `codes[1]` on as `code` and `subcode`, the CMU signature kept under
-  `#else`; OSFMK's own servers have that signature
-  (`bootstrap/bootstrap.c`, `catch_exception_raise`). Prototyped in a
-  scratch tree and run with a test program that faults three ways
-  and reports how its child died: before, "null", "unmapped" and
-  "text" all killed by signal 10; with it, "unmapped" by 11, SIGSEGV,
-  and "null" and "text" by 10. NetBSD 1.0 gives 11, 11 and 10, so
-  "null" is S-4's.
+- **S-3. Every bad access was SIGBUS, and its address lost.** Fixed
+  in 0053. Lites' `catch_exception_raise` (`server/serv/ux_exception.c`)
+  had CMU's arguments, `(exception, code, subcode)`; OSFMK 7.3's
+  `exc.defs` passes `(exception, code[], codeCnt)`. Caught with gdb:
+  `code` was a pointer, `subcode` the count, 2, and the array held
+  `KERN_PROTECTION_FAILURE` and the fault address, so
+  `code == KERN_INVALID_ADDRESS` never held and SIGSEGV was never
+  sent. Under `OSFMACH3` the routine now takes OSFMK's signature, as
+  OSFMK's own servers do (`bootstrap/bootstrap.c`,
+  `catch_exception_raise`), and the state routines read the same
+  array (S-7). A test program that faults three ways and reports how
+  its child died: before, "null", "unmapped" and "text" all killed by
+  signal 10; now "unmapped" by 11, SIGSEGV, and "null" and "text" by
+  10. NetBSD 1.0 gives 11, 11 and 10, so "null" is S-4's.
 - **S-4. A NULL dereference is a protection failure, not an invalid
   address.** OSFMK 7.3's `mach_init` (`libmach/mach_init.c`) maps page
   0 `VM_PROT_NONE` "so that the program doesn't get it", and Lites'
@@ -558,40 +552,44 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   S-3 fixed, a NULL dereference would still be classed by its
   `KERN_PROTECTION_FAILURE`. **To do**: decide with S-3 which signal
   NetBSD's binaries should see; NetBSD 1.0 sends SIGSEGV.
-- **S-7. A handler for SIGSEGV or SIGBUS is never run.** The same test
-  program with `signal(SIGSEGV, h)` and `signal(SIGBUS, h)`, `h`
-  calling `_exit(100 + sig)`: the child exits with status 0, not 110
-  or 111 and not killed, before the S-3 prototype and with it. Lites
-  delivers an exception's signal to a handler by notifying the task's
-  signal port (`send_signal()`, `sendsig()`, `signal_notify()` in
-  `server/serv/`) and not answering the exception, which the
-  emulator's signal thread then takes. **Traced** with a kernel that
-  prints in `exception_no_server()`: the faulting thread is not
-  redirected; the kernel finds no exception server for it and
-  terminates the task ("task ... eip 17bc", the faulting instruction),
-  and the child's status is that of a killed task, 0. The emulator's
-  `do_signal_notify()` (`emulator/i386/e_signal.c`) suspends the
-  thread, `thread_abort`s it, sets its state to the handler
-  trampoline and resumes it -- Mach 3's way, where an aborted thread
-  waiting in `exception_raise` keeps waiting
-  (`exception_raise_continue_slow()` in CMU's and Mach4's
-  `kern/exception.c`: "Somebody is trying to force this thread to a
-  clean point.  We must cooperate and then resume the receive").
-  OSFMK 7.3's `exception()` (`kern/exception.c`) does not loop: any
-  result but `KERN_SUCCESS` or `MACH_RCV_PORT_DIED` goes on to
-  `exception_try_task()` and, with no other handler, to
-  `exception_no_server()`, which terminates the task. **Options, for
-  the maintainer** (both vendor changes, under `OSFMACH3`):
-  (a) the server answers the exception, `KERN_SUCCESS`, once the
-  emulator has set the new state, and the emulator does not
-  `thread_abort` a thread that is in an exception -- the smallest
-  change, keeping Lites' design; (b) the server handles signals for
-  exceptions with `EXCEPTION_STATE` and `catch_exception_raise_state`,
-  returning the handler's state in the reply, which is OSFMK's own
-  mechanism for this (the three behaviours, `docs/roadmap.md` Tier 1
-  item 2) and the way the exception-driven syscall path will work --
-  larger, and part of that later work. Programs that catch their own
-  faults misbehave until one is made.
+- **S-7. A handler for SIGSEGV or SIGBUS was never run.** Fixed in
+  0053, OSFMK's way. The test program with `signal(SIGSEGV, h)` and
+  `signal(SIGBUS, h)`, `h` calling `_exit(100 + sig)`: the child
+  exited with status 0, not 110 or 111. Lites delivered an
+  exception's signal by notifying the task's signal port
+  (`send_signal()`, `sendsig()`, `signal_notify()` in `server/serv/`)
+  and not answering the exception; the emulator's
+  `do_signal_notify()` (`emulator/i386/e_signal.c`) then suspends the
+  thread, `thread_abort`s it, sets its state to the signal entry and
+  resumes it -- Mach 3's way, where an aborted thread waiting in
+  `exception_raise` keeps waiting (`exception_raise_continue_slow()`
+  in CMU's and Mach4's `kern/exception.c`). OSFMK 7.3's `exception()`
+  (`kern/exception.c`) does not loop: any result but `KERN_SUCCESS`
+  or `MACH_RCV_PORT_DIED` goes on to `exception_try_task()` and, with
+  no other handler, `exception_no_server()`, which terminates the
+  task. **The change**, all under `OSFMACH3`: the server registers
+  its exception port `EXCEPTION_STATE_IDENTITY` with
+  `i386_THREAD_STATE` (`kern/init_main.c`), OSFMK's behaviour in
+  which the reply carries the thread's new state, and implements
+  `catch_exception_raise_state_identity`, a panic stub until now.
+  When the process catches the signal, the reply sends the thread to
+  the emulator's signal entry, `e_i_got_a_signal`, with the old state
+  on the user stack -- the frame `do_signal_notify()` builds, written
+  with `vm_write` by `machine_signal_redirect()`
+  (`server/i386/serv_machdep.c`); the entry takes the signal with
+  `bsd_take_signal()` as before. The emulator records the entry in the
+  shared page, `us_sigtramp` (`include/sys/ushared.h`), when it
+  registers its signal port. Otherwise the reply leaves the state
+  unchanged and the signal takes its old course. Measured: the test
+  program's "null+handler" exits 110 and "unmapped+handler" 111; a
+  second, `sig2.c`, catches 200 SIGSEGVs in a row with a handler that
+  `longjmp`s out, twice, then takes a SIGALRM in `pause()`; `/etc/rc`
+  and the shell are as before. **Left**: an asynchronous
+  notification already on its way when a thread faults can still
+  abort it out of the exception RPC (Lites' own `SAS_NOTIFY_DONE`
+  window, now narrow); and a handler left by `longjmp` never clears
+  `SAS_NOTIFY_DONE`, so later asynchronous signals wait for the
+  process's next system call -- Lites' own, on Mach4 too.
 - **S-8. A shell sometimes stops after a pipeline.** `cat /etc/* |
   sort | wc -l` prints its count and the shell, NetBSD 1.0's `sh`,
   neither prints a prompt nor runs what follows on the same line --
@@ -717,8 +715,8 @@ Lites toward the OSF/1 server.
 **Recommended 13 October 2026; the maintainer decides.**
 
 1. **Stability first** -- S-2 (configuration) and S-1 (the disk tool),
-   both done; S-3 and S-4 (one vendor change, proposed, prototyped);
-   S-7 and S-8 (signals and the sleep code, to be traced); then S-5. Everything after is tested on top of these;
+   both done; S-3 and S-7, done in 0053; S-4 (which signal NetBSD's
+   binaries should see); S-8 (the shell, being traced); then S-5. Everything after is tested on top of these;
    a server that dies on a write makes every later result doubtful.
 2. **Then the boundary items that are configuration or small**: O-8
    with S-2 (done), O-9 (builds and runs; `build_world` waits), then O-1, O-2, O-4, O-5 and

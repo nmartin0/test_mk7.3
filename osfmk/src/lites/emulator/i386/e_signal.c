@@ -78,6 +78,19 @@ boolean_t e_signal_setup()
 	/* preallocate one reply port for later use */
 	signal_suspend_reply_port = mig_get_reply_port();
 
+#if OSFMACH3
+	/*
+	 * AI-ONLY NOTE: tell the server where a signal is taken, so a
+	 * thread that faults is sent here in the exception reply: under
+	 * OSFMK, do_signal_notify()'s thread_abort() of a thread waiting
+	 * in an exception RPC ends the task.  docs/deferred.md, S-7.
+	 */
+	{
+	extern struct ushared_rw *shared_base_rw;
+	shared_base_rw->us_sigtramp = (vm_offset_t) e_i_got_a_signal;
+	}
+#endif /* OSFMACH3 */
+
 	/* Check in signal port with server */
 	kr = bsd_signal_port_register(process_self(), signal_port);
 	if (kr)

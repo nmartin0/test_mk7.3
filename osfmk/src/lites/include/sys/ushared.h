@@ -57,6 +57,16 @@ struct ushared_rw {
 	shared_lock_t	us_siglock;
 	int		us_sig;
 	int		us_sigignore;
+	/*
+	 * AI-ONLY NOTE: new.  Where the emulator takes an asynchronous
+	 * signal (i386: e_i_got_a_signal), set by the emulator when it
+	 * registers its signal port.  The server sends a thread that
+	 * faulted there in its exception reply, under OSFMACH3, since
+	 * OSFMK's exception() does not resume a thread aborted out of
+	 * an exception RPC (docs/deferred.md, S-7).  Last, so no other
+	 * field moves.
+	 */
+	vm_offset_t	us_sigtramp;
 };
 
 #endif	_SYS_USHARED_H_
