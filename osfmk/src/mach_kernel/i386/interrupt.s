@@ -251,7 +251,25 @@ int_check:
 	outb	%al,%dx
 	inb	%dx,%al			# read ISR
 	testb	$0x80, %al		# return if IS7 is off
-	jz	interrupt_return
+	jnz	int_eoi
+
+/*
+ * AI-ONLY NOTE: a spurious IRQ15 still put IRQ2, the cascade, in
+ * service on the master, which then wants its EOI; returned without
+ * one, the master blocks IRQ8-15 for good -- the disk's IRQ14 with
+ * them, and every process ends in "biowait".  Seen under QEMU: master
+ * ISR 0x04 and slave IRR 0xc0 with the boot stopped.  NetBSD 1.0's
+ * i386 vector.s EOIs IRQ2 at the master for every slave interrupt.
+ * A spurious IRQ7 is the master's own, and gets none, as before.
+ */
+#ifdef	AT386
+	cmpl	$15, %ecx
+	jne	interrupt_return
+	movl	EXT(master_icw),%edx
+	movw	EXT(PICM_OCW2),%ax
+	outb	%al,%dx
+#endif	/* AT386 */
+	jmp	interrupt_return
 
 
 /*
@@ -260,6 +278,7 @@ int_check:
  *	automatically interrupts us with only the highest priority interrupt.
  */
 
+int_eoi:
 	movl	EXT(master_icw),%edx	#  2	EOI for master.
 int_ok:
 	movw	EXT(PICM_OCW2),%ax	#  2
