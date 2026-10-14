@@ -564,7 +564,11 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   7.0's `machdep.prot_fault_translation` -- but that is not the
   system these binaries came from. **The change**, under `OSFMACH3`:
   `ux_exception()` sends SIGSEGV for a protection failure whose
-  address is in the first page. The reservation stays; to the BSD
+  address is in the first page, when page 0 is the reservation:
+  386BSD and Linux binaries load their text at 0, where the
+  reservation fails, and a write there stays SIGBUS, as on NetBSD
+  (`ux_page0_mapped()`, a `vm_region()` of page 0; 0061). The
+  reservation stays; to the BSD
   process the page is absent, as on NetBSD. A test program, faulting
   in a child each way: NULL write, NULL read and a read at 0xffc, 11;
   an unmapped address, 11; a write to text, 10 -- NetBSD 1.0's
@@ -597,17 +601,26 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   (`server/i386/serv_machdep.c`); the entry takes the signal with
   `bsd_take_signal()` as before. The emulator records the entry in the
   shared page, `us_sigtramp` (`include/sys/ushared.h`), when it
-  registers its signal port. Otherwise the reply leaves the state
-  unchanged and the signal takes its old course. Measured: the test
-  program's "null+handler" exits 110 and "unmapped+handler" 111; a
+  registers its signal port. If the stack cannot take the frame, the
+  process dies of SIGILL, as in 4.4BSD-Lite2's i386 `sendsig()` when
+  `useracc()` fails ("Process has trashed its stack") and NetBSD
+  1.0's, `sigexit(p, SIGILL)` (0061); the old notification there
+  would abort the thread the reply resumes. A signal not caught
+  leaves the state unchanged and takes its old course. Measured: the
+  test program's "null+handler" exits 110 and "unmapped+handler" 111; a
   second, `sig2.c`, catches 200 SIGSEGVs in a row with a handler that
   `longjmp`s out, twice, then takes a SIGALRM in `pause()`; `/etc/rc`
-  and the shell are as before. **Left**: an asynchronous
-  notification already on its way when a thread faults can still
-  abort it out of the exception RPC (Lites' own `SAS_NOTIFY_DONE`
-  window, now narrow); and a handler left by `longjmp` never clears
-  `SAS_NOTIFY_DONE`, so later asynchronous signals wait for the
-  process's next system call -- Lites' own, on Mach4 too.
+  and the shell are as before. **Left**: an asynchronous notification
+  already on its way when a thread faults can still abort it out of the
+  exception RPC (Lites' own `SAS_NOTIFY_DONE` window, now narrow); and a
+  handler left by `longjmp` never clears `SAS_NOTIFY_DONE`, so later
+  asynchronous signals wait for the process's next system call -- Lites'
+  own, on Mach4 too. A handler that returned had `%eax` set to 1 by the
+  emulator's `take_a_signal()`, meant for the setjmp test of
+  `take_signals_and_do_sigreturn()`, which makes it itself; removed in
+  0062. Not for Linux binaries: the emulator's own exception port for
+  them (`emulator/i386/e_exception.c`) still forwards with
+  `exception_raise` and CMU's arguments.
 - **S-8. A shell sometimes stops after a pipeline.** `cat /etc/* |
   sort | wc -l` prints its count and the shell, NetBSD 1.0's `sh`,
   neither prints a prompt nor runs what follows on the same line --
@@ -643,7 +656,12 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   `spin_lock_t` is `volatile int`; the run queue's head was missed.
   The loop now reads it through a `volatile` pointer. Every program
   linked with `libcthreads` -- the bootstrap task, `default_pager`,
-  the server -- takes the fix when relinked; Lites' makefiles do not
+  the server -- takes the fix when relinked. The inline
+  `spin_try_lock()` and `spin_unlock()` (`include/i386/cthreads.h`)
+  had the same exposure, asms without a `"memory"` clobber and so not
+  compiler barriers, as their out-of-line versions in
+  `libcthreads/i386/lock.s` are by being calls; given one in 0063.
+  Lites' makefiles do not
   relink on a changed library, so a sandbox built before 0054 needs
   `startup` removed first.
 - **S-10. Disk I/O could stop for good after a spurious IRQ15.**
@@ -658,6 +676,26 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   only an EOI clears it. NetBSD 1.0's `i386/isa/vector.s` sends the
   master its IRQ2 EOI for every slave interrupt. Now a spurious IRQ15
   EOIs the master and nothing else.
+- **S-11. A caught signal does not reach a process that makes no
+  system calls.** Found reviewing 0053: a program spinning with a
+  SIGALRM handler and a 50 ms interval timer took one alarm in 52
+  seconds, at its next system call. gdb on the server: `psignal()` ran
+  for every alarm, and neither `send_signal()` nor the emulator's
+  `do_signal_notify()` ran at all. Utah's choice: `psignal()`'s `SRUN`
+  case sends only `if (signal_send_running)`, a debug switch in
+  `server/kern/kern_sig.c` that is 0, with their note "XXX there is
+  apparently a race here. With this defined we (on the PA) get
+  regular segmentation faults ... The downside of commenting this
+  section out is that you cannot interrupt (only SIGKILL) a process
+  that isn't making system calls ... Need to fix this." Signals with
+  a default action are not affected, nor are processes that make
+  system calls. **Not changed; for the maintainer**: setting the
+  switch is the upstream's own way on; the race they describe is the
+  emulator's signal thread suspending and aborting a thread that is
+  already taking the signal at a system call's end, and under OSFMK an
+  abort of a thread in an exception is S-7's again. A fix would give
+  the notification the care 0053's reply has, measured with this
+  program first.
 - **S-5. `timed` died of a bus error** at every boot. Fixed in 0058.
   Not the network: with `ne0` configured at boot (`/etc/hostname.ne0`,
   `/etc/mygate`; 0056) it still died. Caught with gdb at the server's
@@ -705,9 +743,9 @@ happens, unchanged and with fixes tried in a scratch tree only:
   the root `fsck`.
 
 **Working since 0056.** The stops in the last two runs were not the
-driver's: they were S-10 (a spurious IRQ15 leaving the master PIC's
-cascade in service, so the disk's IRQ14 never came) and S-9 (the
-server's cthreads idle loop), both fixed in 0054 and 0055. `neintr()`
+driver's: they were S-9 (the server's cthreads idle loop) and S-10
+(a spurious IRQ15 leaving the master PIC's cascade in service, so the
+disk's IRQ14 never came), fixed in 0054 and 0055. `neintr()`
 is left as it is: its receive loop still does not advance past a
 header with a bad status unless built with `NEDEBUG`, which has not
 been seen to happen. 0056 makes the three fixes to the

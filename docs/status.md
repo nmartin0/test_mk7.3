@@ -243,7 +243,8 @@ bad access gets NetBSD 1.0's signal and a handler runs (S-3, S-7
 and S-4, fixed in 0053 and 0060); a shell
 dropped the rest of its line after a pipeline (S-8, not seen since
 0054 fixed S-9, a server stall); `timed` died in the emulator's
-`adjtime` (S-5, fixed in 0058). The NE2000 works since 0056: under
+`adjtime` (S-5, fixed in 0058); a caught signal does not reach a
+process that makes no system calls, as Utah left it (S-11). The NE2000 works since 0056: under
 QEMU's `ne2k_isa`, `ifconfig ne0` and `ping` (`docs/deferred.md`,
 "The `ne` driver"). Where Lites
 differs from the OSF/1 server the MK7.3 documents describe is in the
