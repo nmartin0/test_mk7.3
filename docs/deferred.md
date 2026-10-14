@@ -665,11 +665,30 @@ happens, unchanged and with fixes tried in a scratch tree only:
 - **With that loop also made to advance**: the boot stops earlier, at
   the root `fsck`.
 
-So the driver needs, besides the two known defects, not to take
-interrupts -- or to ignore them -- until `neinit()` has set its ring
-up; and `nefetch()`'s wait, `inb(nec+ds0_isr & DSIS_RDC)`, masks the
-port number instead of the value read. All are vendor changes, for the
-maintainer; none is made.
+**Working since 0056.** The stops in the last two runs were not the
+driver's: they were S-10 (a spurious IRQ15 leaving the master PIC's
+cascade in service, so the disk's IRQ14 never came) and S-9 (the
+server's cthreads idle loop), both fixed in 0054 and 0055. `neintr()`
+is left as it is: its receive loop still does not advance past a
+header with a bad status unless built with `NEDEBUG`, which has not
+been seen to happen. 0056 makes the three fixes to the
+driver: `autoconf.c`'s `ne` entry names `neintr`; the odd-length
+copies in `nefetch()` and `neput()` index the last byte as a byte;
+and `nefetch()`'s wait masks the value read, `inb(nec+ds0_isr) &
+DSIS_RDC`, as `neput()`'s does, not the port number. With QEMU's
+`-netdev user,id=n0 -device ne2k_isa,iobase=0x300,irq=10,netdev=n0`:
+
+	# ifconfig ne0 10.0.2.15 netmask 255.255.255.0 up
+	# ifconfig -a
+	ne0: flags=43<UP,BROADCAST,RUNNING>
+	        inet 10.0.2.15 netmask 0xffffff00 broadcast 10.0.2.255
+	# ping -c 3 10.0.2.2
+	64 bytes from 10.0.2.2: icmp_seq=1 ttl=255 time=0.000 ms
+	64 bytes from 10.0.2.2: icmp_seq=2 ttl=255 time=0.000 ms
+	3 packets transmitted, 2 packets received, 33% packet loss
+
+-- the first, most likely, lost while ARP resolved. Roadmap
+milestone 4's first step; DNS, routes and `/etc` setup are next.
 
 ### Lites against the OSF/1 server: the documented behaviour
 

@@ -208,7 +208,12 @@ void nefetch (ne_softc_t *ns, int *up, int ad, int len)
     if (odd) {
       linw (nec+ne_data, (int *)up, len/2);
       *(last_word) = inw(nec+ne_data); /* get last word */
-      *(up+len-1) = last_word[0]; /* last byte */
+      /*
+       * AI-ONLY NOTE: the last byte is byte len-1 of the buffer; up
+       * is an int *, so *(up+len-1) wrote 4*(len-1) bytes past it.
+       * Likewise in neput().
+       */
+      ((char *)up)[len-1] = last_word[0]; /* last byte */
     } else {
       linw (nec+ne_data, up, len/2);
     }
@@ -217,7 +222,11 @@ void nefetch (ne_softc_t *ns, int *up, int ad, int len)
 
 
   /* Wait till done, then shutdown feature */
-  while ((inb(nec+ds0_isr & DSIS_RDC) == 0) && counter-- > 0);
+  /*
+   * AI-ONLY NOTE: the mask applies to the value read, as in neput();
+   * it was applied to the port number, reading port nec.
+   */
+  while ((inb(nec+ds0_isr) & DSIS_RDC) == 0 && counter-- > 0);
 
   outb (nec+ds0_isr, DSIS_RDC);
   outb (nec+ds_cmd, cmd);
@@ -258,7 +267,7 @@ neput (ne_softc_t *ns, int *up, int ad, int len)
         if (ns->ns_mode & DSDC_WTS) {
 				if (odd) {
 	                loutw (nec+ne_data, up, len/2);
-					last_word[0] = *(up+len-1);
+					last_word[0] = ((char *)up)[len-1];
 					outw (nec+ne_data, (unsigned short) *(last_word));
 				}
 				else {

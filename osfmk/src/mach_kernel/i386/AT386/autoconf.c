@@ -591,7 +591,13 @@ struct	bus_device	bus_device_init[] = {
 
 /* vvv MITCHEM vvv */
 #if NNE > 0
-  {&nedriver, "ne", 0, (intr_t)at3c501intr, (caddr_t)0x300, 0,(caddr_t)0x300,
+/*
+ * AI-ONLY NOTE: neintr, for at3c501intr.  The entry was copied from
+ * the 3c501's above it with that card's handler left in, so the
+ * NE2000's interrupts were never served and ifconfig ne0 hung.
+ * nedriver's own handler is neintr (if_ne.c).
+ */
+  {&nedriver, "ne", 0, (intr_t)neintr, (caddr_t)0x300, 0,(caddr_t)0x300,
      '?',    0,   -1,    -1,    0,   0,        0,   SPL_SIX, 10},
 #endif /* NNE > 0 */
 /* ^^^ MITCHEM ^^^ */ 
