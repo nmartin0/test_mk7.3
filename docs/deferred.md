@@ -632,7 +632,12 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   it" this matches): 15 runs of a 60-iteration `while` loop of that
   pipeline, up to three machines at once and the host loaded, all
   finished; two others, run during a kernel build, stopped before the
-  first iteration and were not caught with gdb. Watched, not closed.
+  first iteration and were not caught with gdb. Seen once more, 14
+  October 2026: a `csh` command line typed just after login
+  (`echo ... >> /etc/master.passwd; pwd_mkdb ...; echo USEROK`) never
+  finished, and nothing typed after it ran; one boot in seven of that
+  sequence, none in 75 iterations of it from `sh`, and the run had no
+  gdb stub. Every boot since runs with one. Watched, not closed.
 - **S-9. The whole system could stop, idle, with work queued.**
   Fixed in 0054. Seen first with the `ne` card (below), then at
   random: `csh` never printing its prompt after `tset`, other
@@ -691,6 +696,32 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   abort of a thread in an exception is S-7's again. A fix would give
   the notification the care 0053's reply has, measured with this
   program first.
+- **S-12. Six NetBSD programs die in `setproctitle()`.** `ftpd`,
+  `inetd` (in its built-in services), `named`, `sendmail`, `mailq`
+  and `newaliases`. NetBSD 1.0's libc `setproctitle()`
+  (`lib/libc/gen/setproctitle.c`) stores through `PS_STRINGS`, the
+  `struct ps_strings` NetBSD's exec puts at the top of the stack,
+  0xf7bfdff0 for its `USRSTACK` of 0xf7bfe000. Under Lites the stack
+  ends at `VM_MAX_ADDRESS`, 0xc0000000 (`include/i386/vmparam.h`),
+  and under OSFMK, as under CMU's Mach and Mach4, everything above
+  that is the kernel's: the address cannot be mapped for the task.
+  Caught with gdb at the server's exception handler: `ftpd`'s first
+  `setproctitle()`, before its greeting, faults (`EXC_BAD_ACCESS`,
+  `KERN_INVALID_ADDRESS`, 0xf7bfdff4, `ps_nargvstr`) and the process
+  dies of SIGSEGV; `ftp` sees "421 Service not available". Utah's
+  answer to this kind of gap is in `doc/README`, "BINARIES": "There
+  are limitations to the binary compatibility ... route, mount, fsck,
+  nfsd, mount_nfs, mount_kernfs, mount_* should be taken from Lite."
+  **Options, for the maintainer**: (a) as `doc/README` says, these
+  programs from 4.4BSD-Lite2, whose `ftpd` and `inetd` set their
+  titles by rewriting `argv` in place (`sendmail` and `named` are not
+  in the Lite2 tree and would need their own sources) -- built on the
+  running system with NetBSD's `cc`, which is milestone 5's first
+  step; (b) the server completes a store to the `PS_STRINGS` page
+  for NetBSD binaries by stepping over it, which makes
+  `setproctitle()` a no-op -- instruction decoding in the server, for
+  a cosmetic call; (c) NetBSD's libc rebuilt with Lites' `USRSTACK`,
+  a change to the userland. (a) is recommended.
 - **S-5. `timed` died of a bus error** at every boot. Fixed in 0058.
   Not the network: with `ne0` configured at boot (`/etc/hostname.ne0`,
   `/etc/mygate`; 0056) it still died. Caught with gdb at the server's
