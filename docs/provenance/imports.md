@@ -171,6 +171,7 @@ so at the site.
 | `i386/interrupt.s`: a spurious IRQ15 sends the master its EOI before returning | NetBSD 1.0's `i386/isa/vector.s`, whose slave entries EOI IRQ2 at the master for every interrupt the slave raises. The slave's own ISR is still read as OSF's code did, and a spurious IRQ7 still gets no EOI (S-10) |
 | `i386/AT386/autoconf.c`, the `ne` entry: `neintr` for `at3c501intr` | MkLinux's entry, marked "MITCHEM", was copied from the 3c501's above it and kept that card's handler; `nedriver`'s own is `neintr`, declared in `if_ne_entries.h` |
 | `i386/AT386/if_ne.c`, `nefetch()` and `neput()`: the odd last byte indexed as a byte; `nefetch()`'s wait masks the value read | The same file: `neput()`'s wait is `(inb(nec+ds0_isr) & DSIS_RDC)`, the form `nefetch()` lost to a misplaced parenthesis; `up` is an `int *`, so `*(up+len-1)` addressed word `len-1`, not byte `len-1` |
+| `lites/emulator/e_bsd.c`, `e_adjtime()`: `olddelta` received into a local and copied out only if not null | The same file: `e_setitimer()` treats its `ovalue` so. 4.4BSD-Lite2's `adjtime()` (`kern/kern_time.c`) writes `olddelta` only `if (uap->olddelta)` (S-5) |
 
 **The two Lites rows above are build-level, not source.** Lites'
 source changes are the `lites/` rows of kinds B and C, each with a note
