@@ -63,7 +63,13 @@ LDFLAGS			= -nostdlib -Ttext 0 -e start
 LIBFLAGS		= -L../lib
 LIBS			= -lboot -lsa_fs -lsa_mach
 
-CFLAGS +=  -DDEVICE_NS8390 -DDEVICE_3C503 -m386
+# AI-ONLY NOTE: -mtune=i386 for -m386.  GCC 2.7's -m386 optimized
+# code for a 386; GCC 2.8 made it a synonym for -mcpu=i386, and 3.4
+# deprecated -mcpu for -mtune.  No current GCC accepts -m386.  Same
+# request: it tunes and does not restrict the instruction set.
+# Compile-blocking; docs/deferred.md, "Booting with OSF's own boot
+# loader".
+CFLAGS +=  -DDEVICE_NS8390 -DDEVICE_3C503 -mtune=i386
 # The following flags are used for debugging precise pieces of software:
 #	-DNETDEBUG
 #	-DPROTODEBUG
