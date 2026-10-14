@@ -392,8 +392,7 @@ cylinder groups on a second disk (`newfs /dev/rwd1a qemu100`, with a
 `disktab` entry for the vtoc's partition a, because Lites answers
 `DIOCGDINFO` with "Inappropriate ioctl"); `fsck` passed it, it
 mounted, took 7.7 MB of `/usr`, and passed `fsck` again after
-unmounting. That is S-1 below's way out. Recorded first because it is
-OSF's procedure: OSF never
+unmounting. Recorded first because it is OSF's procedure: OSF never
 built a disk image from a directory. `disk_setup` ran the `vtoc`
 utility and `newfs` on the target machine under MK7.3 itself, and
 `mk_install` then extracted the release onto the new file systems
@@ -482,27 +481,24 @@ sets boots multi-user to `login:` and, logged in as root:
 Each run was QEMU TCG, 64 MB of memory. What fails:
 
 - **S-1. File systems made by `makefs` with more than one cylinder
-  group.** NetBSD 1.0's `fsck` dies in pass 5, "Check Cyl groups",
-  with a bus error (a fault at address 0x10), so `/etc/rc` drops to
-  single-user; and writing to such a file system -- even `cpp`
-  writing its output -- takes the Lites server down ("(bootstrap):
-  '/dev/boot_device/mach_servers/startup' task terminated"), with no
-  panic, no exception to the bootstrap task and no `task_terminate`
-  of its own. A single cylinder group works; with `makefs`'s minimal
-  inode count that is up to about 48 MB, and at `newfs`'s own density
-  (`NFPI` 4, `-o density=4096`) up to about 40 MB. The same sizes made
-  by NetBSD 1.0's `newfs` work, so the fault is in what `makefs`
-  writes, not in Lites' reading of 1994's layout. `makefs` describes
-  each group as a single cylinder (`fs_old_cpg` 1, `fs_old_nsect` =
-  `fs_old_spc`) and its last group as having none (`cg_old_ncyl` 0),
-  where `newfs` wrote 16 cylinders a group; which difference matters
-  is not yet found -- a one-group file system has the same fields and
-  works.
-  **To do**: keep the host-made root to one cylinder group and make
-  every other disk with `newfs` on the running system, as OSF did --
-  `mkbootdisk.sh` now stops at more than one group, and makes inodes at
-  `newfs`'s density -- and separately, Lites must not die on a bad file
-  system (a server robustness defect, cause not yet found).
+  group -- fixed in `mkbootdisk.sh`.** NetBSD 1.0's `fsck` died in pass
+  5, "Check Cyl groups", with a bus error (a fault at address 0x10),
+  so `/etc/rc` dropped to single-user; and writing to such a file
+  system -- even `cpp` writing its output -- took the Lites server down
+  ("(bootstrap): '/dev/boot_device/mach_servers/startup' task
+  terminated"). A kernel built with a print in `exception_no_server()`
+  showed the server faulting with no exception port, at `0x8053cdb` in
+  `ffs_nodealloccg()`, reading `fs_cs(fs, cg)`; 4.4BSD's macro is
+  `fs_csp[cg >> fs_csshift][cg & ~fs_csmask]`, and `makefs` leaves
+  both fields zero -- today's FFS calls them `fs_old_csmask` and
+  `fs_old_csshift`, spares -- so every group after the first indexes a
+  null pointer; `fsck`'s 0x10 is `(1 & ~0) << 4`, group 1's entry.
+  NetBSD 1.0's `newfs` writes -512 and 9 (`mkfs.c`: `~(i - 1)` and
+  log2 `i`, `i` = `fs_bsize / sizeof(struct csum)`). `mkbootdisk.sh`
+  now sets them so, in the superblock and in each group's copy; a 200
+  MB root in five groups passes `fsck` at boot and takes `cc`, `tar`
+  and `dd`. Left open: Lites, like 4.4BSD, trusts the superblock, so a
+  bad one still takes the whole server down, not one mount.
 - **S-2. No paging space unless `default_pager` is given one.** Without
   an argument it starts with none, and under `cc` the screen fills with
   "(default pager): ps_allocate_cluster: no space in available paging
@@ -603,10 +599,9 @@ Lites toward the OSF/1 server.
 
 **Recommended 13 October 2026; the maintainer decides.**
 
-1. **Stability first** -- S-2 (configuration), S-1 (keep the host-made
-   root to one cylinder group; larger disks with `newfs` on the
-   system), S-3 and S-4 (one vendor change, proposed first), then S-5
-   and S-1's server crash. Everything after is tested on top of these;
+1. **Stability first** -- S-2 (configuration) and S-1 (the disk tool),
+   both done; S-3 and S-4 (one vendor change, proposed first), then
+   S-5. Everything after is tested on top of these;
    a server that dies on a write makes every later result doubtful.
 2. **Then the boundary items that are configuration or small**: O-8
    with S-2, O-9 when `name_server` builds, then O-1, O-2, O-4, O-5 and
@@ -619,15 +614,15 @@ Lites toward the OSF/1 server.
    - it does not shorten the path to the items above: they are server
      changes, built in minutes by the cross build and tested by booting
      QEMU, where the same edit-build-boot under TCG inside the system
-     takes far longer, and a server crash (S-1) would take the
+     takes far longer, and a server crash would take the
      development environment down with it;
    - its own prerequisites are open: NetBSD 1.0's `gcc` makes a.out,
      and this kernel and its servers are ELF, so gcc 2.7.2 in its
      OSF/1 i386 ELF configuration and binutils must be built on the
      system first (§1, "The compiler is OSF's line first"); ODE's
      `build`, `migcom` and `config` must be built for NetBSD 1.0; the
-     source tree needs disks larger than one cylinder group (S-1, so
-     `newfs` on the system); and sources need a way in -- the `ne`
+     source tree needs room -- a large disk from `mkbootdisk.sh`, or
+     `newfs` on the system; and sources need a way in -- the `ne`
      network (milestone 4) or disks written on the host and read by
      `tar` on the system;
    - what it does prove -- `cc` compiling and running a program under
