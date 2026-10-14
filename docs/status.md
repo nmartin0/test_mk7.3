@@ -241,8 +241,11 @@ boot (S-1, fixed). Not yet stable: `default_pager` has no paging
 space unless given `hd0b` (S-2, now `mkbootdisk.sh`'s default); every
 NULL dereference is SIGBUS, not SIGSEGV (S-4; S-3 and S-7, the
 signal lost and the handler never run, fixed in 0053); a shell
-sometimes drops the rest of its line after a
-pipeline (S-8); `timed` dies (S-5). Where Lites
+dropped the rest of its line after a pipeline (S-8, not seen since
+0054 fixed S-9, a server stall); `timed` dies in the emulator's
+`adjtime` (S-5, fix proposed). The NE2000 works since 0056: under
+QEMU's `ne2k_isa`, `ifconfig ne0` and `ping` (`docs/deferred.md`,
+"The `ne` driver"). Where Lites
 differs from the OSF/1 server the MK7.3 documents describe is in the
 same file, O-1 to O-10.
 
