@@ -31,14 +31,15 @@ Measured against the trees as they stand:
 
 | | state |
 |---|---|
-| OSFMK 7.3 boots | yes: OSF's bootstrap task reads `bootstrap.conf` from UFS on a vtoc-labelled IDE disk, as OSF's own did, and starts `default_pager`; `name_server` does not build yet |
+| OSFMK 7.3 boots | yes: OSF's bootstrap task reads `bootstrap.conf` from UFS on a vtoc-labelled IDE disk, as OSF's own did, and starts `name_server`, `default_pager` and the server, in the template's order |
 | Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
 | the three are one repository | **done** for two of them — the kernel at `osfmk/`, and Lites at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was |
-| one build drives all three | **done** for the kernel and Lites -- `build_world` builds both, Lites with `build -here lites`, OSF's step 8; the server starts on OSFMK 7.3 and mounts its root (`docs/status.md`, "Lites starts") |
+| one build drives all three | **done** for the kernel and Lites -- `build_world` builds the kernel, the bootstrap task, `name_server`, `default_pager` and Lites (0051, 0059), Lites with `build -here lites`, OSF's step 8; the server runs NetBSD 1.0's userland multi-user (`docs/status.md`) |
 | the two Utah traps checked for | **done** — trap 1 fires, trap 2 does not on the generic path; `docs/status.md` |
 
-Two of those rows moved since this file was written.
+Those rows were brought up to date on 14 October 2026; the
+milestones below carry their state as of that day.
 
 **Lites is in the repository; its place has now been read rather than
 inferred.** OSF's MK6.1 and MK7.3 release notes build the OSF/1 server
@@ -54,7 +55,7 @@ belongs to the runtime slot in `/mach_servers`, not to a source
 directory. `docs/provenance/precedent.md`, "Where the server lives,
 and why", has the sources.
 
-**Lites builds and starts; a userland is the blocking item.**
+**Lites builds and starts; it now runs a userland** (milestone 3).
 `osfmk/src/lites/makefile` runs Lites' own configure build under ODE
 (`docs/provenance/precedent.md`, "How Lites meets ODE"; option A,
 reviving Lites' CMU ODE build, is held in `docs/deferred.md` §2), and
@@ -63,7 +64,9 @@ and for OSFMK 7.3's interfaces, each recorded in
 `docs/provenance/imports.md`; its `OSF_ENVIRONMENT` switch, brought to
 7.3, links it the way OSF linked its own servers. Started by OSF's
 bootstrap task as `startup`, it mounts its root and stops where a
-system with no userland must: there is no `mach_init` to exec.
+system with no userland must: there is no `mach_init` to exec. Since
+then a root built by `docs/tools/mkbootdisk.sh` from NetBSD 1.0's
+binaries supplies one (`docs/status.md`).
 
 **Trap 1 fires, and it is a constraint on Tier 1 item 2.** C-threads
 finds a thread's identity by masking its stack pointer to a fixed
@@ -126,10 +129,10 @@ greps and both change the shape of Tier 1 if they fire.
    added a stub-generator option to suppress it.
 
 **`bootstrap.conf`.** Three lines by default — `name_server`,
-`default_pager`, `startup`. What our running OSFMK currently starts,
-and under what name Lites appears there, has not been recorded.
-`name_server` is in the default list and nothing here has established
-whether the server needs to register with it.
+`default_pager`, `startup` — and the system now runs with exactly
+those, Lites as `startup` (milestone 2). Whether the server should
+register with `name_server` and serve its tasks the bootstrap
+service, as the OSF/1 server did, is O-6 in `docs/deferred.md`.
 
 ## Intermediate goal — the whole system, online, hosting itself
 
@@ -149,6 +152,12 @@ The walk through `dev`'s commits continues as the way there; dev
 reached a multi-user login under Lites, by other means, at its commit
 `7c428c2`.
 
+**State on 14 October 2026**, milestone by milestone: 0 mostly done
+(four of slp's eighteen verdicts pending); 1 not reached; 2 done; 3
+done, with S-8 watched and S-11 for the maintainer; 4 in progress;
+5 not started beyond NetBSD's `cc` building programs under Lites.
+Each milestone below ends with its own line.
+
 **0. The releases, not the copies.** Neither import is its upstream's
 release (`docs/provenance/precedent.md`, "Where the two imports came
 from"). Lites is restored from Utah's `lites-1.1.u3.tar.gz` (done, 13
@@ -165,7 +174,9 @@ that CVS repository, by DR3's own procedure (`docs/tools/mkhostbin.sh`),
 as milestone 5 will build them on the running system. The target's
 assembler is chosen to read OSF's sources as written: GNU as for
 i386-elf, which keeps the System V assembler's `/` comments
-(`docs/tools/mkbinutils.sh`).
+(`docs/tools/mkbinutils.sh`). *State:* Lites restored; fourteen of
+slp's eighteen commits have verdicts, `2913827`, `f4fa636`,
+`444954a` and `7e81018` pending (`docs/provenance/verdicts.md`).
 
 **1. Boot as OSF did.** OSF's primary boot and `mach_boot`
 (`stand/AT386/boot`) on the vtoc disk, loading `/mach_kernel` and
@@ -175,13 +186,17 @@ multiboot entry slp added stays, as a second way in (maintainer,
 12 October 2026), and `docs/tools/boot.sh` keeps it as an option. The
 `hd.c` changes made for a boot without a BIOS (`dev`'s `052a105`,
 slp's `7e81018`) are tested again under a BIOS boot before any is
-adopted.
+adopted. *State:* not reached. `build -here stand` compiles past
+`-m386` since 0052 and stops at `boot.h`'s `#include <ufs/fs.h>`,
+which nothing in the tree exports (`docs/deferred.md`, "Booting with
+OSF's own boot loader"); the system boots by the multiboot entry.
 
 **2. The three servers.** `bootstrap.conf` as OSF's template and
 release notes give it: `name_server`, `default_pager` on partition b,
 `startup` -- Lites -- with the root, partition a. `name_server` builds.
 No `mach_init`: OSF's bootstrap task and `name_server` provide what it
-did.
+did. *State:* done; `build_world` builds all three (0051, 0059), and
+`mkbootdisk.sh` writes the template's `bootstrap.conf`.
 
 **3. Lites, multi-user.** Lites 1.1.u3 configured `STD+WS+osfmach3`,
 run as an ordinary task, not collocated. Root on partition a in the
@@ -190,13 +205,20 @@ read-write. Userland: NetBSD 1.0's i386 binaries, the release Lites'
 own documents name -- marked as provisional; this layer is expected to
 change most later. `/mach_servers/mach_init` is a symbolic link to
 `/sbin/init`, as Lites' `doc/README` allows when a name server is
-already running.
+already running. *State:* done. `/etc/rc` runs to a multi-user
+login with NetBSD 1.0's daemons; programs fault, catch and return as
+on NetBSD (S-3, S-4, S-5, S-7, 0053-0062); `cc` builds and runs
+programs. Open: S-8 (not seen since 0054) and S-11, Utah's
+`signal_send_running`, for the maintainer.
 
 **4. Online.** The kernel's own `ne` driver, already in the PRODUCTION
 configuration, with QEMU's `ne2k_isa`; its two defects fixed first
 (the 3c501 interrupt handler installed for it in `autoconf.c`, and
 odd-length copies in `if_ne.c`). Lites' 4.4BSD TCP/IP stack opens
 `ne0` by its Mach device name; `ifconfig`, `route`, then telnet and ftp.
+*State:* the driver's fixes made (0056); `ne0` configured at boot
+from `/etc/hostname.ne0`, the default route from `/etc/mygate`, and
+`ping` answered. telnet, ftp and name service next.
 
 **5. Hosting itself.** On the running system, ODE's minimal tools and
 a GCC of OSF's own line -- gcc 2.7.x, the compiler MK7.2 and MK7.3
@@ -204,6 +226,8 @@ were built with, in its OSF/1 i386 ELF configuration -- rebuild the
 kernel, the servers and Lites, and the result boots. The first
 compiler is NetBSD 1.0's own, running under Lites, as Lites
 self-hosted in 1995. Later GCCs come after this is stable.
+*State:* not started, beyond NetBSD 1.0's `cc` compiling and linking
+programs under Lites.
 
 The kernel configuration stays PRODUCTION, OSF's documented default;
 FAST, with the debugger, is for debugging only.
