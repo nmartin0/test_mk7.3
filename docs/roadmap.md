@@ -219,7 +219,11 @@ odd-length copies in `if_ne.c`). Lites' 4.4BSD TCP/IP stack opens
 `ne0` by its Mach device name; `ifconfig`, `route`, then telnet and ftp.
 *State:* the driver's fixes made (0056); `ne0` configured at boot
 from `/etc/hostname.ne0`, the default route from `/etc/mygate`, and
-`ping` answered. telnet, ftp and name service next.
+`ping` answered. Measured 14 October 2026 under QEMU's user network
+(`docs/status.md`, "Online"): telnet in, through `inetd` and a pty,
+and out; ftp out, with `passive`; the resolver, against a server at
+10.0.2.2. `ftpd` dies in NetBSD's `setproctitle()` (S-12), so ftp in
+waits on that decision.
 
 **5. Hosting itself.** On the running system, ODE's minimal tools and
 a GCC of OSF's own line -- gcc 2.7.x, the compiler MK7.2 and MK7.3

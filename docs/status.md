@@ -244,7 +244,8 @@ and S-4, fixed in 0053 and 0060); a shell
 dropped the rest of its line after a pipeline (S-8, not seen since
 0054 fixed S-9, a server stall); `timed` died in the emulator's
 `adjtime` (S-5, fixed in 0058); a caught signal does not reach a
-process that makes no system calls, as Utah left it (S-11). The NE2000 works since 0056: under
+process that makes no system calls, as Utah left it (S-11); NetBSD
+programs that call `setproctitle()`, `ftpd` among them, die (S-12). The NE2000 works since 0056: under
 QEMU's `ne2k_isa`, `ifconfig ne0` and `ping` (`docs/deferred.md`,
 "The `ne` driver"). Where Lites
 differs from the OSF/1 server the MK7.3 documents describe is in the
@@ -685,3 +686,33 @@ were live code.
 - `ftp.gwdg.de/pub/misc/opengroup/ri/`, the OSF RI publications mirror,
   never enumerated. One file from it is the best architecture document
   this project has.
+
+## Online
+
+**Measured 14 October 2026** (roadmap milestone 4). QEMU's
+`-netdev user,id=n0 -device ne2k_isa,iobase=0x300,irq=10,netdev=n0`,
+the root with `/etc/hostname.ne0` reading
+`inet 10.0.2.15 255.255.255.0 NONE` and `/etc/mygate` reading
+`10.0.2.2`; QEMU's host is 10.0.2.2 to the guest.
+
+- **telnet in.** With `hostfwd=tcp:127.0.0.1:2323-:23`, a client on
+  the host logs in to a user without a password (NetBSD lets root in
+  only on a secure terminal) through `inetd`, `telnetd` and `ttyp0`:
+  `uname -a` answers `Lites myname.my.domain Lites.1.1.u3
+  Lites.1.1.u3 STD+WS+osfmach3 i386`, and `who` shows the session
+  from 10.0.2.2.
+- **telnet out.** `telnet 10.0.2.2 2424` to a banner server on the
+  host: both directions carry data, and the close is seen.
+- **ftp out.** `ftp -n 10.0.2.2` to an FTP server on the host's port
+  21, `passive` on: `get` and `put` complete, the file contents
+  intact. Active mode reaches the server, whose data connection back
+  to 10.0.2.15 QEMU's user network cannot carry -- QEMU's limit, not
+  the guest's.
+- **Name service.** `/etc/resolv.conf` naming 10.0.2.2, where a small
+  server answers a test zone: `nslookup host.test.lan` answers, and
+  `ping guest.test.lan` resolves and is answered; the server logs the
+  resolver's reverse lookup, search-domain try and queries. Outside
+  names cannot be tried from the container this was measured in,
+  which has no resolver of its own.
+- **ftp in.** Fails: `ftpd` dies in `setproctitle()` before its
+  greeting (S-12).
