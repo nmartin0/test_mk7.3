@@ -602,6 +602,27 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   ("tsleep and friends is very fragile code ... Also signal handling
   needs to be reworked"); cause not yet found. `/etc/rc` and plain
   commands are not affected.
+- **S-9. The whole system could stop, idle, with work queued.**
+  Fixed in 0054. Seen first with the `ne` card (below), then at
+  random: `csh` never printing its prompt after `tset`, other
+  processes frozen with it, the console still echoing. In Lites'
+  server, read with gdb: five cthreads on `cthread_status.run_queue`,
+  all 13 kernel threads in use (`kernel_threads` equal to
+  `max_kernel_threads`), and a waiter spinning in `cthread_idle()`
+  (`mach_services/lib/libcthreads/cthreads.c`). Its loop,
+  `while (run queue empty && !p->undepress);`, reads a field that is
+  not `volatile` and calls nothing, so today's GCC loads the queue's
+  head once, before the loop (the disassembly shows the one load and a
+  loop on `undepress` alone); a waiter that saw the queue empty then
+  waits only for `cthread_wakeup()`, which finds waiters on
+  `waiting_dlq`, and this one is not on it yet. `undepress`, the loop's
+  other condition, is declared `volatile` for exactly this, and
+  `spin_lock_t` is `volatile int`; the run queue's head was missed.
+  The loop now reads it through a `volatile` pointer. Every program
+  linked with `libcthreads` -- the bootstrap task, `default_pager`,
+  the server -- takes the fix when relinked; Lites' makefiles do not
+  relink on a changed library, so a sandbox built before 0054 needs
+  `startup` removed first.
 - **S-5. `timed` dies of a bus error** at every boot. Caught with gdb
   at Lites' `catch_exception_raise`: `KERN_PROTECTION_FAILURE` at
   address 0, a NULL dereference -- SIGBUS by S-3 and S-4, SIGSEGV on
