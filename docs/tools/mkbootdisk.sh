@@ -45,12 +45,7 @@
 # with owners, modes, device nodes and symbolic links kept; run as
 # root for those.  The servers and bootstrap.conf go in on top.
 # ROOT_MB sets partition a's size, default 16; PAGING_MB partition b's,
-# default 16.  Partition a must fit in one cylinder group, about 40 MB
-# at the inode density used here: makefs lays out a larger file system
-# in groups that NetBSD 1.0's fsck and Lites' file system code fail on
-# (docs/deferred.md, S-1), so the script stops.  Larger file systems
-# are made with newfs on the running system, as OSF made its own
-# (MK7.3 Release Notes 2.4.2.2).
+# default 16.
 #
 # Boot with docs/tools/boot.sh.
 #
@@ -111,14 +106,30 @@ fi
 # needs, and the running system runs out at the first files it makes.
 "$NBMAKEFS" -t ffs -o version=0,bsize=8192,fsize=1024,density=4096 \
 	-s $((A_SIZE * 512)) "$TMP/a.img" "$TMP/root" >/dev/null
-NCG=$(python3 -c 'import struct,sys
-f=open(sys.argv[1],"rb"); f.seek(8192+44); print(struct.unpack("<i",f.read(4))[0])' "$TMP/a.img")
-[ "$NCG" -eq 1 ] || {
-	echo "ROOT_MB=$ROOT_MB makes $NCG cylinder groups; makefs's layout of" \
-	     "more than one fails under NetBSD 1.0's fsck and Lites" \
-	     "(docs/deferred.md, S-1).  Use a smaller ROOT_MB, and newfs" \
-	     "on the running system for larger file systems." >&2
-	exit 1; }
+# makefs leaves fs_csmask and fs_csshift at zero: today's FFS keeps the
+# summary information in one array and calls the two fields "old"
+# (fs_old_csmask, fs_old_csshift in sys/ufs/ffs/fs.h, now spares).
+# 1994's code indexes it through them -- 4.4BSD's fs_cs(fs, cg) is
+# fs_csp[cg >> fs_csshift][cg & ~fs_csmask] (ufs/ffs/fs.h, in Lites
+# too) -- so every cylinder group after the first reads a null pointer:
+# NetBSD 1.0's fsck dies in pass 5 at address 0x10, and Lites' server
+# in ffs_nodealloccg() at the first new file (docs/deferred.md, S-1).
+# Set them as newfs did (mkfs.c: fs_csmask = ~(i - 1), fs_csshift =
+# log2 i, i = fs_bsize / sizeof(struct csum)), in the superblock and in
+# each cylinder group's copy of it.
+python3 - "$TMP/a.img" <<'EOF2'
+import struct, sys
+f = open(sys.argv[1], "r+b")
+f.seek(8192); sb = f.read(256)
+g = lambda o: struct.unpack_from("<i", sb, o)[0]
+sblkno, cgoffset, cgmask, ncg = g(8), g(24), g(28), g(44)
+bsize, fsize, fpg = g(48), g(52), g(188)
+i = bsize // 16				# sizeof (struct csum)
+mask, shift = ~(i - 1), i.bit_length() - 1
+cgstart = lambda c: fpg * c + cgoffset * (c & ~cgmask)
+for off in [8192] + [(cgstart(c) + sblkno) * fsize for c in range(ncg)]:
+	f.seek(off + 108); f.write(struct.pack("<ii", mask, shift))
+EOF2
 
 # The label: MBR, vtoc and alternates table.  The vtoc's geometry is
 # nominal -- 16 heads, 63 sectors -- since every address in it is a

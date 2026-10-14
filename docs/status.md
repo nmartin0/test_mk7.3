@@ -193,9 +193,7 @@ and `bootstrap.conf`
 (`startup startup -s hd0a ...` for single-user). `hd0b`, partition b,
 is the paging space, as the Release Notes' example gives it
 (`def_pager /mach_servers/default_pager sd0b`); without it there is
-none (S-2). A 40 MB root is one cylinder group; `mkbootdisk.sh` stops
-at more (S-1), and larger disks are made with `newfs` on the running
-system. The last argument
+none (S-2). The last argument
 is the server directory, which `parse_arguments()` in
 `server/serv/server_init.c` takes as "server_dir_name (3.0 style)".
 CMU's bootstrap passed it; OSF's passes only what `bootstrap.conf`
@@ -238,10 +236,9 @@ mach_init should be taken from USER").
 13 October 2026"): NetBSD 1.0's `cc` compiles and links a program
 under Lites that forks, waits and runs correctly; files, pipes, `tar`
 and a 10 MB `dd` work; NetBSD's `newfs` makes a 100 MB file system on
-a second disk. Not yet stable: a root `makefs` lays out in more than
-one cylinder group crashes `fsck` and, on a write, the server (S-1,
-now refused by `mkbootdisk.sh`); `default_pager` has no paging space
-unless given `hd0b` (S-2, now `mkbootdisk.sh`'s default); every
+a second disk; a 200 MB root from `mkbootdisk.sh` passes `fsck` at
+boot (S-1, fixed). Not yet stable: `default_pager` has no paging
+space unless given `hd0b` (S-2, now `mkbootdisk.sh`'s default); every
 bad access becomes SIGBUS (S-3, S-4); `timed` dies (S-5). Where Lites
 differs from the OSF/1 server the MK7.3 documents describe is in the
 same file, O-1 to O-10.
