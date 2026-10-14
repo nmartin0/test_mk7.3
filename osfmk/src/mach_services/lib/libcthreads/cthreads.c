@@ -513,8 +513,21 @@ cthread_idle(cthread_t p)
 	if (!p->undepress) {
 	    r = thread_switch(THREAD_NULL, SWITCH_OPTION_IDLE, 0);
 	    if (r == KERN_SUCCESS) {
-		while((cthread_queue_head(&cthread_status.run_queue,
-		    cthread_t) == CTHREAD_NULL) && !(p->undepress));
+		/*
+		 * AI-ONLY NOTE: the run queue's head is read through a
+		 * volatile pointer, so the loop reads it each time round.
+		 * The field is not volatile and the loop calls nothing,
+		 * so today's GCC loads it once, before the loop, and an
+		 * idle thread that saw the queue empty waits only for
+		 * undepress -- set by cthread_wakeup() for a waiter on
+		 * waiting_dlq, which this one is not yet on.  Measured
+		 * in Lites' server: five cthreads on the run queue,
+		 * every kernel thread in use, a waiter spinning here,
+		 * and the system stopped.  p->undepress, the loop's
+		 * other condition, is declared volatile for this.
+		 */
+		while((*(struct cthread_queue_item * volatile *)
+		    &cthread_status.run_queue.head == 0) && !(p->undepress));
 		MACH_CALL(thread_depress_abort(p->wired),r);
 	    }
 	}
