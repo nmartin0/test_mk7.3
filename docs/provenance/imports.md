@@ -168,6 +168,7 @@ so at the site.
 | `i386/AT386/autoconf.c`, the `ne` entry: `neintr` for `at3c501intr` | MkLinux's entry, marked "MITCHEM", was copied from the 3c501's above it and kept that card's handler; `nedriver`'s own is `neintr`, declared in `if_ne_entries.h` |
 | `i386/AT386/if_ne.c`, `nefetch()` and `neput()`: the odd last byte indexed as a byte; `nefetch()`'s wait masks the value read | The same file: `neput()`'s wait is `(inb(nec+ds0_isr) & DSIS_RDC)`, the form `nefetch()` lost to a misplaced parenthesis; `up` is an `int *`, so `*(up+len-1)` addressed word `len-1`, not byte `len-1` |
 | `lites/emulator/e_bsd.c`, `e_adjtime()`: `olddelta` received into a local and copied out only if not null | The same file: `e_setitimer()` treats its `ovalue` so. 4.4BSD-Lite2's `adjtime()` (`kern/kern_time.c`) writes `olddelta` only `if (uap->olddelta)` (S-5) |
+| `lites/server/serv/ux_exception.c`, `ux_exception()`, under `OSFMACH3`: a protection failure in the first page is SIGSEGV | No tree has it. The signal rule is every BSD `trap()`'s; what differs is that OSFMK's `mach_init()` reserves page 0 where NetBSD 1.0's a.out layout (`N_TXTADDR` = `__LDPGSZ`) leaves it unmapped, so the page is treated as the absent page it is to the BSD process (S-4) |
 
 **The two Lites rows above are build-level, not source.** Lites'
 source changes are the `lites/` rows of kinds B and C, each with a note

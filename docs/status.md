@@ -239,8 +239,8 @@ and a 10 MB `dd` work; NetBSD's `newfs` makes a 100 MB file system on
 a second disk; a 200 MB root from `mkbootdisk.sh` passes `fsck` at
 boot (S-1, fixed). Not yet stable: `default_pager` has no paging
 space unless given `hd0b` (S-2, now `mkbootdisk.sh`'s default); every
-NULL dereference is SIGBUS, not SIGSEGV (S-4; S-3 and S-7, the
-signal lost and the handler never run, fixed in 0053); a shell
+bad access gets NetBSD 1.0's signal and a handler runs (S-3, S-7
+and S-4, fixed in 0053 and 0060); a shell
 dropped the rest of its line after a pipeline (S-8, not seen since
 0054 fixed S-9, a server stall); `timed` died in the emulator's
 `adjtime` (S-5, fixed in 0058). The NE2000 works since 0056: under

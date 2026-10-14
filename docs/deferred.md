@@ -540,21 +540,31 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   its child died: before, "null", "unmapped" and "text" all killed by
   signal 10; now "unmapped" by 11, SIGSEGV, and "null" and "text" by
   10. NetBSD 1.0 gives 11, 11 and 10, so "null" is S-4's.
-- **S-4. A NULL dereference is a protection failure, not an invalid
-  address.** OSFMK 7.3's `mach_init` (`libmach/mach_init.c`) maps page
-  0 `VM_PROT_NONE` "so that the program doesn't get it", and Lites'
-  emulator, linked with that `libmach`, runs it in every process. With
-  S-3 fixed, a NULL dereference would still be classed by its
-  `KERN_PROTECTION_FAILURE`. **To do**: decide which signal NetBSD's
-  binaries should see; NetBSD 1.0 sends SIGSEGV, since its page 0 is
-  unmapped, and 4.4BSD's own `trap()` sends SIGBUS for a protection
-  failure, as Lites does. **Options, for the maintainer**: (a) under
-  `OSFMACH3`, `ux_exception()` treats a protection failure in the
-  first page as an invalid address, SIGSEGV -- the page stays
-  reserved; (b) the emulator deallocates page 0 after `mach_init()`,
-  so a NULL dereference is a true invalid address -- but the page can
-  then be allocated, and a NULL dereference stop faulting; (c) leave
-  it, SIGBUS. (a) is recommended.
+- **S-4. A NULL dereference was SIGBUS, not SIGSEGV.** Fixed in
+  0060. Every BSD of the time chooses the signal for an unresolved
+  user page fault the same way, `(rv == KERN_PROTECTION_FAILURE) ?
+  SIGBUS : SIGSEGV` -- 4.4BSD-Lite2's `i386/i386/trap.c`, NetBSD 0.9,
+  1.0 and 1.2 (i386, hp300, sparc), FreeBSD 2.0.5 and 2.1 -- and
+  Lites' `ux_exception()` is CMU's port of that line. The difference
+  is page 0. 4.4BSD-Lite2's `USRTEXT` is 0, text at address 0, so a
+  NULL read succeeds and a write is SIGBUS. NetBSD 1.0's `USRTEXT` is
+  `CLBYTES` and its native ZMAGIC binaries start at `__LDPGSZ`
+  (`sys/exec_aout.h`, `N_TXTADDR`), leaving page 0 unmapped, so a
+  NULL dereference is an invalid address: SIGSEGV. FreeBSD's QMAGIC
+  does the same. Under OSFMK, `mach_init()` (`libmach/mach_init.c`),
+  run in every process by the emulator, maps page 0 `VM_PROT_NONE`
+  "so that the program doesn't get it", and the same rule makes the
+  reference a protection failure: SIGBUS. Later practice moved toward
+  SIGSEGV for every protection fault -- POSIX's `SEGV_ACCERR`; FreeBSD
+  7.0's `machdep.prot_fault_translation` -- but that is not the
+  system these binaries came from. **The change**, under `OSFMACH3`:
+  `ux_exception()` sends SIGSEGV for a protection failure whose
+  address is in the first page. The reservation stays; to the BSD
+  process the page is absent, as on NetBSD. A test program, faulting
+  in a child each way: NULL write, NULL read and a read at 0xffc, 11;
+  an unmapped address, 11; a write to text, 10 -- NetBSD 1.0's
+  answers in every case. A SIGSEGV handler now catches a NULL
+  dereference (exit 111).
 - **S-7. A handler for SIGSEGV or SIGBUS was never run.** Fixed in
   0053, OSFMK's way. The test program with `signal(SIGSEGV, h)` and
   `signal(SIGBUS, h)`, `h` calling `_exit(100 + sig)`: the child
@@ -786,8 +796,8 @@ Lites toward the OSF/1 server.
 **Recommended 13 October 2026; the maintainer decides.**
 
 1. **Stability first** -- S-2 (configuration) and S-1 (the disk tool),
-   both done; S-3 and S-7, done in 0053; S-4 (which signal NetBSD's
-   binaries should see); S-8 (the shell, being traced); then S-5. Everything after is tested on top of these;
+   both done; S-3 and S-7, done in 0053; S-4, 0060; S-5, 0058; S-8
+   (the shell; not seen since S-9, 0054). Everything after is tested on top of these;
    a server that dies on a write makes every later result doubtful.
 2. **Then the boundary items that are configuration or small**: O-8
    with S-2 (done), O-9 (builds and runs; `build_world` waits), then O-1, O-2, O-4, O-5 and
