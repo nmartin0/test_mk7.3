@@ -65,13 +65,20 @@ extern void *cthread_sp(void);
 
 #if	__GNUC__ && !_NO_INLINE_SPINLOCKS && !defined(lint)
 
+/*
+ * AI-ONLY NOTE: both asms clobber "memory", so that each is a compiler
+ * barrier, as the out-of-line versions in libcthreads/i386/lock.s are
+ * by being calls.  Without it today's GCC may move loads and stores
+ * of the data a lock protects across the lock itself; the same class
+ * of fault as cthread_idle()'s hoisted load (docs/deferred.md, S-9).
+ */
 extern __inline__ void
 spin_unlock(spin_lock_t *p)
 {
 	register int _u__ ;
 
 	__asm__ volatile("xorl %0, %0; xchgl %0, %1"
-			  : "=&r" (_u__), "=m" (*p) );
+			  : "=&r" (_u__), "=m" (*p) : : "memory");
 }
 
 extern __inline__ int
@@ -80,7 +87,7 @@ spin_try_lock(spin_lock_t *p)
 	boolean_t _r__;
 
 	__asm__ volatile("movl $1, %0; xchgl %0, %1"
-			: "=&r" (_r__), "=m" (*p) );
+			: "=&r" (_r__), "=m" (*p) : : "memory");
 	return(!_r__);
 }
 
