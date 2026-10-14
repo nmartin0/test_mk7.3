@@ -623,6 +623,18 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   the server -- takes the fix when relinked; Lites' makefiles do not
   relink on a changed library, so a sandbox built before 0054 needs
   `startup` removed first.
+- **S-10. Disk I/O could stop for good after a spurious IRQ15.**
+  Fixed in 0055. Seen with the `ne` card and at random: every process
+  asleep in "biowait", QEMU's `info pic` showing the master with IRQ2,
+  the cascade, in service (ISR 0x04) and IRQ14 and IRQ15 pending at
+  the slave, which the master then never passes on; QEMU counted one
+  IRQ15, from the second IDE channel. `i386/interrupt.s` treats an
+  IRQ15 the slave does not have in service as spurious and returns
+  with no EOI at all -- right for a spurious IRQ7, the master's own,
+  but the master had put IRQ2 in service for the slave's request, and
+  only an EOI clears it. NetBSD 1.0's `i386/isa/vector.s` sends the
+  master its IRQ2 EOI for every slave interrupt. Now a spurious IRQ15
+  EOIs the master and nothing else.
 - **S-5. `timed` dies of a bus error** at every boot. Caught with gdb
   at Lites' `catch_exception_raise`: `KERN_PROTECTION_FAILURE` at
   address 0, a NULL dereference -- SIGBUS by S-3 and S-4, SIGSEGV on
