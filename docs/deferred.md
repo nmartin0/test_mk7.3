@@ -549,10 +549,33 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   delivers an exception's signal to a handler by notifying the task's
   signal port (`send_signal()`, `sendsig()`, `signal_notify()` in
   `server/serv/`) and not answering the exception, which the
-  emulator's signal thread then takes; somewhere on that path under
-  OSFMK the handler is lost. Not yet traced. Programs that catch
-  their own faults -- and anything relying on SIGSEGV handlers --
-  will misbehave until it is.
+  emulator's signal thread then takes. **Traced** with a kernel that
+  prints in `exception_no_server()`: the faulting thread is not
+  redirected; the kernel finds no exception server for it and
+  terminates the task ("task ... eip 17bc", the faulting instruction),
+  and the child's status is that of a killed task, 0. The emulator's
+  `do_signal_notify()` (`emulator/i386/e_signal.c`) suspends the
+  thread, `thread_abort`s it, sets its state to the handler
+  trampoline and resumes it -- Mach 3's way, where an aborted thread
+  waiting in `exception_raise` keeps waiting
+  (`exception_raise_continue_slow()` in CMU's and Mach4's
+  `kern/exception.c`: "Somebody is trying to force this thread to a
+  clean point.  We must cooperate and then resume the receive").
+  OSFMK 7.3's `exception()` (`kern/exception.c`) does not loop: any
+  result but `KERN_SUCCESS` or `MACH_RCV_PORT_DIED` goes on to
+  `exception_try_task()` and, with no other handler, to
+  `exception_no_server()`, which terminates the task. **Options, for
+  the maintainer** (both vendor changes, under `OSFMACH3`):
+  (a) the server answers the exception, `KERN_SUCCESS`, once the
+  emulator has set the new state, and the emulator does not
+  `thread_abort` a thread that is in an exception -- the smallest
+  change, keeping Lites' design; (b) the server handles signals for
+  exceptions with `EXCEPTION_STATE` and `catch_exception_raise_state`,
+  returning the handler's state in the reply, which is OSFMK's own
+  mechanism for this (the three behaviours, `docs/roadmap.md` Tier 1
+  item 2) and the way the exception-driven syscall path will work --
+  larger, and part of that later work. Programs that catch their own
+  faults misbehave until one is made.
 - **S-8. A shell sometimes stops after a pipeline.** `cat /etc/* |
   sort | wc -l` prints its count and the shell, NetBSD 1.0's `sh`,
   neither prints a prompt nor runs what follows on the same line --
