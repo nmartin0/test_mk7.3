@@ -389,6 +389,16 @@ would be building `stand/AT386/boot` and installing it on that disk.
 Taken up if multiboot ever stands in the way, or for fidelity once the
 system runs.
 
+**Tried 14 October 2026**: `build -here stand` stops at once on
+"gcc: error: unrecognized command-line option '-m386'", which the
+`primary`, `secondary` and `lib` Makefiles all put in `CFLAGS`. In GCC
+2.7 `-m386` meant "tune for the 386"; GCC 2.8 replaced it with
+`-mcpu=i386`, and today's is `-mtune=i386` (or `-march=i386`).
+Changing the three Makefiles is a vendor edit, for the maintainer; a
+compiler wrapper that rewrites the flag would be a way round it, not
+a fix. Past that, the primary has to fit its 512-byte and 8 KB
+limits with today's code generation, which is not yet measured.
+
 ### Making disks on the running system, as OSF did
 
 **Possible since 13 October 2026; not yet the project's procedure.**
