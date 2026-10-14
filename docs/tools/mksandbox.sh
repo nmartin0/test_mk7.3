@@ -194,6 +194,19 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # truncates to 255.  Deliberate, and the files are regenerated so they
 # cannot be edited.
 #
+# -Wno-error=traditional -Wno-error=stringop-overflow: the warnings stay,
+# and stop failing the build, for OSF's own servers: osf.gcc.mk's
+# ELF_EXTRA_WARNINGS adds -Wtraditional, and name_server's Makefile
+# GCC_WARNINGS -Werror (mach_services/servers/netname).  GCC 2.7's
+# -Wtraditional warned of what changed meaning between K&R and ANSI C;
+# GCC 13's also rejects every ANSI function definition and #elif -- the
+# whole of OSF's code.  And GCC 13 reads a parameter declared
+# netname_name_t, char[80], as a promise of 80 bytes, so passing it
+# "NameServer" is "accessing 80 bytes in a region of size 11", where
+# do_netname_check_in() copies with strncpy(..., 80), which stops at
+# the NUL; GCC 2.7 had no such warning.  Narrow, as -Wno-error=overflow
+# is: other warnings still fail the build.
+#
 # -Wno-endif-labels: 373 instances of "#endif SOMETHING" across the
 # kernel, a K&R convention naming which #if is being closed.  No
 # semantic effect; fixing 373 sites would be a large deviation for none.
@@ -267,7 +280,7 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # child of e_fork_call read its arguments 4 bytes off and never
 # reached child_init: NetBSD's init forked its shell, which never ran.
 #
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -fno-omit-frame-pointer -Wno-error=overflow -Wno-endif-labels"
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -fno-omit-frame-pointer -Wno-error=overflow -Wno-error=traditional -Wno-error=stringop-overflow -Wno-endif-labels"
 
 #
 # NO_STRICT_ANSI: a hook osf.gcc.mk line 94 provides --
