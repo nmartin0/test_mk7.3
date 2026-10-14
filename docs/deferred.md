@@ -582,8 +582,12 @@ Lites gets its arguments from OSF's bootstrap").
   this tree. **Work**: check with OSF's boot loader, when it is built.
 - **O-8. `default_pager` takes the paging partition.** Now S-2.
 - **O-9. `name_server` first in `bootstrap.conf`**, as the template and
-  the Release Notes' example have it. Blocked on verdict 31; Lites
-  then finds it through its inherited ports with no change.
+  the Release Notes' example have it. It builds since 0046 and starts
+  first ("(name_server): started"), and Lites boots after it unchanged.
+  **Left**: `build_world`'s three `build -here` lines for
+  `libservice`, `libnetname` and `servers/netname` are commented out,
+  as in MkLinux; uncommenting them is a vendor edit, proposed, not
+  made.
 - **O-10. The Release Notes' procedures assume OSF/1's userland.**
   `disk_setup`, `vtoc`, `newfs`, `net_start`, `mk_install`,
   `/sbin/init.d/inet` do not exist under NetBSD 1.0. The cost of the
@@ -604,7 +608,7 @@ Lites toward the OSF/1 server.
    S-5. Everything after is tested on top of these;
    a server that dies on a write makes every later result doubtful.
 2. **Then the boundary items that are configuration or small**: O-8
-   with S-2, O-9 when `name_server` builds, then O-1, O-2, O-4, O-5 and
+   with S-2 (done), O-9 (builds and runs; `build_world` waits), then O-1, O-2, O-4, O-5 and
    O-6, each a contained change in `server/serv/server_init.c` or the
    server's port handling, under `OSFMACH3`. O-6 lets OSFMK's own test
    programs (`mach_perf`) check the system from inside.

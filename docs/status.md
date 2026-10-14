@@ -243,8 +243,25 @@ bad access becomes SIGBUS (S-3, S-4); `timed` dies (S-5). Where Lites
 differs from the OSF/1 server the MK7.3 documents describe is in the
 same file, O-1 to O-10.
 
-`name_server` is not on the disk: it does not build yet (verdict 31).
-OSF's `bootstrap.template` starts it before `default_pager`.
+`name_server` builds, with `CARGS`' `-Wno-error=traditional
+-Wno-error=stringop-overflow` (`docs/tools/mksandbox.sh`), from
+
+	cd osfmk/src
+	build -here mach_services/lib/libservice
+	build -here mach_services/lib/libnetname
+	build -here mach_services/servers/netname
+
+-- `build_world`'s own three lines for it are still commented out, as
+MkLinux left them, and enabling them waits for the maintainer
+(`docs/deferred.md`, O-9). Put first in `bootstrap.conf`, as OSF's
+`bootstrap.template` and the Release Notes' example have it,
+
+	name_server name_server
+	default_pager default_pager hd0b
+	startup startup hd0a /dev/hd0a/mach_servers
+
+the screen shows "(name_server): started" before "(default_pager):
+started", and Lites boots to `login:` as before.
 
 **Without a disk, the task stops at its own prompt.** Since verdicts
 22–24 the kernel starts OSF's bootstrap task, not the GNU Hurd servers
