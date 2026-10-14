@@ -2448,8 +2448,20 @@ errno_t e_adjtime(struct timeval *delta, struct timeval *olddelta)
 	errno_t err;
 	kern_return_t kr;
 
-	kr = bsd_adjtime(process_self(), *delta, olddelta);
+	struct timeval old_delta;
+
+	/*
+	 * AI-ONLY NOTE: received into a local and copied out only if
+	 * olddelta is not null, as e_setitimer() does with ovalue.  The
+	 * caller's pointer was the MIG stub's out argument, which the stub
+	 * always writes, and a null olddelta is allowed: timed calls
+	 * adjtime(&ntime, (struct timeval *)0) and died of it at every
+	 * boot (docs/deferred.md, S-5).
+	 */
+	kr = bsd_adjtime(process_self(), *delta, &old_delta);
 	err = kr ? e_mach_error_to_errno(kr) : 0;
+	if (err == 0 && olddelta)
+	    *olddelta = old_delta;
 	return err;
 }
 

@@ -643,25 +643,24 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   only an EOI clears it. NetBSD 1.0's `i386/isa/vector.s` sends the
   master its IRQ2 EOI for every slave interrupt. Now a spurious IRQ15
   EOIs the master and nothing else.
-- **S-5. `timed` dies of a bus error** at every boot. Not the
-  network: with `ne0` configured at boot (`/etc/hostname.ne0`,
-  `/etc/mygate`; 0056) it still dies. Caught with gdb at the server's
-  `catch_exception_raise_state_identity` (0053), which now has the
+- **S-5. `timed` died of a bus error** at every boot. Fixed in 0058.
+  Not the network: with `ne0` configured at boot (`/etc/hostname.ne0`,
+  `/etc/mygate`; 0056) it still died. Caught with gdb at the server's
+  `catch_exception_raise_state_identity` (0053), which has the
   faulting state: `EXC_BAD_ACCESS`, `KERN_PROTECTION_FAILURE`,
   address 0, at `eip` 0xa0009288 -- in the emulator, not in `timed`:
   `bsd_adjtime()`, the MIG stub, storing its `olddelta` result.
-  `timed` calls `adjtime(&ntime, (struct timeval *)0)`, NetBSD 1.0's
-  `usr.sbin/timed/timed/timed.c`, and a null `olddelta` is allowed;
-  Lites' `e_adjtime()` (`emulator/e_bsd.c`) hands the caller's
+  `timed` calls `adjtime(&ntime, (struct timeval *)0)` (NetBSD 1.0's
+  `usr.sbin/timed/timed/timed.c`), and a null `olddelta` is allowed;
+  Lites' `e_adjtime()` (`emulator/e_bsd.c`) handed the caller's
   pointer to the stub as its out argument, which the stub always
-  writes. **Proposed, prototyped, not made** (a vendor change, for
-  the maintainer): receive into a local and copy it out only if
-  `olddelta` is not null -- what `e_setitimer()`, in the same file,
-  already does with its `ovalue`. With it the boot says "starting
-  system logger, time daemon." and nothing more. The other stubs in
-  `e_bsd.c` given a caller's pointer as an out argument were read:
-  `e_getrusage()` passes `rusage` the same way, where NetBSD would
-  answer a null one with EFAULT, not a signal.
+  writes. It now receives into a local and copies out only if
+  `olddelta` is not null, as `e_setitimer()` in the same file does
+  with `ovalue`. Measured: the boot says "starting system logger,
+  time daemon." and nothing more. Of the other stubs in `e_bsd.c`
+  given a caller's pointer as an out argument, `e_getrusage()` passes
+  `rusage` the same way, where NetBSD answers a null one with EFAULT,
+  not a signal; left.
 - **S-6. Driver noise.** "hdintr: interrupt w/controller not done." and
   "HD: false interrupt", already open (`docs/status.md`; `dev`'s
   `052a105`).
