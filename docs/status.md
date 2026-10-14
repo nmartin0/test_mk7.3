@@ -247,15 +247,15 @@ same file, O-1 to O-10.
 
 `name_server` builds, with `CARGS`' `-Wno-error=traditional
 -Wno-error=stringop-overflow` (`docs/tools/mksandbox.sh`), from
+`build_world`'s own three lines, which MkLinux left commented out and
+0051 uncomments (`docs/deferred.md`, O-9):
 
-	cd osfmk/src
 	build -here mach_services/lib/libservice
 	build -here mach_services/lib/libnetname
 	build -here mach_services/servers/netname
 
--- `build_world`'s own three lines for it are still commented out, as
-MkLinux left them, and enabling them waits for the maintainer
-(`docs/deferred.md`, O-9). Put first in `bootstrap.conf`, as OSF's
+Its binary is `$MK_BUILD/obj/at386/mach_services/servers/netname/name_server`.
+Put first in `bootstrap.conf`, as OSF's
 `bootstrap.template` and the Release Notes' example have it,
 
 	name_server name_server

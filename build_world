@@ -39,9 +39,13 @@ makeboot
 build -here lites
 
 # Build	the name_server and its libraries
-#build -here mach_services/lib/libservice
-#build -here mach_services/lib/libnetname
-#build -here mach_services/servers/netname
+# AI-ONLY NOTE: uncommented.  OSF's bootstrap.template and the MK7.3
+# Release Notes' example start name_server first, before the default
+# pager and the server, and the header above invites the edit.  It
+# builds with CARGS' two -Wno-error flags; docs/deferred.md, O-9.
+build -here mach_services/lib/libservice
+build -here mach_services/lib/libnetname
+build -here mach_services/servers/netname
 
 # Build the microkernel performance test suite
 #build -here mach_services/cmds/mach_perf
