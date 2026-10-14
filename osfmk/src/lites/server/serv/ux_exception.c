@@ -279,6 +279,24 @@ void ux_exception(integer_t exception, integer_t code, integer_t subcode,
 	    case EXC_BAD_ACCESS:
 		if (code == KERN_INVALID_ADDRESS)
 		    *ux_signal = SIGSEGV;
+#if OSFMACH3
+		/*
+		 * AI-ONLY NOTE: a protection failure in the first page is
+		 * SIGSEGV.  OSFMK's mach_init() reserves page 0
+		 * VM_PROT_NONE "so that the program doesn't get it", so a
+		 * NULL dereference is a protection failure here, where on
+		 * NetBSD 1.0 -- whose binaries start at __LDPGSZ and leave
+		 * page 0 unmapped -- it is an invalid address.  The rule
+		 * below is every BSD trap()'s; the reserved page is not
+		 * part of the process's BSD address space, so a reference
+		 * to it is to an address the process does not have.
+		 * subcode is the fault address (catch_exception_raise*'s
+		 * codes[1]).  docs/deferred.md, S-4.
+		 */
+		else if (code == KERN_PROTECTION_FAILURE &&
+			 (vm_offset_t) subcode < vm_page_size)
+		    *ux_signal = SIGSEGV;
+#endif /* OSFMACH3 */
 		else
 		    *ux_signal = SIGBUS;
 		break;
