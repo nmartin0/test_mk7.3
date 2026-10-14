@@ -588,11 +588,46 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   ("tsleep and friends is very fragile code ... Also signal handling
   needs to be reworked"); cause not yet found. `/etc/rc` and plain
   commands are not affected.
-- **S-5. `timed` dies of a bus error** at every boot. Not examined;
+- **S-5. `timed` dies of a bus error** at every boot. Caught with gdb
+  at Lites' `catch_exception_raise`: `KERN_PROTECTION_FAILURE` at
+  address 0, a NULL dereference -- SIGBUS by S-3 and S-4, SIGSEGV on
+  NetBSD. Most likely a library call failing for want of a network
+  (no interface is configured), so it waits for the network,
+  milestone 4. Not examined;
   take up after S-3, when the signal and address are right.
 - **S-6. Driver noise.** "hdintr: interrupt w/controller not done." and
   "HD: false interrupt", already open (`docs/status.md`; `dev`'s
   `052a105`).
+
+### The `ne` driver, measured on 14 October 2026
+
+For roadmap milestone 4. With QEMU's `-device
+ne2k_isa,iobase=0x300,irq=10`, the kernel probes it: "ne0: at atbus3,
+port = 300, spl = 6, pic = 10, [52:54:00:12:34:56]". Lites opens an
+interface by its Mach name, so `ifconfig ne0 ...` is the way in. What
+happens, unchanged and with fixes tried in a scratch tree only:
+
+- **Unchanged.** The boot reaches `login:`, slowly; `ifconfig ne0`
+  never returns. `autoconf.c` installs `at3c501intr`, the 3Com 3c501's
+  handler, for `ne` (precedent.md, "Network"), so the card's
+  interrupts are never served.
+- **With `neintr` installed, and the odd-length copies indexing by
+  bytes** (`((char *)up)[len-1]`, not `*(up+len-1)` on an `int *`):
+  the boot stops before `/etc/rc` finishes -- gdb on the server's
+  process list shows `syslogd`, `update` and `init` asleep in
+  "biowait" and "getblk", disk I/O that never completes. `neintr()`
+  runs before the interface is opened and initialised, and its receive
+  loop, `while (pend != ns->ns_cur)`, advances past a header with a
+  bad status only under `#ifdef NEDEBUG`; otherwise it spins at
+  `SPL_SIX`, above the disk's interrupts.
+- **With that loop also made to advance**: the boot stops earlier, at
+  the root `fsck`.
+
+So the driver needs, besides the two known defects, not to take
+interrupts -- or to ignore them -- until `neinit()` has set its ring
+up; and `nefetch()`'s wait, `inb(nec+ds0_isr & DSIS_RDC)`, masks the
+port number instead of the value read. All are vendor changes, for the
+maintainer; none is made.
 
 ### Lites against the OSF/1 server: the documented behaviour
 
