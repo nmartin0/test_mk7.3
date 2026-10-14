@@ -545,8 +545,16 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   0 `VM_PROT_NONE` "so that the program doesn't get it", and Lites'
   emulator, linked with that `libmach`, runs it in every process. With
   S-3 fixed, a NULL dereference would still be classed by its
-  `KERN_PROTECTION_FAILURE`. **To do**: decide with S-3 which signal
-  NetBSD's binaries should see; NetBSD 1.0 sends SIGSEGV.
+  `KERN_PROTECTION_FAILURE`. **To do**: decide which signal NetBSD's
+  binaries should see; NetBSD 1.0 sends SIGSEGV, since its page 0 is
+  unmapped, and 4.4BSD's own `trap()` sends SIGBUS for a protection
+  failure, as Lites does. **Options, for the maintainer**: (a) under
+  `OSFMACH3`, `ux_exception()` treats a protection failure in the
+  first page as an invalid address, SIGSEGV -- the page stays
+  reserved; (b) the emulator deallocates page 0 after `mach_init()`,
+  so a NULL dereference is a true invalid address -- but the page can
+  then be allocated, and a NULL dereference stop faulting; (c) leave
+  it, SIGBUS. (a) is recommended.
 - **S-7. A handler for SIGSEGV or SIGBUS was never run.** Fixed in
   0053, OSFMK's way. The test program with `signal(SIGSEGV, h)` and
   `signal(SIGBUS, h)`, `h` calling `_exit(100 + sig)`: the child
@@ -596,7 +604,12 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   it does after an interrupt. Lites' own `doc/README` names this area
   ("tsleep and friends is very fragile code ... Also signal handling
   needs to be reworked"); cause not yet found. `/etc/rc` and plain
-  commands are not affected.
+  commands are not affected. **Since 0054** (S-9, which stopped the
+  server with work queued, and whose "typing a further command runs
+  it" this matches): 15 runs of a 60-iteration `while` loop of that
+  pipeline, up to three machines at once and the host loaded, all
+  finished; two others, run during a kernel build, stopped before the
+  first iteration and were not caught with gdb. Watched, not closed.
 - **S-9. The whole system could stop, idle, with work queued.**
   Fixed in 0054. Seen first with the `ne` card (below), then at
   random: `csh` never printing its prompt after `tset`, other
@@ -630,13 +643,25 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   only an EOI clears it. NetBSD 1.0's `i386/isa/vector.s` sends the
   master its IRQ2 EOI for every slave interrupt. Now a spurious IRQ15
   EOIs the master and nothing else.
-- **S-5. `timed` dies of a bus error** at every boot. Caught with gdb
-  at Lites' `catch_exception_raise`: `KERN_PROTECTION_FAILURE` at
-  address 0, a NULL dereference -- SIGBUS by S-3 and S-4, SIGSEGV on
-  NetBSD. Most likely a library call failing for want of a network
-  (no interface is configured), so it waits for the network,
-  milestone 4. Not examined;
-  take up after S-3, when the signal and address are right.
+- **S-5. `timed` dies of a bus error** at every boot. Not the
+  network: with `ne0` configured at boot (`/etc/hostname.ne0`,
+  `/etc/mygate`; 0056) it still dies. Caught with gdb at the server's
+  `catch_exception_raise_state_identity` (0053), which now has the
+  faulting state: `EXC_BAD_ACCESS`, `KERN_PROTECTION_FAILURE`,
+  address 0, at `eip` 0xa0009288 -- in the emulator, not in `timed`:
+  `bsd_adjtime()`, the MIG stub, storing its `olddelta` result.
+  `timed` calls `adjtime(&ntime, (struct timeval *)0)`, NetBSD 1.0's
+  `usr.sbin/timed/timed/timed.c`, and a null `olddelta` is allowed;
+  Lites' `e_adjtime()` (`emulator/e_bsd.c`) hands the caller's
+  pointer to the stub as its out argument, which the stub always
+  writes. **Proposed, prototyped, not made** (a vendor change, for
+  the maintainer): receive into a local and copy it out only if
+  `olddelta` is not null -- what `e_setitimer()`, in the same file,
+  already does with its `ovalue`. With it the boot says "starting
+  system logger, time daemon." and nothing more. The other stubs in
+  `e_bsd.c` given a caller's pointer as an out argument were read:
+  `e_getrusage()` passes `rusage` the same way, where NetBSD would
+  answer a null one with EFAULT, not a signal.
 - **S-6. Driver noise.** "hdintr: interrupt w/controller not done." and
   "HD: false interrupt", already open (`docs/status.md`; `dev`'s
   `052a105`).
