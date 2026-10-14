@@ -686,10 +686,10 @@ Lites gets its arguments from OSF's bootstrap").
 - **O-9. `name_server` first in `bootstrap.conf`**, as the template and
   the Release Notes' example have it. It builds since 0046 and starts
   first ("(name_server): started"), and Lites boots after it unchanged.
-  **Left**: `build_world`'s three `build -here` lines for
-  `libservice`, `libnetname` and `servers/netname` are commented out,
-  as in MkLinux; uncommenting them is a vendor edit, proposed, not
-  made.
+  `build_world`'s three `build -here` lines for `libservice`,
+  `libnetname` and `servers/netname`, commented out as in MkLinux, are
+  uncommented since 0051. `mkbootdisk.sh` writes the lines in the
+  order its arguments come, so `name_server` goes first.
 - **O-10. The Release Notes' procedures assume OSF/1's userland.**
   `disk_setup`, `vtoc`, `newfs`, `net_start`, `mk_install`,
   `/sbin/init.d/inet` do not exist under NetBSD 1.0. The cost of the
