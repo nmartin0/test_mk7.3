@@ -96,6 +96,41 @@ mach_port_t ux_handler_setup()
 	return (ux_local_port);
 }
 
+#if OSFMACH3
+/*
+ * AI-ONLY NOTE: new.  TRUE if page 0 of task is mapped with some
+ * access -- a program's text, not mach_init()'s VM_PROT_NONE
+ * reservation -- so that ux_exception()'s page-0 rule, SIGSEGV, does
+ * not apply to a fault there.  Asked only for a protection failure in
+ * page 0.  The vm_region() call is serv/device_misc.c's.
+ */
+static boolean_t ux_page0_mapped(task_t task)
+{
+	struct vm_region_basic_info r;
+	mach_msg_type_number_t icount = VM_REGION_BASIC_INFO_COUNT;
+	vm_offset_t addr = 0;
+	vm_size_t size;
+	mach_port_t object_name = MACH_PORT_NULL;
+
+	if (vm_region(task, &addr, &size, VM_REGION_BASIC_INFO,
+		      (vm_region_info_t) &r, &icount, &object_name)
+	    != KERN_SUCCESS)
+		return FALSE;
+	if (MACH_PORT_VALID(object_name))
+		(void) mach_port_deallocate(mach_task_self(), object_name);
+	return addr == 0 && r.max_protection != VM_PROT_NONE;
+}
+
+static void ux_page0_fixup(task_t task, exception_type_t exception,
+			   integer_t code, integer_t subcode, int *signal)
+{
+	if (exception == EXC_BAD_ACCESS && code == KERN_PROTECTION_FAILURE
+	    && (vm_offset_t) subcode < vm_page_size && *signal == SIGSEGV
+	    && ux_page0_mapped(task))
+		*signal = SIGBUS;
+}
+#endif /* OSFMACH3 */
+
 /* forward */
 boolean_t thread_psignal(task_t, thread_t, int, int, thread_state_t,
 			 mach_msg_type_number_t);
@@ -147,6 +182,9 @@ kern_return_t catch_exception_raise(
 	     *	Convert exception to unix signal and code.
 	     */
 	    ux_exception(exception, code, subcode, &signal, &ux_code);
+#if OSFMACH3
+	    ux_page0_fixup(task, exception, code, subcode, &signal);
+#endif
 
 	    /*
 	     *	Send signal.
@@ -236,6 +274,9 @@ kern_return_t catch_exception_raise_state_identity(
 			 codeCnt > 0 ? code[0] : 0,
 			 codeCnt > 1 ? code[1] : 0,
 			 &signal, &ux_code);
+	    ux_page0_fixup(task, exception,
+			   codeCnt > 0 ? code[0] : 0,
+			   codeCnt > 1 ? code[1] : 0, &signal);
 	    if (signal != 0)
 		(void) thread_psignal(task, thread, signal, ux_code,
 				      *flavor == machine_exception_flavor ?
@@ -291,11 +332,14 @@ void ux_exception(integer_t exception, integer_t code, integer_t subcode,
 		 * part of the process's BSD address space, so a reference
 		 * to it is to an address the process does not have.
 		 * subcode is the fault address (catch_exception_raise*'s
-		 * codes[1]).  docs/deferred.md, S-4.
+		 * codes[1]).  Where page 0 holds the program's text --
+		 * 386BSD and Linux binaries load at 0, and mach_init()'s
+		 * reservation then fails -- the callers undo this, with
+		 * ux_page0_mapped().  docs/deferred.md, S-4.
 		 */
 		else if (code == KERN_PROTECTION_FAILURE &&
 			 (vm_offset_t) subcode < vm_page_size)
-		    *ux_signal = SIGSEGV;
+		    *ux_signal = SIGSEGV;	/* see ux_page0_mapped() */
 #endif /* OSFMACH3 */
 		else
 		    *ux_signal = SIGBUS;

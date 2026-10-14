@@ -486,6 +486,12 @@ void psig(int sig)
 boolean_t machine_signal_redirect(struct proc *, thread_state_t,
 				 mach_msg_type_number_t);
 #endif
+/*
+ * AI-ONLY NOTE: state and count are new, the faulting thread's state
+ * from an EXCEPTION_STATE_IDENTITY exception, or 0; only OSFMACH3
+ * builds pass one (serv/ux_exception.c).  machine_signal_redirect()
+ * exists for i386 alone, the only OSFMACH3 target built.
+ */
 boolean_t thread_signal(
 	struct proc		*p,
 	thread_t		thread,
@@ -588,9 +594,29 @@ boolean_t thread_signal(
 		 * by longjmp() never returns to the loop that clears it,
 		 * and the thread would fault for ever.
 		 */
-		if (state && machine_signal_redirect(p, state, count)) {
-		    p->p_sigacts->ps_flags |= SAS_NOTIFY_DONE;
-		    notified = TRUE;
+		if (state) {
+		    if (machine_signal_redirect(p, state, count)) {
+			p->p_sigacts->ps_flags |= SAS_NOTIFY_DONE;
+			notified = TRUE;
+			break;
+		    }
+		    /*
+		     * AI-ONLY NOTE: the stack cannot take the frame.  What
+		     * 4.4BSD-Lite2's i386 sendsig() does when useracc()
+		     * fails, "Process has trashed its stack; give it an
+		     * illegal instruction to halt it in its tracks".  A
+		     * notification here would thread_abort() a thread the
+		     * reply is about to resume (S-7).
+		     */
+		    siglock(p);
+		    p->p_siglist &= ~mask;
+		    sigunlock(p);
+		    p->p_sigacts->ps_sigact[SIGILL] = SIG_DFL;
+		    mask = sigmask(SIGILL);
+		    p->p_sigignore &= ~mask;
+		    p->p_sigcatch &= ~mask;
+		    p->p_sigmask &= ~mask;
+		    sig_default(p, SIGILL);	/* what postsig() would do */
 		    break;
 		}
 #endif /* OSFMACH3 */
