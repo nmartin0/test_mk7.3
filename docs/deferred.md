@@ -518,7 +518,18 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   `KERN_PROTECTION_FAILURE` and the fault address. So
   `code == KERN_INVALID_ADDRESS` never holds and SIGSEGV is never
   sent. The same kind of interface port as `xmm_interface.c`'s.
-  **To do**: a vendor change under `OSFMACH3`, to be proposed.
+  **Proposed, not made** (a vendor change, waiting for the
+  maintainer): under `OSFMACH3`, `catch_exception_raise` takes
+  OSFMK's `(exception_type_t exception, exception_data_t codes,
+  mach_msg_type_number_t codeCnt)` and passes `codes[0]` and
+  `codes[1]` on as `code` and `subcode`, the CMU signature kept under
+  `#else`; OSFMK's own servers have that signature
+  (`bootstrap/bootstrap.c`, `catch_exception_raise`). Prototyped in a
+  scratch tree and run with a test program that faults three ways
+  and reports how its child died: before, "null", "unmapped" and
+  "text" all killed by signal 10; with it, "unmapped" by 11, SIGSEGV,
+  and "null" and "text" by 10. NetBSD 1.0 gives 11, 11 and 10, so
+  "null" is S-4's.
 - **S-4. A NULL dereference is a protection failure, not an invalid
   address.** OSFMK 7.3's `mach_init` (`libmach/mach_init.c`) maps page
   0 `VM_PROT_NONE` "so that the program doesn't get it", and Lites'
@@ -526,6 +537,29 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   S-3 fixed, a NULL dereference would still be classed by its
   `KERN_PROTECTION_FAILURE`. **To do**: decide with S-3 which signal
   NetBSD's binaries should see; NetBSD 1.0 sends SIGSEGV.
+- **S-7. A handler for SIGSEGV or SIGBUS is never run.** The same test
+  program with `signal(SIGSEGV, h)` and `signal(SIGBUS, h)`, `h`
+  calling `_exit(100 + sig)`: the child exits with status 0, not 110
+  or 111 and not killed, before the S-3 prototype and with it. Lites
+  delivers an exception's signal to a handler by notifying the task's
+  signal port (`send_signal()`, `sendsig()`, `signal_notify()` in
+  `server/serv/`) and not answering the exception, which the
+  emulator's signal thread then takes; somewhere on that path under
+  OSFMK the handler is lost. Not yet traced. Programs that catch
+  their own faults -- and anything relying on SIGSEGV handlers --
+  will misbehave until it is.
+- **S-8. A shell sometimes stops after a pipeline.** `cat /etc/* |
+  sort | wc -l` prints its count and the shell, NetBSD 1.0's `sh`,
+  neither prints a prompt nor runs what follows on the same line --
+  `; echo DONE`, the rest of a `while` loop -- in about half the runs.
+  Found with gdb on the server's process list at the time: the `sh` has
+  no children, live or zombie, and its one server thread sleeps on
+  "ttyin"; typing a further command runs it. So the shell has gone
+  back to reading the terminal with the rest of its line dropped, as
+  it does after an interrupt. Lites' own `doc/README` names this area
+  ("tsleep and friends is very fragile code ... Also signal handling
+  needs to be reworked"); cause not yet found. `/etc/rc` and plain
+  commands are not affected.
 - **S-5. `timed` dies of a bus error** at every boot. Not examined;
   take up after S-3, when the signal and address are right.
 - **S-6. Driver noise.** "hdintr: interrupt w/controller not done." and
@@ -604,8 +638,8 @@ Lites toward the OSF/1 server.
 **Recommended 13 October 2026; the maintainer decides.**
 
 1. **Stability first** -- S-2 (configuration) and S-1 (the disk tool),
-   both done; S-3 and S-4 (one vendor change, proposed first), then
-   S-5. Everything after is tested on top of these;
+   both done; S-3 and S-4 (one vendor change, proposed, prototyped);
+   S-7 and S-8 (signals and the sleep code, to be traced); then S-5. Everything after is tested on top of these;
    a server that dies on a write makes every later result doubtful.
 2. **Then the boundary items that are configuration or small**: O-8
    with S-2 (done), O-9 (builds and runs; `build_world` waits), then O-1, O-2, O-4, O-5 and
