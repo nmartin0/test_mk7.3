@@ -29,7 +29,11 @@ build -here mach_kernel MACH_KERNEL_CONFIG=PRODUCTION
 makeboot
 
 # Build	the default pager
-#build -here default_pager
+# AI-ONLY NOTE: uncommented.  OSF's bootstrap task starts
+# default_pager before the server (bootstrap.template; MK7.3 Release
+# Notes), and Lites needs it for paging space (docs/deferred.md, S-2).
+# The header above invites the edit.
+build -here default_pager
 
 # Build the Lites server and its emulator
 # AI-ONLY NOTE: not MkLinux's; OSF's MK7.3 release notes build the
