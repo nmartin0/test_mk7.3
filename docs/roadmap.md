@@ -244,7 +244,10 @@ compiler is NetBSD 1.0's own, running under Lites, as Lites
 self-hosted in 1995. Later GCCs come after this is stable.
 *State:* begun: NetBSD 1.0's `cc` compiles, links and installs
 programs under Lites, among them Lite2's `ftpd` (S-12), and the
-compile-and-install loop that once killed the server runs (S-14).
+compile-and-install loop that once killed the server runs (S-14). On
+the running system, 15 October: ODE's minimal tools, binutils 2.7 and
+gcc 2.7.2.1 for OSF/1 i386 ELF, built (`docs/status.md`, "Hosting
+itself"); the system's own build is next.
 
 The kernel configuration stays PRODUCTION, OSF's documented default;
 FAST, with the debugger, is for debugging only.

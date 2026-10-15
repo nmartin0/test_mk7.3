@@ -739,3 +739,71 @@ the root with `/etc/hostname.ne0` reading
   `nslookup` ("Server failed", having no root servers). `sendmail`,
   which takes libc's `setproctitle()`, dies of SIGSEGV (S-12,
   deferred).
+
+## Hosting itself
+
+**Measured 15 October 2026** (roadmap milestone 5), on the running
+system -- OSFMK, Lites and NetBSD 1.0's `cc` (gcc 2.4.5), QEMU TCG --
+with a 400 MB root from `docs/tools/mkselfhost.sh` and
+`mkbootdisk.sh ROOT_MB=400`. Logs came out by `ftp` to the host.
+
+- **ODE's minimal tools.** In `/usr/src/ode/src`:
+
+	TARGET_MACHINE=386BSD CENV="-DUSE_BSIZE -DNO_POLL" \
+	    sh ode/setup/setup.sh 386bsd
+
+  builds `make`, `genpath`, `makepath`, `build`, `workon`, `release`
+  and `md` into `/usr/src/ode/tools/386bsd/bin`. `386bsd` is ODE's own
+  context for this kind of host (`bin/make/bootstrap.sh`, "CR 464.
+  port for 386bsd"). The two settings are ODE's own knobs for what
+  NetBSD 1.0 lacks, set in the environment: `USE_BSIZE`, because its
+  `struct statfs` has `f_bsize` and no `f_fsize`
+  (`lib/libode/porting/free_disk_space.c`); `NO_POLL`, because it has
+  no `poll()`; and `TARGET_MACHINE=386BSD`, which `ode/mk/osf.std.mk`
+  needs to pick its `386BSD_VA_ARGV`, `VA_ARGV_IS_RECAST`.
+- **GNU make 3.75**, built by NetBSD's own make: `./configure
+  --prefix=/usr/local && make && make install`.
+- **binutils 2.7**, July 1996, for `i386-unknown-elf`: `configure
+  --host=i386-unknown-netbsd --target=i386-unknown-elf
+  --prefix=/usr/local` with GNU make. `--host` is given because
+  `config.guess` does not know `uname`'s answer here, "Lites". Its
+  `gas`, built for ELF, takes `/` as a comment anywhere
+  (`gas/config/tc-i386.c`, `OBJ_ELF`), as OSF's sources write them.
+- **gcc 2.7.2.1**, the compiler `Buildconf` names, in its OSF/1 i386
+  ELF configuration: `configure --host=i386-unknown-netbsd
+  --target=i386-unknown-osfrose --with-elf --with-gnu-as
+  --with-gnu-ld --prefix=/usr/local`, which selects
+  `config/i386/osfelf.h`; its tool directory,
+  `/usr/local/i386-unknown-osfrose/bin`, is a link to binutils'
+  `/usr/local/i386-unknown-elf/bin`. Then, with GNU make,
+  `make LANGUAGES=c CROSS_LIBGCC1=libgcc1.null`, three settings on
+  the command line and none in the source:
+  - `CROSS_LIBGCC1=libgcc1.null`: a cross compiler needs a
+    `libgcc1.a` supplied, and gcc's `INSTALL` says "It is possible
+    that on your target machine, none of these functions is needed.
+    If so, you can supply an empty library" -- the i386 open-codes
+    them, and gcc's own `t-sol2`, `t-vsta` and `t-next` name the same
+    empty library.
+  - `USER_H="ginclude/stdarg.h ginclude/stddef.h ginclude/varargs.h
+    ginclude/proto.h"`: `config/x-netbsd`, the fragment for a NetBSD
+    host, empties `USER_H` -- "We don't need GCC's own include files",
+    true of a native NetBSD compiler -- and a cross compiler then has
+    no `stddef.h`. These are `Makefile.in`'s own, without the other
+    processors' `va-*.h`.
+  - `TARGET_LIBGCC2_CFLAGS="-Dinhibit_libc -DNO_STDIO_H"` (build
+    only): there are no OSF/1 headers for the target, and
+    `libgcc2.c` keeps its uses of the C library under `inhibit_libc`;
+    `NO_STDIO_H` is `halfpic.h`'s, which `osfrose.h` includes, and
+    which otherwise includes `<stdio.h>`.
+
+  `touch gcc.info* cpp.info*` before `make install`: unpacking leaves
+  the shipped Info files older than their sources, and there is no
+  `makeinfo`. The result, `i386-unknown-osfrose-gcc -v -O2 -c`:
+  "GNU C version 2.7.2.1 80386, ELF objects compiled by GNU C version
+  2.4.5", predefining `__ELF__` and `__NO_UNDERSCORES__` -- the macro
+  `Buildconf` adds by hand on Linux -- and `objdump` shows an
+  `elf32-i386` object.
+
+Next: the sandbox at `/usr/src/osfmk` with these as OSF's native
+layout, `tools_base/elf/` (`osc/Buildconf`: `ELF_CC_EXEC_PREFIX
+"${tools_base}/elf/"`), and `build_world`.
