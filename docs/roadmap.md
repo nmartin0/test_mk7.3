@@ -163,10 +163,10 @@ The real Lites update, to Lite2 proper, is its own work order after
 this goal: built on, and run as a child server under, this one as its
 parent.
 
-**State on 14 October 2026**, milestone by milestone: 0 mostly done
+**State on 15 October 2026**, milestone by milestone: 0 mostly done
 (four of slp's eighteen verdicts pending); 1 not reached; 2 done; 3
-done, with S-8 watched and S-11 for the maintainer; 4 in progress;
-5 not started beyond NetBSD's `cc` building programs under Lites.
+done, with S-8 watched and S-11 for the maintainer; 4 done, with
+`sendmail` deferred (S-12); 5 begun.
 Each milestone below ends with its own line.
 
 **0. The releases, not the copies.** Neither import is its upstream's
@@ -232,8 +232,8 @@ from `/etc/hostname.ne0`, the default route from `/etc/mygate`, and
 `ping` answered. Measured 14 October 2026 under QEMU's user network
 (`docs/status.md`, "Online"): telnet in, through `inetd` and a pty,
 and out; ftp out, with `passive`; the resolver, against a server at
-10.0.2.2. `ftpd` dies in NetBSD's `setproctitle()` (S-12), so ftp in
-waits on that decision.
+10.0.2.2; since 15 October, ftp in, with 4.4BSD-Lite2's `ftpd` built
+on the running system (S-12). Done, with `sendmail` deferred.
 
 **5. Hosting itself.** On the running system, ODE's minimal tools and
 a GCC of OSF's own line -- gcc 2.7.x, the compiler MK7.2 and MK7.3
@@ -241,8 +241,9 @@ were built with, in its OSF/1 i386 ELF configuration -- rebuild the
 kernel, the servers and Lites, and the result boots. The first
 compiler is NetBSD 1.0's own, running under Lites, as Lites
 self-hosted in 1995. Later GCCs come after this is stable.
-*State:* not started, beyond NetBSD 1.0's `cc` compiling and linking
-programs under Lites.
+*State:* begun: NetBSD 1.0's `cc` compiles, links and installs
+programs under Lites, among them Lite2's `ftpd` (S-12), and the
+compile-and-install loop that once killed the server runs (S-14).
 
 The kernel configuration stays PRODUCTION, OSF's documented default;
 FAST, with the debugger, is for debugging only.

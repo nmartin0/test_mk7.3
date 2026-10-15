@@ -703,34 +703,44 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   abort of a thread in an exception is S-7's again. A fix would give
   the notification the care 0053's reply has, measured with this
   program first.
-- **S-12. Six NetBSD programs die in `setproctitle()`.** `ftpd`,
-  `inetd` (in its built-in services), `named`, `sendmail`, `mailq`
-  and `newaliases`. NetBSD 1.0's libc `setproctitle()`
-  (`lib/libc/gen/setproctitle.c`) stores through `PS_STRINGS`, the
-  `struct ps_strings` NetBSD's exec puts at the top of the stack,
-  0xf7bfdff0 for its `USRSTACK` of 0xf7bfe000. Under Lites the stack
-  ends at `VM_MAX_ADDRESS`, 0xc0000000 (`include/i386/vmparam.h`),
-  and under OSFMK, as under CMU's Mach and Mach4, everything above
-  that is the kernel's: the address cannot be mapped for the task.
-  Caught with gdb at the server's exception handler: `ftpd`'s first
-  `setproctitle()`, before its greeting, faults (`EXC_BAD_ACCESS`,
-  `KERN_INVALID_ADDRESS`, 0xf7bfdff4, `ps_nargvstr`) and the process
-  dies of SIGSEGV; `ftp` sees "421 Service not available". Utah's
-  answer to this kind of gap is in `doc/README`, "BINARIES": "There
-  are limitations to the binary compatibility ... route, mount, fsck,
-  nfsd, mount_nfs, mount_kernfs, mount_* should be taken from Lite."
-  **Options, for the maintainer**: (a) as `doc/README` says, these
-  programs from 4.4BSD-Lite2, whose `ftpd`, `inetd` and `named`
-  (`contrib/bind-4.9.2`, `named/ns_main.c`) set their titles by
-  rewriting `argv` in place (`sendmail` is not in the Lite2 tree:
-  `usr.sbin/sendmail/README`: "The beta version of sendmail 2.7.0
-  was removed at the developers request", sic; deferred by the
-  maintainer) -- built on the running system with NetBSD's `cc`,
-  which is milestone 5's first step; (b) the server completes a store to the `PS_STRINGS` page
-  for NetBSD binaries by stepping over it, which makes
-  `setproctitle()` a no-op -- instruction decoding in the server, for
-  a cosmetic call; (c) NetBSD's libc rebuilt with Lites' `USRSTACK`,
-  a change to the userland. (a) is recommended.
+- **S-12. NetBSD's `ftpd` and `sendmail` die in `setproctitle()`.**
+  `ftp` in fixed on 15 October 2026 by the maintainer's option (a);
+  `sendmail` deferred by the maintainer. NetBSD 1.0's libc
+  `setproctitle()` (`lib/libc/gen/setproctitle.c`) stores through
+  `PS_STRINGS`, the `struct ps_strings` NetBSD's exec puts at the top
+  of the stack, 0xf7bfdff0 for its `USRSTACK` of 0xf7bfe000. Under
+  Lites the stack ends at `VM_MAX_ADDRESS`, 0xc0000000
+  (`include/i386/vmparam.h`), and under OSFMK, as under CMU's Mach
+  and Mach4, everything above that is the kernel's: the address
+  cannot be mapped for the task. Caught with gdb at the server's
+  exception handler: `ftpd`'s first `setproctitle()`, before its
+  greeting, faults (`EXC_BAD_ACCESS`, `KERN_INVALID_ADDRESS`,
+  0xf7bfdff4, `ps_nargvstr`) and the process dies of SIGSEGV; `ftp`
+  sees "421 Service not available". NetBSD built its `ftpd` with
+  `-DHASSETPROCTITLE` (`libexec/ftpd/Makefile` 1.9.2.1), which is
+  what sends it to libc's. `sendmail -bd` likewise never listens:
+  `telnet localhost 25` is refused. *Corrected 15 October 2026:* this
+  entry first named six programs, four by inference. `inetd` and
+  `named` do not die: NetBSD's `inetd.c` (1.8) and BIND's
+  `ns_main.c` carry a `setproctitle(a, s)` of their own that rewrites
+  `argv` in place, and measured, `inetd`'s forked `echo` answers and
+  `named -b` runs and answers `nslookup`. `mailq` and `newaliases`
+  are `sendmail` by other names. Utah's answer to this kind of gap is
+  in `doc/README`, "BINARIES": "There are limitations to the binary
+  compatibility ... route, mount, fsck, nfsd, mount_nfs,
+  mount_kernfs, mount_* should be taken from Lite." The options were
+  (a) as `doc/README` says, the program from 4.4BSD-Lite2, whose
+  `ftpd` sets its title by rewriting `argv` (`sendmail` is not in the
+  Lite2 tree: `usr.sbin/sendmail/README`: "The beta version of
+  sendmail 2.7.0 was removed at the developers request", sic), built
+  on the running system with NetBSD's `cc`; (b) the server completes
+  a store to the `PS_STRINGS` page for NetBSD binaries by stepping
+  over it -- instruction decoding in the server, for a cosmetic call;
+  (c) NetBSD's libc rebuilt with Lites' `USRSTACK`, a change to the
+  userland. (a) was taken: Lite2's `ftpd` builds with
+  `make NOMAN=1 LDADD=-lcrypt` -- NetBSD 1.0 keeps `crypt()` in
+  `libcrypt`, and its own `ftpd` `Makefile` links it so -- and
+  installs over NetBSD's (`docs/status.md`, "Online").
 - **S-13. The system stopped, idle, with work queued -- again.**
   Fixed in 0067. After S-9's fix, a shell still stopped now and then
   after a pipeline, everything typed after it echoed and never ran:
