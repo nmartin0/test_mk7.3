@@ -721,16 +721,21 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   exception handler: `ftpd`'s first `setproctitle()`, before its
   greeting, faults (`EXC_BAD_ACCESS`, `KERN_INVALID_ADDRESS`,
   0xf7bfdff4, `ps_nargvstr`) and the process dies of SIGSEGV; `ftp`
-  sees "421 Service not available". NetBSD built its `ftpd` with
-  `-DHASSETPROCTITLE` (`libexec/ftpd/Makefile` 1.9.2.1), which is
-  what sends it to libc's. `sendmail -bd` likewise never listens:
-  `telnet localhost 25` is refused. *Corrected 15 October 2026:* this
-  entry first named six programs, four by inference. `inetd` and
-  `named` do not die: NetBSD's `inetd.c` (1.8) and BIND's
-  `ns_main.c` carry a `setproctitle(a, s)` of their own that rewrites
-  `argv` in place, and measured, `inetd`'s forked `echo` answers and
-  `named -b` runs and answers `nslookup`. `mailq` and `newaliases`
-  are `sendmail` by other names. Utah's answer to this kind of gap is
+  sees "421 Service not available". Which programs take libc's is in
+  their binaries: a stripped NetBSD 1.0 program keeps its run-time
+  linker's symbol table, and `docs/tools/aoutsyms.py` reads it.
+  `ftpd` and `sendmail` take `_setproctitle` from the shared libc
+  (type 0x01, undefined) -- NetBSD built its `ftpd` with
+  `-DHASSETPROCTITLE` -- and `echo QUIT | sendmail -bs` dies of
+  SIGSEGV, as `sendmail -bd` does before it listens. *Corrected 15
+  October 2026:* this entry first named six programs, four by
+  inference. `inetd` and `named` (BIND 4.8.3) define their own
+  `_setproctitle` (type 0x05, in the program's text), beside `_Argv`
+  and `_LastArg`, and carry its `-%s [%s]` title format: the one
+  that rewrites `argv` in place. Measured, `inetd`'s
+  forked `echo`, which sets its title first, answers, and `named -b`
+  runs and answers `nslookup`. `mailq` and `newaliases` are
+  `sendmail` by other names. Utah's answer to this kind of gap is
   in `doc/README`, "BINARIES": "There are limitations to the binary
   compatibility ... route, mount, fsck, nfsd, mount_nfs,
   mount_kernfs, mount_* should be taken from Lite." The options were
