@@ -753,6 +753,38 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   under `USEACTIVATIONS`. Likely S-8's cause as well -- "typing a
   further command runs it" is a message arriving and a receiver
   returning -- and S-8 stays watched until runs without it say so.
+- **S-14. The server died writing a mapped file back.** Fixed in
+  0069. A compile and copy loop on the running system --
+  `cc -o h hello.c && cp /usr/libexec/ftpd /tmp/f && install -c -s
+  ...` -- killed it on the first round, every time: "'.../startup'
+  task terminated" from the bootstrap. Caught with printfs in the
+  kernel's `exception_try_task()` (scratch only): the server's own
+  thread faulted in `memcpy` under `uiomove()` under `ffs_write()`,
+  reading at 0x608000, the page after a one-page region at 0x607000,
+  with nothing mapped there. The writer was Lites' pager:
+  `seqnos_memory_object_data_return()` in `serv/xmm_interface.c`,
+  Utah's May 1996 copy, handling a page the kernel paged out
+  of a file a program had mapped and written. Two defects there, in
+  every copy -- the release, Utah's later file, and xMach's:
+  - `wlen = pager->size - offset;` was set for every page, not only
+    inside the `if (offset + length > pager->size)` whose message
+    prints it, overriding `wlen`'s starting value, `length`, one
+    page. So a page that was not the file's last wrote everything to
+    the end of the file from a one-page buffer.
+  - `vn_pageinout()` takes an `off_t` and had no prototype; the call
+    passed a 32-bit `vm_offset_t`, so every later argument was read
+    one word over: the offset 4 GB too high, `aresid` pointing into
+    `proc0`, and the `proc` pointer garbage. With the first defect
+    fixed alone the server died in `psignal()`, called from
+    `ffs_write()`'s file-size check with that garbage `proc`.
+  The fix, by the maintainer's choice: the line moved into the `if`,
+  and a prototype beside `vn_rdwr()`'s in `include/sys/vnode.h` --
+  `vn_pageinout()` is Lites' `vn_rdwr()` without the cache-state hook.
+  Precedent, read and not copied: 4.4BSD's `vnode_pager_io()`, which
+  this pager replaced, writes one page and cuts only a page that
+  crosses the file's end (the same in Lite, 8.8, and Lite2, 8.10).
+  Measured: fifteen rounds of the loop and twenty of a copy and
+  `install` loop pass, and the copies compare equal to their source.
 - **S-5. `timed` died of a bus error** at every boot. Fixed in 0058.
   Not the network: with `ne0` configured at boot (`/etc/hostname.ne0`,
   `/etc/mygate`; 0056) it still died. Caught with gdb at the server's

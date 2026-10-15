@@ -442,6 +442,15 @@ int 	vn_open __P((struct nameidata *ndp, int fmode, int cmode));
 int 	vn_rdwr __P((enum uio_rw rw, struct vnode *vp, caddr_t base,
 	    int len, off_t offset, enum uio_seg segflg, int ioflg,
 	    struct ucred *cred, int *aresid, struct proc *p));
+/*
+ * AI-ONLY NOTE: added.  vn_pageinout() is Lites' vn_rdwr() without the
+ * cache-state hook (kern/vfs_vnops.c), and had no prototype: the pager's
+ * pageout (serv/xmm_interface.c) passed a 32-bit vm_offset_t for the
+ * off_t, shifting every argument after it.  docs/deferred.md, S-14.
+ */
+int 	vn_pageinout __P((enum uio_rw rw, struct vnode *vp, caddr_t base,
+	    int len, off_t offset, enum uio_seg segflg, int ioflg,
+	    struct ucred *cred, int *aresid, struct proc *p));
 int	vn_read __P((struct file *fp, struct uio *uio, struct ucred *cred));
 int	vn_select __P((struct file *fp, int which, struct proc *p));
 int	vn_stat __P((struct vnode *vp, struct stat *sb, struct proc *p));
