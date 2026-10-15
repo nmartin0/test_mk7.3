@@ -247,7 +247,8 @@ kernel-thread limit, fixed in 0067); the server died writing back
 a page of a mapped file (S-14, fixed in 0069); `timed` died in the emulator's
 `adjtime` (S-5, fixed in 0058); a caught signal does not reach a
 process that makes no system calls, as Utah left it (S-11); NetBSD
-programs that call `setproctitle()`, `ftpd` among them, die (S-12). The NE2000 works since 0056: under
+`ftpd` and `sendmail` died in libc's `setproctitle()`; Lite2's `ftpd`
+replaces NetBSD's, and `sendmail` is deferred (S-12). The NE2000 works since 0056: under
 QEMU's `ne2k_isa`, `ifconfig ne0` and `ping` (`docs/deferred.md`,
 "The `ne` driver"). Where Lites
 differs from the OSF/1 server the MK7.3 documents describe is in the
@@ -716,5 +717,23 @@ the root with `/etc/hostname.ne0` reading
   resolver's reverse lookup, search-domain try and queries. Outside
   names cannot be tried from the container this was measured in,
   which has no resolver of its own.
-- **ftp in.** Fails: `ftpd` dies in `setproctitle()` before its
-  greeting (S-12).
+- **ftp in.** Works since 15 October 2026, with 4.4BSD-Lite2's
+  `ftpd` built and installed on the running system (S-12, option
+  (a)): Lite2's `usr/src/libexec/ftpd` copied into the root tree's
+  `/usr/src/libexec/ftpd`,
+  then `make NOMAN=1 LDADD=-lcrypt` with NetBSD 1.0's `cc` and
+  `install -c -s -o bin -g bin -m 555 ftpd /usr/libexec/ftpd`;
+  `inetd.conf`'s `ftp` line is NetBSD's, unchanged. With
+  `hostfwd=tcp:127.0.0.1:2221-:21`, a client on the host logs in as a
+  user given a password with `passwd`, `RETR`s `/etc/hosts` (327
+  bytes, the same SHA-1 as the file put on the disk) and `STOR`s it
+  back to `/tmp/up.txt`, which `cmp` finds equal. Data goes in active
+  mode, the guest connecting out to 10.0.2.2: QEMU's user network
+  forwards only the control port in. NetBSD 1.0's `passwd` warns
+  "crypt(3) not present in the system!" -- its exportable sets have
+  no DES -- and the login works all the same, `ftpd` and `passwd`
+  using the same `crypt()`.
+- **inetd and named.** NetBSD 1.0's own: `inetd`'s forked `echo`
+  answers, and `named -b` with a one-line boot file runs and answers
+  `nslookup` (SERVFAIL, having no root servers). `sendmail -bd`
+  never listens (S-12, deferred).
