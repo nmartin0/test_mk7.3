@@ -725,11 +725,13 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   are limitations to the binary compatibility ... route, mount, fsck,
   nfsd, mount_nfs, mount_kernfs, mount_* should be taken from Lite."
   **Options, for the maintainer**: (a) as `doc/README` says, these
-  programs from 4.4BSD-Lite2, whose `ftpd` and `inetd` set their
-  titles by rewriting `argv` in place (`sendmail` and `named` are not
-  in the Lite2 tree and would need their own sources) -- built on the
-  running system with NetBSD's `cc`, which is milestone 5's first
-  step; (b) the server completes a store to the `PS_STRINGS` page
+  programs from 4.4BSD-Lite2, whose `ftpd`, `inetd` and `named`
+  (`contrib/bind-4.9.2`, `named/ns_main.c`) set their titles by
+  rewriting `argv` in place (`sendmail` is not in the Lite2 tree:
+  `usr.sbin/sendmail/README`: "The beta version of sendmail 2.7.0
+  was removed at the developers request", sic; deferred by the
+  maintainer) -- built on the running system with NetBSD's `cc`,
+  which is milestone 5's first step; (b) the server completes a store to the `PS_STRINGS` page
   for NetBSD binaries by stepping over it, which makes
   `setproctitle()` a no-op -- instruction decoding in the server, for
   a cosmetic call; (c) NetBSD's libc rebuilt with Lites' `USRSTACK`,
