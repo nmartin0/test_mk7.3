@@ -153,6 +153,17 @@ The walk through `dev`'s commits continues as the way there; dev
 reached a multi-user login under Lites, by other means, at its commit
 `7c428c2`.
 
+**The bootstrapping Lites stays on 4.4BSD-Lite.** *Decided 15 October
+2026, by the maintainer.* Lites 1.1.u3 is a Lite1 server: 201 of the
+347 Berkeley files it carries have older SCCS versions than Lite2's,
+none newer, about 790 CSRG deltas between them, and no Lites -- Utah's
+or xMach's -- was ever moved to Lite2. For this goal it is brought to
+Lite2 only file by file and only where the running system needs it,
+each such change taking Berkeley's own delta from CSRG's history.
+The real Lites update, to Lite2 proper, is its own work order after
+this goal: built on, and run as a child server under, this one as its
+parent.
+
 **State on 14 October 2026**, milestone by milestone: 0 mostly done
 (four of slp's eighteen verdicts pending); 1 not reached; 2 done; 3
 done, with S-8 watched and S-11 for the maintainer; 4 in progress;

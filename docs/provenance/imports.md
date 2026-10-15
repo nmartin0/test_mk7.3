@@ -178,6 +178,8 @@ so at the site.
 | `lites/emulator/i386/e_machinedep.c`, `take_a_signal()`: `%eax` no longer set to 1 after a handler returns | `take_signals_and_do_sigreturn()` in the same file sets it for its own setjmp test, the only path that wants it |
 | `mach_services/include/i386/cthreads.h`, `spin_try_lock()` and `spin_unlock()`: a `"memory"` clobber | `libcthreads/i386/lock.s` has the same two as functions, which a compiler cannot move memory across; the inline forms now match them |
 | `lites/server/serv/ux_server_loop.c`, under `OSFMACH3`: `ux_server_max_kernel_threads` 0 | Lites' own value where cthreads cannot hold its limit (`USEACTIVATIONS`); the limit's own comment, "at least 5 (wired) + 1 (running) + receive_max", needs a `cthread_mach_msg` that bounds receivers, which OSFMK's `libcthreads` does not define (S-13) |
+| `lites/server/serv/xmm_interface.c`, `seqnos_memory_object_data_return()`: `wlen` cut short only for the page that crosses the file's end | No tree has it; every copy sets it for every page. The line moved into the `if` whose message prints it, so `wlen` keeps its starting value, one page, otherwise -- what 4.4BSD's `vnode_pager_io()`, which this pager replaced, does in Lite and Lite2 (S-14) |
+| `lites/include/sys/vnode.h`: a prototype for `vn_pageinout()` | No tree has it. Beside `vn_rdwr()`'s, which it copies but for the cache-state hook; without it the pageout's 32-bit offset shifted the `off_t` and every argument after it (S-14) |
 
 **The two Lites rows above are build-level, not source.** Lites'
 source changes are the `lites/` rows of kinds B and C, each with a note

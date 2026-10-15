@@ -567,8 +567,16 @@ kern_return_t seqnos_memory_object_data_return (
 	if (offset > pager->size) {
 		printf("m_o_data_return: pageout x%x + x%x outside file end x%lx dropped.\n", offset, length, pager->size);
 	} else {
-		wlen = pager->size - offset;
+		/*
+		 * AI-ONLY NOTE: moved into the if.  wlen starts as length,
+		 * one page, and only a page past the end of the file is cut
+		 * short, as the message below says and as 4.4BSD's
+		 * vnode_pager_io(), which this pager stands in for, does.
+		 * Set for every page, it wrote from past the one-page buffer
+		 * and the server died.  docs/deferred.md, S-14.
+		 */
 		if (offset + length > pager->size) {
+			wlen = pager->size - offset;
 			printf("m_o_data_return: truncating pageout x%x + x%x -> x%x (size=xl%x)\n", offset, length, wlen, pager->size);
 		}
 
