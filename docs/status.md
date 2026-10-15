@@ -727,10 +727,12 @@ the root with `/etc/hostname.ne0` reading
   back to `/tmp/up.txt`, which `cmp` finds equal. Data goes in active
   mode, the guest connecting out to 10.0.2.2: QEMU's user network
   forwards only the control port in. NetBSD 1.0's `passwd` warns
-  "crypt(3) not present in the system!" -- its exportable sets have
-  no DES -- and the login works all the same, `ftpd` and `passwd`
-  using the same `crypt()`.
+  "crypt(3) not present in the system!" -- NetBSD 1.0's exportable
+  sets carry no DES: `crypt()` is in `libcrypt` alone, built from
+  `crypt_dummy.o` -- and the login works all the same, `passwd` and
+  `ftpd` both taking that one `crypt()`.
 - **inetd and named.** NetBSD 1.0's own: `inetd`'s forked `echo`
   answers, and `named -b` with a one-line boot file runs and answers
-  `nslookup` (SERVFAIL, having no root servers). `sendmail -bd`
-  never listens (S-12, deferred).
+  `nslookup` ("Server failed", having no root servers). `sendmail`,
+  which takes libc's `setproctitle()`, dies of SIGSEGV (S-12,
+  deferred).
