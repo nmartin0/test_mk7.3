@@ -100,6 +100,19 @@ int		ux_server_stack_size = 4096*16;
 #ifdef USEACTIVATIONS
 /* Activation stacks must come from wired cthreads */
 int		ux_server_max_kernel_threads = 0;
+#elif OSFMACH3
+/*
+ * AI-ONLY NOTE: no limit (0: every cthread has a kernel thread).
+ * The limit below holds only if cthread_mach_msg() keeps at most
+ * receive_max threads waiting on the port set, and under OSFMACH3
+ * nothing does: the cthread_mach_msg(), cthread_msg_busy() and
+ * cthread_msg_active() above are Utah's stubs, and OSFMK 7.3's
+ * libcthreads declares the three in cthreads.h but defines none.
+ * With 13, server threads waiting in mach_msg() took every kernel
+ * thread and woken server threads waited on the run queue for good;
+ * the system stopped, idle, with work queued.  docs/deferred.md, S-13.
+ */
+int		ux_server_max_kernel_threads = 0;
 #else
 /* This must be at least 5 (wired) + 1 (running) + receive_max */
 int		ux_server_max_kernel_threads = 13;

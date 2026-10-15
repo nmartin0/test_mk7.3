@@ -455,22 +455,29 @@ emulator flag is configuration, outside the tree, and costs nothing;
 taken up if a run without `-icount`, on hardware or under KVM, needs
 it.
 
-### Lites' receive threads: OSFMK's `cthread_mach_msg`
+### Lites' receive threads: `cthread_mach_msg`
 
-**Deferred, 13 October 2026.** Lites' server loop calls
-`cthread_mach_msg` with a minimum and a maximum of server threads to
-keep waiting on its port set, and under `OSFMACH3` supplies the call
-itself as a stub that ignores both and calls `mach_msg` -- its comment
-says the call was "missing from cthreads". OSFMK 7.3's cthreads has
-it, with the nine arguments in `struct cthread_mach_msg_struct`, and
-it does the accounting (`cthread_msg_busy`, `cthread_msg_active`,
-which Lites also stubs). The stub is kept under another name for now
-(`imports.md`, kind C), so the server behaves as its authors ran it.
+**Deferred, 13 October 2026; corrected 14 October 2026.** Lites'
+server loop calls `cthread_mach_msg` with a minimum and a maximum of
+server threads to keep waiting on its port set, and under `OSFMACH3`
+supplies the call itself as a stub that ignores both and calls
+`mach_msg` -- its comment says the call was "missing from cthreads"
+-- with `cthread_msg_busy` and `cthread_msg_active` stubbed too. This
+entry said OSFMK 7.3's cthreads has the call and does the accounting.
+It does not: `mach_services/include/cthreads.h` declares the three,
+`cthread_mach_msg` taking a `struct cthread_mach_msg_struct`, and
+`libcthreads` defines none of them (no source in the tree, no symbol
+in the library). The only implementation here is Lites' own
+`serv/cprocs.c`, CMU's cproc-based one, built only with `data_synch`.
+Without the accounting the server's kernel-thread limit could not
+hold, and the system stopped (S-13, fixed in 0067 by lifting the
+limit under `OSFMACH3`).
 
-**What would make it worth taking:** a server that runs out of
-threads to receive with, or that keeps too many. Using OSFMK's call
-means building the struct at the four call sites in
-`serv/ux_server_loop.c` and dropping the three stubs.
+**What would make the accounting worth having:** wanting the limit
+back -- fewer kernel threads under load. That means implementing the
+three in OSFMK's `libcthreads` to the interface its header declares,
+on `cthread_t` where `cprocs.c` has `cproc_t`, and building the struct
+at the four call sites in `serv/ux_server_loop.c`.
 
 ### Lites' `memory_object_synchronize`
 
@@ -727,6 +734,28 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   `setproctitle()` a no-op -- instruction decoding in the server, for
   a cosmetic call; (c) NetBSD's libc rebuilt with Lites' `USRSTACK`,
   a change to the userland. (a) is recommended.
+- **S-13. The system stopped, idle, with work queued -- again.**
+  Fixed in 0067. After S-9's fix, a shell still stopped now and then
+  after a pipeline, everything typed after it echoed and never ran:
+  one boot in seven of one sequence, and the S-8 symptom. Caught with
+  gdb, 14 October 2026, at `(sleep 3; echo hello-echo) | telnet
+  localhost 7; telnet localhost 13`: the shell's server thread first
+  on `cthread_status.run_queue`, with cron's; `kernel_threads` equal to
+  `max_kernel_threads`, 13; four wired threads (network input, device
+  reply, timeout, pager) and nine unwired ones running; the CPU in
+  the kernel's idle loop. So nine server threads sat in the kernel --
+  in `mach_msg` receives on the port set, the only place the server
+  waits without bound -- holding every kernel thread a woken thread
+  could run on. Lites' `serv/ux_server_loop.c` sets the limit, 13,
+  with the note "This must be at least 5 (wired) + 1 (running) +
+  receive_max", and receive_max, 6, holds only if `cthread_mach_msg`
+  enforces it; under `OSFMACH3` it is Utah's stub and nothing does
+  (Lites' receive threads, above). The fix is Lites' own setting for
+  where it cannot multiplex, 0, "allowing all cthreads to have Mach
+  threads" (`libcthreads/cthreads.c`, `cthread_set_kernel_limit`), as
+  under `USEACTIVATIONS`. Likely S-8's cause as well -- "typing a
+  further command runs it" is a message arriving and a receiver
+  returning -- and S-8 stays watched until runs without it say so.
 - **S-5. `timed` died of a bus error** at every boot. Fixed in 0058.
   Not the network: with `ne0` configured at boot (`/etc/hostname.ne0`,
   `/etc/mygate`; 0056) it still died. Caught with gdb at the server's

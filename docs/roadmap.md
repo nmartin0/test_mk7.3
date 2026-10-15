@@ -209,8 +209,8 @@ change most later. `/mach_servers/mach_init` is a symbolic link to
 already running. *State:* done. `/etc/rc` runs to a multi-user
 login with NetBSD 1.0's daemons; programs fault, catch and return as
 on NetBSD (S-3, S-4, S-5, S-7, 0053-0062); `cc` builds and runs
-programs. Open: S-8 (not seen since 0054) and S-11, Utah's
-`signal_send_running`, for the maintainer.
+programs. Open: S-8 (likely S-13, fixed in 0067; watched) and S-11,
+Utah's `signal_send_running`, for the maintainer.
 
 **4. Online.** The kernel's own `ne` driver, already in the PRODUCTION
 configuration, with QEMU's `ne2k_isa`; its two defects fixed first
