@@ -853,5 +853,59 @@ with a 400 MB root from `docs/tools/mkselfhost.sh` and
   host: all three in `.data`, kernel text 685,735 bytes as before,
   multi-user boot, `cc` runs.
 
-Next: `build_world` on the running system, then booting what it
-built.
+**`build_world` there, 16 October 2026.** With `GCC_LATEST 2_7_2_1`,
+`build_world` builds the headers, the four libraries, `file_systems`,
+`bootstrap` (151,253 bytes), `default_pager` and `name_server`
+unchanged. Three things stood in the way of the rest, and none was in
+OSF's or Utah's sources:
+
+- **`hardclock.o`'s `-fno-optimize-sibling-calls`**, an option GCC
+  3.0 brought with the optimization it turns off; `cc1` 2.7.2.1 stops
+  on it. Since 0075 `template.mk` adds it only for a compiler that
+  does not report a 0.x, 1.x or 2.x version (`-dumpversion`).
+- **`lites/makefile`**, ours, assumed GNU's `env -u`, a `configure`
+  path relative to the source directory, and the host's `strip`,
+  `size` and `nm`. NetBSD's are a.out; the sandbox's ELF tools are in
+  `tools_base/elf/`, where `size` is linked beside the others. And it
+  handed Lites ODE's `${_CC_}` with `-pedantic`, which gcc 2.7.2.1
+  turns, for automatic structures with non-constant initializers,
+  into an error (`kern_resource.c`); the Linux host had always
+  dropped it sandbox-wide. Since 0075 the wrapper takes osf.gcc.mk's
+  per-target `_NO_STRICT_ANSI`. Its wrappers are made once (`ALWAYS`
+  is empty), so `obj/at386/lites/tools` is removed when the compiler
+  changes. Lites needs `GMAKE=/usr/local/bin/make` and `LITES_AWK=awk`
+  in `Buildconf.local`; it then builds: the server 509,656 bytes of
+  text (`startup`, 564,296 stripped), the emulator 128,272.
+- **`locore.s`**: binutils 2.7 rejects three lines of the trap entry,
+  `movl %ss,%eax`, `movl %eax,%ds` and `movl %eax,%es`, dev's
+  `3036fdb` spellings of DR3's `movl %ss,%ax` for GNU as 2.42, which
+  rejects DR3's. binutils 2.7 assembles DR3's `locore.s` as written,
+  and with it the kernel builds there: `mach_kernel.PRODUCTION`
+  726,261 bytes, text 481,970. Which text the tree keeps is open
+  (`docs/deferred.md`, "One locore.s for two assemblers").
+
+**Booting what it built, 16 October 2026.** The seven programs came out
+by `ftp` (binary, `cksum` checked) onto a disk made as before. The
+kernel boots and loads the bootstrap task, and stops after "I've
+found: 2 sections". With the host's bootstrap task in its place, the
+rest -- the running system's kernel, `name_server`, `default_pager`,
+Lites and its emulator -- comes up multi-user to `login:`, and the
+compile-and-install loop runs clean (fifteen `cc` and `install`
+rounds, `cmp` of a copied `ftpd`, the program run). The
+bootstrap task itself is sound; the kernel's loader for it is not.
+binutils 2.7's `ld` starts the data segment where the text ends,
+congruent to its file offset (`0x080639b0`), as System V's ELF allows;
+today's `ld` starts it on a page. `do_bootstrap_compat()` maps
+`round_page(p_memsz)` bytes from `trunc_page(p_vaddr)`, which covers
+the segment only when it starts on a page: here it ends at
+`0x08065268` and the map at `0x08065000`, so the end of the BSS is
+not mapped. That loader is slp's `444954a`, multiboot's, not DR3's;
+the bootstrap task's own loader, `bootstrap/elf.c`, sizes a segment
+from its start, `p_vaddr + p_filesz - trunc_page(p_vaddr)`
+(`docs/deferred.md`, "The multiboot loader and a System V data
+segment").
+
+`makeboot` is not on the path, as on the host, and is PowerMac's.
+GNU make 3.75 stops on a file "has modification time in the future",
+and the running system's clock starts behind under QEMU's `-icount`;
+set it (`date`) before building.

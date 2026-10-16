@@ -127,6 +127,24 @@
 # includes.  It goes in with -idirafter so nothing in it can hide a
 # header Lites provides for itself.
 #
+# The compiler is ODE's ${_CC_} without the two flags ANSI_CC adds for
+# OSF's own sources, -pedantic and -Wpointer-arith; the wrapper's
+# _NO_STRICT_ANSI is osf.gcc.mk's per-target hook for that.  Utah built
+# Lites without them, and gcc 2.7.2.1, given -pedantic, makes GNU C's
+# non-constant initializers of automatic structures errors (c-typeck.c
+# line 5129), as in kern_resource.c's set_task_priority().  The Linux
+# host's Buildconf.local sets NO_STRICT_ANSI for the whole sandbox.
+# The wrappers are made once: ${ALWAYS} is empty (osf.std.mk), and a
+# target with no sources that exists is up to date.  Remove tools/
+# after changing the compiler or its flags.
+#
+# configure is run by its absolute path: ${configure:P} is relative to
+# this directory, and the rule runs it from the configuration's.  It
+# was absolute only while obj/ was a link out of the tree.  strip, size
+# and nm are the sandbox's, through ${_CC_EXEC_PREFIX_}: empty on a
+# Linux host, where the host's read ELF, and tools_base/elf/ on an OSF
+# native host, where the host's are a.out.
+#
 # --prefix is the configuration's own release/ subdirectory.  Lites puts
 # ${prefix}/include and ${prefix}/include/mach on every compile line
 # (conf/Makerules line 66, INSTALL_INCDIR); configure's default prefix,
@@ -141,12 +159,14 @@
 # there, and the second build failed on "include
 # $(OBJDIR)/conf/Makeconf".
 #
-# Three variables are removed from gmake's environment.  MAKEFLAGS holds
-# ODE make's flags, which GNU make would misread.  INCDIRS and LIBDIRS
-# are set by osc/Buildconf as ready-made "-I..." and "-L..." strings,
-# and Lites' Makerules uses the same two names for bare directory lists
-# that it extends with += and prefixes itself; inherited, they become
-# "-I-I/...".  Lites gets the export area from --with-release instead.
+# Three variables are emptied in gmake's environment, with POSIX env's
+# NAME= (GNU's "env -u" is not in NetBSD 1.0's env, where milestone 5
+# runs this file).  MAKEFLAGS holds ODE make's flags, which GNU make
+# would misread.  INCDIRS and LIBDIRS are set by osc/Buildconf as
+# ready-made "-I..." and "-L..." strings, and Lites' Makerules uses the
+# same two names for bare directory lists that it extends with += and
+# prefixes itself; inherited, they become "-I-I/...".  Lites gets the
+# export area from --with-release instead.
 #
 
 LITES_CONFIG	?= STD+WS+osfmach3
@@ -163,16 +183,17 @@ OTHERS		= ${_LITES_CROSS_} ${LITES_CONFIG}/config.status lites
 
 _LITES_PATH_	= PATH=$$_t_:$$PATH
 _LITES_CD_	= _t_=`pwd`/tools && cd
-_LITES_ENV_	= env -u MAKEFLAGS -u INCDIRS -u LIBDIRS
+_LITES_ENV_	= env MAKEFLAGS= INCDIRS= LIBDIRS=
 
+tools/${LITES_TARGET}-gcc_NO_STRICT_ANSI =
 tools/${LITES_TARGET}-gcc_EXEC	= ${_CC_} ${CARGS} \
 				  -idirafter ${EXPORTBASE}/include/sa_mach
 tools/${LITES_TARGET}-ld_EXEC	= ${_LD_} ${LDOPTS} ${LDARGS}
 tools/${LITES_TARGET}-ar_EXEC	= ${_AR_}
 tools/${LITES_TARGET}-ranlib_EXEC = ${_RANLIB_}
-tools/${LITES_TARGET}-strip_EXEC = strip
-tools/${LITES_TARGET}-size_EXEC	= size
-tools/${LITES_TARGET}-nm_EXEC	= nm
+tools/${LITES_TARGET}-strip_EXEC = ${_CC_EXEC_PREFIX_}strip
+tools/${LITES_TARGET}-size_EXEC	= ${_CC_EXEC_PREFIX_}size
+tools/${LITES_TARGET}-nm_EXEC	= ${_CC_EXEC_PREFIX_}nm
 
 ${_LITES_CROSS_}: ${ALWAYS}
 	${MAKEPATH} ${.TARGET}
@@ -183,8 +204,9 @@ ${_LITES_CROSS_}: ${ALWAYS}
 
 ${LITES_CONFIG}/config.status: ${_LITES_CROSS_} configure Makefile.in
 	${MAKEPATH} ${.TARGET}
+	_s_=`cd ${configure:P:H} && pwd` && \
 	${_LITES_CD_} ${.TARGET:H} && ${_LITES_PATH_} AWK=${LITES_AWK} \
-		sh ${configure:P} \
+		sh $$_s_/configure \
 		--target=${LITES_TARGET} \
 		--with-config=${LITES_CONFIG} \
 		--with-release=${EXPORTBASE} \
