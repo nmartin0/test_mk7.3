@@ -164,10 +164,10 @@ The real Lites update, to Lite2 proper, is its own work order after
 this goal: built on, and run as a child server under, this one as its
 parent.
 
-**State on 15 October 2026**, milestone by milestone: 0 mostly done
+**State on 16 October 2026**, milestone by milestone: 0 mostly done
 (two of slp's eighteen verdicts pending, both waiting on milestone 1); 1 not reached; 2 done; 3
 done, with S-8 watched and S-11 for the maintainer; 4 done, with
-`sendmail` deferred (S-12); 5 begun.
+`sendmail` deferred (S-12); 5 built there, booting but for one loader.
 Each milestone below ends with its own line.
 
 **0. The releases, not the copies.** Neither import is its upstream's
@@ -203,6 +203,10 @@ adopted. *State:* not reached. `build -here stand` compiles past
 `-m386` since 0052 and stops at `boot.h`'s `#include <ufs/fs.h>`,
 which nothing in the tree exports (`docs/deferred.md`, "Booting with
 OSF's own boot loader"); the system boots by the multiboot entry.
+16 October: the boot's sources predate their tree -- six headers it
+includes left the MK or were the OSF/1 server's -- and on the running
+system, with them supplied, `libboot.a` builds as written; the
+primary stops on Lites' `dirent.h` (same section).
 
 **2. The three servers.** `bootstrap.conf` as OSF's template and
 release notes give it: `name_server`, `default_pager` on partition b,
@@ -248,7 +252,13 @@ programs under Lites, among them Lite2's `ftpd` (S-12), and the
 compile-and-install loop that once killed the server runs (S-14). On
 the running system, 15 October: ODE's minimal tools, binutils 2.7 and
 gcc 2.7.2.1 for OSF/1 i386 ELF, built (`docs/status.md`, "Hosting
-itself"); the system's own build is next.
+itself"). 16 October: `build_world` there builds every component;
+the kernel with DR3's `locore.s`, which binutils 2.7 reads and GNU as
+2.42 does not, so the tree's text is for the maintainer
+(`docs/deferred.md`, "One locore.s for two assemblers"). What it
+built boots multi-user but for the bootstrap task, which multiboot's
+loader maps short (same file, "The multiboot loader and a System V
+data segment").
 
 The kernel configuration stays PRODUCTION, OSF's documented default;
 FAST, with the debugger, is for debugging only.

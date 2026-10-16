@@ -401,9 +401,130 @@ nothing in this tree exports `ufs/fs.h` -- `file_systems` exports only
 `mach/fs/file_system.h`, and finds its own `ufs/fs.h` with `-I.` --
 and the HP700 boot includes it the same way, with only
 `-I../include`, so OSF's own tree had it exported from somewhere this
-one lacks. Not yet looked for. Past that, the primary has to fit its
-512-byte and 8 KB limits with today's code generation, which is not
-yet measured.
+one lacks. Past that, the primary has to fit its 512-byte and 8 KB
+limits with today's code generation, which is not yet measured.
+
+**Looked for, 16 October 2026.** The boot needs more than `ufs/fs.h`:
+`primary/sys.c` and `boot.c` include `<dirent.h>` and
+`<sys/reboot.h>`, and `boot.h` `<ufs/fs.h>` and `<ufs/dinode.h>` --
+4.3BSD-Reno's layout, OSF/1's. With `-nostdinc` (`osf.gcc.mk`,
+`_ansi_NOSTDINC_`) the build sees only the export tree and `sa_mach`,
+and nothing in OSF's tree exports any of the four: not here, not in
+the MkLinux CVS checkout, not in MkLinux 1.0b2's `osfmk`. In this tree
+they exist only in the server's headers (Lites' `include/sys/reboot.h`
+and `include/sys/dirent.h`, and `ufs/ffs/fs.h` and `ufs/ufs/dinode.h`
+in 4.4BSD's layout) and in `file_systems/ufs`, OSF's own copies of the
+UFS headers for `libsa_fs`, which the secondary links. So the boot was
+built in a sandbox whose export tree also held the OSF/1 server's
+headers -- the server OSF never released, whose slot Lites fills.
+Options when milestone 1 is taken up: the boot finds `ufs/*.h` in
+`file_systems` and the two `sys` headers in Lites' include tree,
+through `INCENV`, as `migcom` finds Lites' `machine/types.h`; or the
+server's headers are exported, as OSF's evidently were. The boot is
+`MkLinux`-marked and reads ELF, ext2 ("MACH/BSD/OSF1 and LINUX file
+systems", `primary/README`), and `-m386`, its own flag, is valid for
+gcc 2.7.2.1 on the running system, so it may build there as written.
+
+**Where the headers went, 16 October 2026.** `<sys/reboot.h>` was the
+kernel's own. Paragon's MK kernel keeps it in `kernel/sys/`, beside
+`ioctl.h`, `syslog.h`, `time.h`, `tm.h`, `types.h`, `varargs.h` and
+`version.h` (cd155, `kernels/src/mk/kernel/sys`, read as
+specification); OSFMK 7.3's `mach_kernel/sys` still has every one of
+those but `reboot.h`, and `i386/kgdb_interface.c` and three `sqt`
+files still include it. The boot's history says it was changed to
+"use mk includes only (not sys/dir.h ....)" (bernadat, 30 April 1992,
+`primary/sys.c` and `boot.c`), and `ufs/fs.h` has the same lineage:
+Paragon's kernel has `kernel/boot_ufs/fs.h`, the OSF/1 server
+`server/ufs/fs.h`. So the boot's sources are older than the tree they
+came in: the MK headers they were written against left it, and nothing
+took their place. Two more needs show once those four are found:
+
+- `lib/elf.c` includes `<sys/elf.h>` for `Elf32_Shdr`, `Elf32_Sym`,
+  `EI_MAG0` and `SHT_SYMTAB`, as does `mach_services/cmds/makeboot`'s
+  `elf.c`, a host program. Lites' `sys/elf.h` has no section headers
+  and needs `u_int32_t`; the kernel's `mach/elf.h` has all four.
+- `lib/asm.s` uses `ENTRY()`, which `machine/asm.h` aligns with
+  `ALIGN`, defined only `#ifdef ASSEMBLER`. The kernel's
+  `template.mk` and libcthreads' `AT386/machdep.mk` pass
+  `-DASSEMBLER`; the boot's Makefiles do not, and gcc 2.7.2.1's
+  `osfelf.h` defines only `__LANGUAGE_ASSEMBLY` for `.S` files.
+
+Tried on the Linux host, in a scratch sandbox, nothing written to the
+tree: `-idirafter` a directory of links to those six headers, after
+every directory the build gives, so none can hide an MK header, and
+`-DASSEMBLER`. `lib`'s C files compile; `lib/boot2.s` then stops GNU
+as 2.42 at `%ax` with an `l` suffix, as `locore.s` did -- 16-bit code
+in the assembler dialect of its day, which binutils 2.7 reads. So the
+boot goes next on the running system.
+
+On the running system, the same way, with `-m386` as written and
+`-DASSEMBLER` given only to the assembler files (`asm.o_CENV` and its
+siblings on `build`'s line): `lib/libboot.a` builds, `boot2.s`
+included. The primary then stops in Lites' `sys/dirent.h`, which wants
+Lites' `ino_t`; the build's `sys/types.h` is `sa_mach`'s. That is the
+gap in one line: the boot was written against an OSF/1 server's
+headers, in the same namespace as the MK's, and Lites' are a 4.4BSD
+namespace of their own. Options for milestone 1, none tried:
+
+1. The boot's six headers, from OSF's own trees where they exist:
+   `ufs/fs.h` and `ufs/dinode.h` from `file_systems/ufs`, `sys/elf.h`
+   as the kernel's `mach/elf.h`, found after everything else by
+   `-idirafter`; and `dirent.h` and `sys/reboot.h`, which no OSF
+   tree here has, written for it -- new files, in `docs/`'s terms
+   ours, not OSF's.
+2. Lites' `include/` exported whole, as OSF's server headers must have
+   been. Its `sys/types.h` would then stand where `sa_mach`'s does for
+   every task in the sandbox, which is more than the boot's problem.
+
+### The multiboot loader and a System V data segment
+
+`do_bootstrap_compat()` in `kern/bootstrap.c`, slp's `444954a` (verdict
+pending, milestone 1), maps each PT_LOAD segment from
+`trunc_page(p_vaddr)` for `round_page(p_filesz)` (text) or
+`round_page(p_memsz)` (data) bytes. That is the whole segment only if
+it starts on a page. binutils 2.7's `ld` puts the data segment right
+after the text, at an address congruent to its file offset, as the
+System V ELF ABI allows; the bootstrap task the running system links
+has its data at `0x080639b0`, 0x18b8 bytes, ending at `0x08065268`,
+and the loader maps to `0x08065000`. The kernel stops after "I've
+found: 2 sections" (measured 16 October 2026; the host's bootstrap
+task, page-aligned, boots the same kernel and servers multi-user).
+OSF's own loader for the servers, `bootstrap/elf.c`, measures from the
+segment's page: `p_vaddr + p_filesz - trunc_page(p_vaddr)`, and the
+BSS after it. Options:
+
+1. `444954a`'s loader sized as `bootstrap/elf.c` sizes: from
+   `trunc_page(p_vaddr)` to `round_page(p_vaddr + p_memsz)` (data) or
+   `p_filesz` (text and read-only). It then takes either `ld`'s
+   layout. Its verdict stays pending on milestone 1.
+2. The running system links the bootstrap task with its data on a
+   page (`ld -Tdata`), and the loader keeps its assumption. That puts
+   a host-tool workaround where the defect is the loader's.
+3. Milestone 1 first: OSF's own path, `loader_info` and the boot
+   loader, which `444954a` replaced. The running system's bootstrap
+   task waits for it.
+
+### One locore.s for two assemblers
+
+`locore.s` carries dev's `6dfdfcd` (dev3, from dev `10e3591`): thirteen
+operands renamed so GNU as 2.42 takes them, the suffix kept so the
+encoding is DR3's. binutils 2.7, the assembler of the running system,
+takes ten of the new spellings and DR3's of all thirteen, and rejects
+three of the new ones: `movl %ss,%eax`, `movl %eax,%ds` and
+`movl %eax,%es` in `trap_set_segs` (measured on the running system,
+16 October 2026: DR3's whole `locore.s` assembles, and the kernel
+builds with it). GNU as 2.42 rejects DR3's three. No instruction
+spelling of the three keeps both the encoding (`8c d0`, `8e d8`,
+`8e c0`) and both assemblers: `movw` adds a `66` prefix, and `mov`
+without a suffix fails on 2.7 as `movl` does. Options:
+
+1. The three as bytes, with the instruction in the comment, the way
+   `locore.s` already writes `movl %eax,%cr4` (`.byte 0x0f,0x22,0xe0`)
+   for an assembler that lacked it: DR3's encoding, any assembler.
+2. `movw`, which both take, at the cost of the prefix.
+3. DR3's text, and the host assembles with binutils 2.7 too. That
+   assembler would also read GCC 13's output for every C file, which
+   it predates (`.cfi_*`, `.section .note.GNU-stack` and more).
 
 ### Making disks on the running system, as OSF did
 
