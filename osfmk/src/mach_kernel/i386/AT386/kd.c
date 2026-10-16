@@ -808,7 +808,7 @@ cninit(void)
 }
 
 
-extern int cons_is_com1;		/* 1 is console is COM1		*/
+extern cons_is_com1;			/* 1 is console is COM1		*/
 
 int (*cgetc)(
 	boolean_t	wait) = kd_dogetc;

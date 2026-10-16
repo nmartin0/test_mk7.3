@@ -1215,7 +1215,7 @@ void
 com_putc(
 	char		c)
 {
-	register int i;
+	register i;
 
 	outb(INTR_ENAB(COM0_ADDR), 0);
 	for (i=0; (!(inb(LINE_STAT(COM0_ADDR)) & iTHRE)) && (i < 1000); i++);

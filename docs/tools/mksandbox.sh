@@ -197,6 +197,17 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # three in .data, kernel text unchanged at 685,735 bytes, and the
 # system boots multi-user.
 #
+# -Wno-implicit-int: OSF's kernel flags carry -Wimplicit and -Werror,
+# and DR3 declares a dozen variables with a storage class and no type
+# ("register i;", "static first_time = 1;", "extern cons_is_com1;").
+# In gcc 2.7, -Wimplicit is "Warn whenever a function or parameter is
+# implicitly declared" (invoke.texi), and such a declaration defaults
+# to int without a word (c-decl.c, "No type at all: default to
+# `int'").  Today's -Wimplicit adds -Wimplicit-int, and -Werror makes
+# it fatal.  This takes back only the part gcc 2.7 did not have, so the
+# declarations stay as DR3 wrote them; slp's 2913827 and f4fa636 had
+# added "int" to each.  Measured: kernel text, data and bss unchanged.
+#
 # NOT added, because they were measured and produce nothing:
 # -fcf-protection=none and -fno-stack-clash-protection.  gcc 13.3.0
 # enables -fcf-protection=full and -fstack-clash-protection by default
@@ -295,7 +306,7 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # child of e_fork_call read its arguments 4 bytes off and never
 # reached child_init: NetBSD's init forked its shell, which never ran.
 #
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -fno-omit-frame-pointer -fno-zero-initialized-in-bss -Wno-error=overflow -Wno-error=traditional -Wno-error=stringop-overflow -Wno-endif-labels"
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -fno-omit-frame-pointer -fno-zero-initialized-in-bss -Wno-implicit-int -Wno-error=overflow -Wno-error=traditional -Wno-error=stringop-overflow -Wno-endif-labels"
 
 #
 # NO_STRICT_ANSI: a hook osf.gcc.mk line 94 provides --

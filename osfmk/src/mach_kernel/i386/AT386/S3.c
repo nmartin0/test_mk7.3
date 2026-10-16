@@ -386,7 +386,7 @@ void
 S3Save(vgaS3Ptr save)
 {
 	register unsigned i, tmp;
-	static int first_time = 1;
+	static first_time = 1;
 
 	if (first_time) {
 		first_time = 0;
