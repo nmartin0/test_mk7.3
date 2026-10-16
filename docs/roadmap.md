@@ -165,7 +165,7 @@ this goal: built on, and run as a child server under, this one as its
 parent.
 
 **State on 15 October 2026**, milestone by milestone: 0 mostly done
-(four of slp's eighteen verdicts pending); 1 not reached; 2 done; 3
+(two of slp's eighteen verdicts pending, both waiting on milestone 1); 1 not reached; 2 done; 3
 done, with S-8 watched and S-11 for the maintainer; 4 done, with
 `sendmail` deferred (S-12); 5 begun.
 Each milestone below ends with its own line.
@@ -186,9 +186,10 @@ that CVS repository, by DR3's own procedure (`docs/tools/mkhostbin.sh`),
 as milestone 5 will build them on the running system. The target's
 assembler is chosen to read OSF's sources as written: GNU as for
 i386-elf, which keeps the System V assembler's `/` comments
-(`docs/tools/mkbinutils.sh`). *State:* Lites restored; fourteen of
-slp's eighteen commits have verdicts, `2913827`, `f4fa636`,
-`444954a` and `7e81018` pending (`docs/provenance/verdicts.md`).
+(`docs/tools/mkbinutils.sh`). *State:* Lites restored; sixteen of
+slp's eighteen commits have verdicts. `444954a` (multiboot's loader)
+and `7e81018` (`hd.c` under QEMU) wait on milestone 1, OSF's boot
+loader, which each verdict needs (`docs/provenance/verdicts.md`).
 
 **1. Boot as OSF did.** OSF's primary boot and `mach_boot`
 (`stand/AT386/boot`) on the vtoc disk, loading `/mach_kernel` and

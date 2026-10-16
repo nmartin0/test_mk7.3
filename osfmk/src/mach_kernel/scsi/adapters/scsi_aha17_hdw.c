@@ -1663,7 +1663,7 @@ eaha_intr_common(
 		 boolean_t		check)
 {
 	register eaha_softc_t	eaha;
-	register int		port;
+	register		port;
 	unsigned 		g2intst, g2stat, g2stat2 ;
 	caddr_t			mbi ;
 	erccb			*_erccb ;
