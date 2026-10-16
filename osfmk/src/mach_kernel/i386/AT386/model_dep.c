@@ -254,26 +254,7 @@ int		loadpt;
 
 vm_size_t	mem_size = 0; 
 vm_offset_t	first_addr = 0;	/* set by start.s - keep out of bss */
-/*
- * AI-ONLY NOTE: start.s line 487 stores the first physical address
- * after the page tables here, before any C runs, so it must survive
- * the BSS clear at the top of machine_startup().  See kpde in
- * intel/pmap.c for the compiler change that moved it.
- *
- * Zeroed, i386_init computes hole_end = round_page(first_avail) = 0
- * against hole_start = trunc_page(1024 * cnvmem), so the hole meant to
- * keep the page allocator off the kernel and its page tables is empty.
- * pmap_bootstrap then allocates from avail_start upward straight
- * through the kernel's own text, and the banner reports available
- * space starting one page above the kernel's LOAD address rather than
- * above its end.
- *
- * NOTE the stale comment on first_addr two lines above: it carries
- * OSF's "set by start.s - keep out of bss", but start.s writes
- * first_avail, not first_addr.  The label is on the wrong variable.
- */
-vm_offset_t	first_avail __attribute__((section(".data"))) = 0;
-				/* first after page tables */
+vm_offset_t	first_avail = 0;/* first after page tables */
 vm_offset_t	last_addr;
 
 vm_offset_t	avail_start, avail_end;
@@ -284,18 +265,7 @@ unsigned int	avail_remaining;
 
 /* parameters passed from GRUB */
 int mb_info_size = sizeof(struct multiboot_info);
-/*
- * AI-ONLY NOTE: the section attribute is required, not decorative.
- * start.s fills mb_info from %ebx before any C runs, so it must
- * survive the BSS clear at the top of machine_startup().  Under GCC
- * 2.7, which Buildconf names as the era compiler, an explicitly
- * zero-initialized global went to .data and did survive; GCC 3.x
- * onward places it in .bss (-fzero-initialized-in-bss, on by
- * default).  OSF recorded the same reliance two lines above, where
- * the declaration of cnvmem carries the comment
- * "must be in .data section".
- */
-struct multiboot_info mb_info __attribute__((section(".data"))) = { 0 };
+struct multiboot_info mb_info = { 0 };
 extern vm_offset_t boot_start;
 extern vm_size_t boot_size;
 extern pt_entry_t *kpde;

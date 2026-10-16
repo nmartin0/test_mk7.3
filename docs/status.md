@@ -804,6 +804,60 @@ with a 400 MB root from `docs/tools/mkselfhost.sh` and
   `Buildconf` adds by hand on Linux -- and `objdump` shows an
   `elf32-i386` object.
 
-Next: the sandbox at `/usr/src/osfmk` with these as OSF's native
-layout, `tools_base/elf/` (`osc/Buildconf`: `ELF_CC_EXEC_PREFIX
-"${tools_base}/elf/"`), and `build_world`.
+- **The sandbox, in OSF's native layout.** `/usr/src/osfmk`, with
+  `~/.sandboxrc` naming `/usr/src` as its base. ODE compiles the host
+  OS's name in as `OS`, here empty, so `Buildconf`'s `on_os linux`
+  lines do not apply and its own defaults do: `tools_base` is
+  `link/tools/i386/i386_osf1`, and the compiler is
+  `${tools_base}/elf/gcc`, OSF's layout for a native build, where the
+  tape's "FSF gcc" went. That directory holds links to gcc 2.7.2.1
+  and binutils 2.7, `hostbin` holds DR3's `mig` and `makeboot`, and
+  `tools/at386` is a link to `i386/i386_osf1`, as `mksandbox.sh`
+  makes it on Linux. `Buildconf.local` carries the host build's
+  `SOURCEDIR` and `MAKESYSPATH` (ODE's `mk` here is
+  `/usr/src/ode/src/ode/mk`), `CPP` as `${tools_base}/elf/gcc -E`
+  for `mig`, whose default is OSF/1's `/usr/ccs/lib/cpp`, and
+  `GCC_LATEST 2_7_2_1`, the value `Buildconf` gives on Linux: left at
+  its own `2_7_1`, `osf.gcc.mk` adds `-Wno-unused-parm`, an option of
+  OSF's gcc that FSF's 2.7.2.1 rejects.
+- **`config`**: `build YACC=yacc setup_all` in
+  `mach_services/cmds/config`. NetBSD's `yacc` is Berkeley yacc, the
+  one `AT386/machdep.mk` names as `byacc`; `lex` is NetBSD's.
+- **`migcom`**: OSF wrote it for hosts whose headers stay out of
+  Mach's way. Its `Makefile` asks for `-D_ANSI_C_SOURCE`; OSF/1's
+  `standards.h` then leaves `_OSF_SOURCE` undefined, and its
+  `sys/types.h` keeps both `u_int` and its own `#include
+  <mach/machine/vm_types.h>` under `_OSF_SOURCE` (read in cd155,
+  specification only). On Linux nothing collides, and `type.h`
+  carries OSF's one host clause, `#ifdef linux`, for `u_int`.
+  NetBSD 1.0's `sys/types.h` always includes `machine/types.h`, which
+  defines `vm_offset_t` and `vm_size_t` as `unsigned long` where
+  Mach's are `natural_t`, and `migcom` includes `<sys/types.h>`
+  itself in four places. Lites' own `include/i386/types.h` is
+  4.4BSD-Lite's with those two typedefs replaced by `#include
+  <mach/machine/vm_types.h>` -- the answer OSF/1's headers give. So,
+  with no source change: that file copied to
+  `tools_base/hostinc/machine/types.h`, outside `src/`, and
+  `build INCENV=-I${tools_base}/hostinc CENV=-D_POSIX_SOURCE
+  setup_all`. `INCENV` and `CENV` are ODE's environment hooks
+  (`osf.std.mk`); `_POSIX_SOURCE` is how NetBSD keeps `u_int` out of
+  `sys/types.h`, leaving it to `type.h` as OSF/1's namespace did, and
+  NetBSD's gcc 2.4.5 rejects the duplicate typedef. One more thing
+  migcom's 1999 sources take from their host: `utils.c` calls
+  `__va_copy`, which neither gcc 2.7 nor NetBSD 1.0 has; gcc 2.8 and
+  egcs define it for the i386 in `ginclude/stdarg.h` as `(dest) =
+  (src)`. A `tools_base/hostinc/stdarg.h` includes NetBSD's and adds
+  that definition; gcc 2.4.5's `-D` takes no macro with arguments.
+- **kpde, first_avail and mb_info**, three globals `start.s` writes
+  before the BSS is cleared, carried `__attribute__((section(".data")))`
+  for GCC 3 and later, which put zero-initialized globals in `.bss`.
+  gcc 2.7.2.1 has no section attributes for its OSF/1 ELF target
+  ("section attributes are not supported for this target"), so since
+  0073 the three declarations are OSF's and slp's again and the host
+  build gives GCC its own switch for that change,
+  `-fno-zero-initialized-in-bss` (`mksandbox.sh`). Measured on the
+  host: all three in `.data`, kernel text 685,735 bytes as before,
+  multi-user boot, `cc` runs.
+
+Next: `build_world` on the running system, then booting what it
+built.

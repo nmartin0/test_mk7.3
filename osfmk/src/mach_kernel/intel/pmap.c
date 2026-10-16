@@ -821,17 +821,7 @@ extern char end;
 /*
  * Page directory for kernel.
  */
-/*
- * AI-ONLY NOTE: the section attribute enforces what the comment below
- * already asked for.  start.s line 399 stores the kernel page
- * directory here before any C runs, so it must survive the BSS clear
- * at the top of machine_startup().  GCC 2.7 put an explicitly
- * zero-initialized global in .data; GCC 3.x onward puts it in .bss
- * (-fzero-initialized-in-bss, on by default).  Zeroed, pmap_bootstrap
- * walks a null page directory at line 1125, "pde = kpde".
- */
-pt_entry_t	*kpde __attribute__((section(".data"))) = 0;
-					/* set by start.s - keep out of bss */
+pt_entry_t	*kpde = 0;	/* set by start.s - keep out of bss */
 
 #if	i860
 int	paging_enabled = 0;			/* MMU turned on */

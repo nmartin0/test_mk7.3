@@ -182,6 +182,21 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # Linux has carried it in kernel CFLAGS since 2.4 -- both conclusions
 # drawn from long experience with code of exactly this vintage.
 #
+# -fno-zero-initialized-in-bss: REQUIRED TO RUN.  Three globals are
+# written before any C runs and must survive the BSS clear at the top
+# of machine_startup(): kpde (intel/pmap.c, "set by start.s - keep out
+# of bss") and first_avail (i386/AT386/model_dep.c), which start.s
+# stores at lines 399 and 487, and slp's mb_info, which start.s fills
+# from %ebx.  Each is written "= 0", and GCC 2.7 put an explicitly
+# zero-initialized global in .data; GCC 3.x onward puts it in .bss by
+# default.  This flag is GCC's own switch for that one change, so the
+# three declarations stay as OSF and slp wrote them -- and gcc 2.7.2.1,
+# which has no section attributes for its OSF/1 ELF target, compiles
+# them on the running system.  Without it, pmap_bootstrap walks a null
+# page directory ("pde = kpde", intel/pmap.c).  Measured with it: all
+# three in .data, kernel text unchanged at 685,735 bytes, and the
+# system boots multi-user.
+#
 # NOT added, because they were measured and produce nothing:
 # -fcf-protection=none and -fno-stack-clash-protection.  gcc 13.3.0
 # enables -fcf-protection=full and -fstack-clash-protection by default
@@ -280,7 +295,7 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # child of e_fork_call read its arguments 4 bytes off and never
 # reached child_init: NetBSD's init forked its shell, which never ran.
 #
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -fno-omit-frame-pointer -Wno-error=overflow -Wno-error=traditional -Wno-error=stringop-overflow -Wno-endif-labels"
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -fno-omit-frame-pointer -fno-zero-initialized-in-bss -Wno-error=overflow -Wno-error=traditional -Wno-error=stringop-overflow -Wno-endif-labels"
 
 #
 # NO_STRICT_ANSI: a hook osf.gcc.mk line 94 provides --
