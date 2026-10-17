@@ -168,7 +168,9 @@ done, with S-8 watched and S-11 for the maintainer; 4 done, with
 identically but for three build stamps.
 Open at the boundary with Tier 1: O-1, O-2 and O-4 to O-7, Lites
 against the OSF/1 server's documented behaviour (`docs/deferred.md`).
-Each milestone below ends with its own line.
+Each milestone below ends with its own line. The system at this point
+is kept as the `restored` branch, a checkpoint not committed to again
+(`docs/restored.md`).
 
 **0. The releases, not the copies.** Neither import is its upstream's
 release (`docs/provenance/precedent.md`, "Where the two imports came

@@ -6,7 +6,8 @@ which starts `name_server`, `default_pager` and Lites 1.1.u3; Lites
 runs NetBSD 1.0's userland multi-user, on the network, and the running
 system builds the whole system again, identically but for its build
 stamps. The roadmap's intermediate goal is reached; none of Tier 1's
-design work has started. What is open is in `docs/deferred.md`.
+design work has started. What is open is in `docs/deferred.md`; the
+system at this point is the `restored` branch (`docs/restored.md`).
 
 `RULES.md` 7.1: an honest account of what is open ships with the work.
 The sections below are dated; where a later one supersedes an earlier,
