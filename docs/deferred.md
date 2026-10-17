@@ -582,7 +582,17 @@ stores it, after the `master_is_up` test sends the rest to
 `%dl` for GNU as 2.42, as `testb` was. With them `locore.o` assembles
 for FAST+MP; the rest of FAST+MP does not yet build on the Linux host
 (`ipc_port.c`'s debugger code, under today's `-Werror`), which is
-multiprocessor work for later.
+multiprocessor work for later. Measured on the running system (17
+October 2026): its binutils 2.7 assembles `movb $1,%eax` and `movb
+$1,%al` alike, `b0 01`, and `movb %edx,wncpu` and `movb %dl,wncpu`
+alike.
+
+**HEAD on the running system, 17 October 2026** (0080--0085): its
+kernel builds, 727,639 bytes, without `-fno-optimize-sibling-calls`
+(`GCC_LATEST` 2_7_2_1); its segments at 0x100000 and 0x176cd8, file
+offset 0x1000. With its own bootstrap task and servers, from OSF's
+primary, it boots multi-user and passes the compile-and-install loop;
+by multiboot, with the host's bootstrap task, it boots multi-user.
 
 ### The multiboot loader and a System V data segment
 
