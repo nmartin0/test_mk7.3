@@ -1382,13 +1382,20 @@ void hd_read_id (
 	 * AI-ONLY NOTE: 0, where DR3 set 1.  No restore is issued here:
 	 * the command below is IDENTIFY, polled, and its interrupt reaches
 	 * hdintr() with the controller idle ("HD: false interrupt"),
-	 * which leaves the flag set; the first read's interrupt is then
-	 * taken for a finished restore and the read is issued again.
-	 * Under QEMU a 465 MB disk hung there, by OSF's boot loader and by
-	 * multiboot alike, and a 165 MB one did not.  The recalibration
-	 * after an error, in hderror(), sets the flag and issues
-	 * CMD_RESTORE, and is DR3's as written; slp's 7e81018 had turned
-	 * both off.  docs/provenance/verdicts.md, 7e81018.
+	 * which leaves the flag set.  hdstart() then issues the polled
+	 * CMD_SETPARAMETERS, whose interrupt is still pending when the
+	 * first read is issued.  If that interrupt is taken first, it
+	 * clears the flag and the read completes.  If the read completes
+	 * first, the drive raises the same edge-triggered line and the
+	 * PIC delivers one interrupt for both; hdintr() takes it for a
+	 * finished restore and issues the read again, which a drive with
+	 * DRQ set ignores, and no interrupt follows.  Under QEMU, whose
+	 * reads finish on another thread, each order happened on each of
+	 * a 165 MB and a 465 MB disk: the hang depends on timing, not on
+	 * the disk.  The recalibration after an error, in hderror(), sets
+	 * the flag and issues CMD_RESTORE, and is DR3's as written; slp's
+	 * 7e81018 had turned both off.  docs/provenance/verdicts.md,
+	 * 7e81018.
 	 */
 	ctrl_p->state.restore_request = 0;
 	outb(PORT_PRECOMP(addr), 0);

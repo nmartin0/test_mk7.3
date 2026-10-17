@@ -558,7 +558,8 @@ compile-and-install loop (`BIOS=1`; `docs/status.md`, "The boot").
 With OSF's loader running, `hd.c` was tested as DR3 wrote it, as the
 roadmap required before deciding slp's `7e81018`: it hangs on a 465 MB
 disk under both loaders, for a reason in the driver, not the BIOS
-(`docs/provenance/verdicts.md`, `7e81018`; 0079).
+(`docs/provenance/verdicts.md`, `7e81018`; 0079). The size turned out
+not to matter: below, "`hd.c`: a race, not the disk's size".
 
 **Every CPU enters at `pstart`** (`mp/mp_v1_1.c`, `start_other_cpus()`
 points the AP trampoline there), so in a multiprocessor kernel the
@@ -664,6 +665,48 @@ unchanged in shape, headers loaded at 0x08048000. The whole set built
 on the host -- kernel, bootstrap task, `name_server`, `default_pager`,
 Lites -- boots multi-user from OSF's primary (`BIOS=1`) and by
 multiboot, and passes the compile-and-install loop both ways.
+
+### `hd.c`: a race, not the disk's size
+
+0079 found DR3's `hd.c` hanging on a 465 MB disk and booting a 165 MB
+one. Traced with QEMU's `ide_bus_exec_cmd`, `ide_sector_read`,
+`pic_set_irq` and `pic_interrupt` events, the same kernel (DR3's
+driver, `restore_request` set at probe) on the same two disks by
+multiboot did the opposite: the 465 MB disk went to `login:` and the
+165 MB one stopped after the bootstrap task's "I've found: 2
+sections". The sequence, in both:
+
+	0x10  RESTORE        hdprobe(), polled         line raised
+	0xec  IDENTIFY       hd_read_id(), polled      line raised
+	      one interrupt for the two: "HD: false interrupt"
+	0x91  SETPARAMETERS  first hdstart(), polled   line raised
+	0x20  READ sector 0  start_rw()
+
+IRQ 14 is edge-triggered and QEMU's 8259 latches an edge in IRR until
+the interrupt is taken, so a second rising edge before then is lost
+in the first. What follows the READ is a race between the CPU taking
+SETPARAMETERS's pending interrupt and QEMU finishing the read on its
+I/O thread:
+
+- *Interrupt first* (the 465 MB run here): `hdintr()` finds the flag,
+  clears it and calls `start_rw()`, whose READ the drive drops while
+  it is busy; the read's own interrupt follows and is handled as a
+  read. The boot goes on.
+- *Read first* (the 165 MB run here, the 465 MB one in 0079): its edge
+  merges with the pending one, one interrupt is taken, the flag turns
+  it into "restore done", and the READ issued again is dropped because
+  DRQ is set (`hw/ide/core.c`: commands are ignored while BUSY or DRQ
+  is set). Nothing raises the line again, and the bootstrap task waits
+  on its first read forever.
+
+With the flag clear at probe (0079), the stale SETPARAMETERS interrupt
+is taken as the read's: `hdintr()` waits out BUSY ("interrupt
+w/controller not done"), and the read's data is there when it reads
+it; either order boots. Those two messages are S-6's noise, the
+polled commands' interrupts, which `dev`'s `052a105` masks. On a drive
+whose reads take milliseconds, the first order is the usual one,
+which may be why DR3's flag did no harm on the hardware OSF had; that
+is a reading, not something DR3 says.
 
 ### One locore.s for two assemblers
 
