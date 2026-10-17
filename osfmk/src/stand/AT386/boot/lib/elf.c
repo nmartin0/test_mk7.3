@@ -23,7 +23,15 @@
  */
 
 #include "boot.h"
-#include <sys/elf.h>
+/*
+ * AI-ONLY NOTE: "elf.h", the boot's own copy of OSF/1's sys/elf.h,
+ * which only the OSF/1 server provided.  OSF's Self-Contained Mach
+ * Distribution did the same: "copied from OSF/1" (barbou, 28 Dec
+ * 1995); lib/elf.h is that file, from MkLinux 1.0b2's osfmk.
+ * Compile-blocking; docs/deferred.md, "Booting with OSF's own boot
+ * loader".
+ */
+#include "elf.h"
 #include <ddb/nlist.h>
 
 #define trunc_page	i386_trunc_page

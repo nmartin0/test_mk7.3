@@ -914,6 +914,24 @@ host's build of the same tree does too; its kernel text is 64 bytes
 longer, for the loader's arithmetic, and `trap_set_segs` disassembles
 as before.
 
+**OSF's boot loader there, 17 October 2026** (milestone 1; 0077).
+`rmelfhdr`, the host program that strips the boot's ELF header, is
+OSF/1's: it includes `<sys/elf.h>` and passes `MAP_VARIABLE` to
+`mmap()`. Neither is in NetBSD 1.0, so, as for `migcom`, from outside
+`src/`: the kernel's `mach/elf.h`, which is OSF/1's `sys/elf.h`
+(guard `_SYS_ELF_H_`), copied to `tools_base/elfinc/sys/elf.h`, and
+OSF/1's value for the flag, 0 (`sys/mman.h`; MkLinux 1.0b2's
+`rmelfhdr.c` sets the same `#ifdef linux`):
+
+	cd src/stand/AT386
+	build INCENV=-I${tools_base}/elfinc CENV=-DMAP_VARIABLE=0 setup_all
+	cp ../../../obj/at386/stand/AT386/rmelfhdr ${tools_base}/hostbin/
+
+Then `build -here stand`, as the MK7.3 Release Notes' step 9: the
+primary `boot` (7,903 bytes, under its 8 KB) and `rboot`, and
+`mach_boot`. `lilo/mklilo`, MkLinux's Linux host program for LILO,
+does not build and is not needed.
+
 `makeboot` is not on the path, as on the host, and is PowerMac's.
 GNU make 3.75 stops on a file "has modification time in the future",
 and the running system's clock starts behind under QEMU's `-icount`;

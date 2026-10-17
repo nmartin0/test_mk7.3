@@ -158,7 +158,14 @@ extern int 	getchar(void);
 extern void 	flush_char(void);
 extern void 	gets(char *);
 extern int 	strncmp(const char *, const char *, size_t);
-extern int 	strlen(const char *);
+/*
+ * AI-ONLY NOTE: size_t, not int, for strlen.  mach_boot.c includes
+ * mach/fs/file_system.h, which includes <string.h>, and libsa_mach's
+ * declares the ANSI size_t strlen(); gcc stops on the two.  The
+ * boot's own strlen() in lib/io.c changes with it.  Compile-blocking;
+ * docs/deferred.md, "Booting with OSF's own boot loader".
+ */
+extern size_t 	strlen(const char *);
 extern void 	bcopy(const char *, char *, int);
 extern void 	printf(const char *, ...);
 extern int 	cons_is_com;

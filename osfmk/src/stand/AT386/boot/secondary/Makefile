@@ -48,7 +48,7 @@
 
 VPATH 			= ..:net:protocols
 
-INCFLAGS		= -I../include -I../
+INCFLAGS		= -I../include -I../ -I../../../../file_systems
 
 NO_STARTFILES		=
 USE_STATIC_LIBRARIES 	=
@@ -63,13 +63,18 @@ LDFLAGS			= -nostdlib -Ttext 0 -e start
 LIBFLAGS		= -L../lib
 LIBS			= -lboot -lsa_fs -lsa_mach
 
-# AI-ONLY NOTE: -mtune=i386 for -m386.  GCC 2.7's -m386 optimized
-# code for a 386; GCC 2.8 made it a synonym for -mcpu=i386, and 3.4
-# deprecated -mcpu for -mtune.  No current GCC accepts -m386.  Same
-# request: it tunes and does not restrict the instruction set.
-# Compile-blocking; docs/deferred.md, "Booting with OSF's own boot
-# loader".
-CFLAGS +=  -DDEVICE_NS8390 -DDEVICE_3C503 -mtune=i386
+# AI-ONLY NOTE: -I../../../../file_systems, for ufs/*.h, as OSF's
+# Self-Contained Mach Distribution added it (barbou, 28 Dec 1995;
+# MkLinux 1.0b2's osfmk).  ASSEMBLER and __LANGUAGE_ASSEMBLY for the
+# assembler files: machine/asm.h defines ALIGN, which ENTRY() uses,
+# only #ifdef ASSEMBLER, and include/boot.h hides its C under
+# __LANGUAGE_ASSEMBLY; 1.0b2's rules passed the second, which asm.h
+# then tested, and mach_perf's AT386/machdep.mk passes both.  -m386 is
+# DR3's again: the boot builds on the running system with gcc 2.7.2.1,
+# where it is valid, and not on a Linux host, whose GNU as rejects
+# boot2.s's 16-bit code.  Compile-blocking; docs/deferred.md, "Booting
+# with OSF's own boot loader".
+CFLAGS +=  -DDEVICE_NS8390 -DDEVICE_3C503 -m386
 # The following flags are used for debugging precise pieces of software:
 #	-DNETDEBUG
 #	-DPROTODEBUG
@@ -88,6 +93,9 @@ print_env:
 	@echo VPATH= ${VPATH}
 
 boot.S_CFLAGS 		= ${CFLAGS} -DREMOTE
+start.o_CFLAGS		= ${CFLAGS} -DASSEMBLER -D__LANGUAGE_ASSEMBLY
+lilo.o_CFLAGS		= ${CFLAGS} -DASSEMBLER -D__LANGUAGE_ASSEMBLY
+more_asm.o_CFLAGS		= ${CFLAGS} -DASSEMBLER -D__LANGUAGE_ASSEMBLY
 
 # start.o should be first
 NOBJS = net_debug.o 3c503.o ns8390.o smc.o endian.o dlink.o \
