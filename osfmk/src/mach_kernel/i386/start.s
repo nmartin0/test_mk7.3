@@ -335,11 +335,14 @@ EXT(mp_boot_pde):
 	.align	ALIGN
 	.globl	EXT(pstart)
 LEXT(pstart)
-	/* AI-ONLY NOTE: a multiboot loader leaves 0x2BADB002 in %eax;
-	 * kept, before %ax is cleared below, to choose between the two
-	 * ways in under "Get startup parameters".  docs/deferred.md,
-	 * "Booting with OSF's own boot loader". */
-	movl	%eax,PA(EXT(multiboot_magic))
+	/* AI-ONLY NOTE: a multiboot loader leaves 0x2BADB002 in %eax.
+	 * It is held in %edx, which nothing below uses before "Get
+	 * startup parameters", across the clearing of %ax and the
+	 * NCPUS > 1 start lock, which use %eax, and stored only by the
+	 * first CPU: every CPU enters here (mp/mp_v1_1.c,
+	 * start_other_cpus()), and the others go to slave_start first.
+	 * docs/deferred.md, "Booting with OSF's own boot loader". */
+	movl	%eax,%edx
 	mov	$0,%ax			/ fs must be zeroed;
 	mov	%ax,%fs			/ some bootstrappers don`t do this
 	mov	%ax,%gs
@@ -356,7 +359,10 @@ multiboot_entry:
 	jmp	1f
 0:	cmpl	$0,PA(EXT(start_lock))
 	jne	0b
-1:	movb	$1,%eax
+/* AI-ONLY NOTE: %al for %eax, the register the b suffix moves; GNU
+ * as 2.42 rejects the other spelling, and binutils 2.7 encodes both
+ * b0 01.  Only under NCPUS > 1. */
+1:	movb	$1,%al
 	xchgl	%eax,PA(EXT(start_lock)) / locked
 	testl	%eax,%eax
 	jnz	0b
@@ -365,6 +371,7 @@ multiboot_entry:
 	jne	EXT(slave_start)		/ no -- system already up.
 	movl	$1,PA(EXT(master_is_up))	/ others become slaves
 #endif	/* NCPUS > 1 */
+	movl	%edx,PA(EXT(multiboot_magic))	/* AI-ONLY NOTE: above */
 
 /*
  * Get startup parameters.
