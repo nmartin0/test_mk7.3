@@ -68,8 +68,15 @@
  */
 
 #include "boot.h"
-#include <dirent.h>
-#include <sys/reboot.h>
+/*
+ * AI-ONLY NOTE: OSF's own change for a sandbox without the OSF/1
+ * server, from its Self-Contained Mach Distribution (barbou, 28 Dec
+ * 1995, "removed include of sys/reboot.h, replaced include of
+ * dirent.h with ufs/defs.h"; MkLinux 1.0b2's osfmk).  ufs/defs.h is
+ * file_systems', whose struct dirent is OSF/1's.  Compile-blocking;
+ * docs/deferred.md, "Booting with OSF's own boot loader".
+ */
+#include <ufs/defs.h>
 
 struct inode inode;
 static char fsbuf[SBSIZE];

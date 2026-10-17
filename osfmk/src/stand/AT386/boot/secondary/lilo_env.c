@@ -53,7 +53,18 @@
  */
 
 #include "boot.h"
-#include <sys/reboot.h>
+
+/*
+ * AI-ONLY NOTE: defined here for <sys/reboot.h>, as OSF's
+ * Self-Contained Mach Distribution defined them in primary/boot.c and
+ * mach_boot.c (barbou, 28 Dec 1995; MkLinux 1.0b2's osfmk), which has
+ * no lilo_env.c.  The values and comment are OSF's.  Compile-blocking;
+ * docs/deferred.md, "Booting with OSF's own boot loader".
+ */
+/* from OSF/1's sys/reboot.h */
+#define B_TYPESHIFT	0
+#define B_UNITSHIFT	16
+#define B_PARTITIONSHIFT 8
 
 #define LILO_PARMS 		(0x9d800-BOOTOFFSET)
 #define LILO_PARMS_LENGTH 	(0x9dc00-0x9d800)

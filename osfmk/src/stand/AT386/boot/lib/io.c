@@ -349,7 +349,8 @@ strncmp(const char *s1, const char *s2, size_t n)
 	return (*s1 - *(s2 - 1));
 }
 
-int
+/* AI-ONLY NOTE: size_t, as include/boot.h declares it now. */
+size_t
 strlen(const char *s)
 {
 	int n = 0;

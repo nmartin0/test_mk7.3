@@ -467,6 +467,55 @@ namespace of their own. Options for milestone 1, none tried:
    been. Its `sys/types.h` would then stand where `sa_mach`'s does for
    every task in the sandbox, which is more than the boot's problem.
 
+**OSF's own answer, found 17 October 2026.** Two OSF precedents, one
+for each kind of sandbox:
+
+- *With the OSF/1 server.* MK7.3's `setup/AT386/build.sh` (in MkLinux
+  1.0b2's `osfmk`, Robert, 1994-95) gives every component one include
+  directory, `INCDIRS="-I${expdir}usr/include"`, where the MK's
+  headers and the OSF/1 server's and libc's are exported together, and
+  the MK7.3 Release Notes build `stand` last, step 9, after the server
+  (2.5.2). Lites' 4.4BSD namespace cannot stand in that tree.
+- *Without it.* OSF's "Self-Contained Mach Distribution" (barbou, 28
+  December 1995; MkLinux 1.0b2's `osfmk`, whose top `Makefile` builds
+  `stand` among `MACH_SUBDIRS` even with `PURE_MACH`) made the same
+  boot build from the MK tree alone: `primary/sys.c` "removed include
+  of sys/reboot.h, replaced include of dirent.h with ufs/defs.h"
+  (`file_systems/ufs/defs.h`, whose `struct dirent` is marked "from
+  sys/dirent.h"); `primary/boot.c` and `secondary/mach_boot.c` define
+  the `B_*` shifts and masks they use, "from OSF/1's sys/reboot.h";
+  `lib/elf.c` includes a local `elf.h`, "copied from OSF/1"; the three
+  Makefiles add `-I../../../../file_systems`; and each assembler rule
+  passes `-D__LANGUAGE_ASSEMBLY`, the macro `machine/asm.h` then
+  tested. `rmelfhdr.c`, a host program, took `MAP_VARIABLE` as 0 under `#ifdef linux`.
+
+DR3's boot is the later, server-dependent text -- `lilo_env.c` and the
+`elf_i386.boot` script are newer than 1.0b2 -- in a tree that dropped
+`stand` from its `SUBDIRS` and was never built with it: its `boot.h`
+declares `int strlen()` against `file_system.h`'s `<string.h>`, and
+its `asm.h` tests `ASSEMBLER`, which its boot Makefiles never pass.
+
+Tried on the running system, scratch copy only: the 1995 changes
+carried onto DR3's text, plus `ASSEMBLER` beside `__LANGUAGE_ASSEMBLY`
+(as `mach_perf`'s `AT386/machdep.mk` passes both), `size_t strlen`,
+`-m386` as written, and `rmelfhdr` built with `CENV=-DMAP_VARIABLE=0`
+and the kernel's `mach/elf.h` (OSF/1's `sys/elf.h`, guard
+`_SYS_ELF_H_`) as `sys/elf.h` in a tools directory. Built: `libboot.a`,
+the primary (7,903 bytes, under its 8 KB, `55aa` at 510) and
+`mach_boot` (46,195 bytes). `lilo/mklilo`, a Linux host program for
+LILO, does not build and is not needed. Under QEMU's BIOS the primary
+loads once the partition entry carries its CHS address (start.s reads
+16 sectors from it; `mkbootdisk.sh` writes zeros) and the primary is
+at sector 0 and at the partition's start; it then goes quiet, not yet
+looked into.
+
+**Decided 17 October 2026** (maintainer): the 1995 changes, carried
+onto DR3's boot, in 0077, with the repairs above and `-m386` as DR3
+wrote it; `docs/provenance/imports.md` lists each. `rmelfhdr` and the
+boot are built on the running system (`docs/status.md`, "Hosting
+itself"). Next: why the primary goes quiet, and `mkbootdisk.sh`
+writing the partition's CHS address and installing the boot.
+
 ### The multiboot loader and a System V data segment
 
 `do_bootstrap_compat()` in `kern/bootstrap.c`, slp's `444954a` (verdict

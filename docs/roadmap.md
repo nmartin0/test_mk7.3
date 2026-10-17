@@ -164,7 +164,7 @@ this goal: built on, and run as a child server under, this one as its
 parent.
 
 **State on 16 October 2026**, milestone by milestone: 0 mostly done
-(two of slp's eighteen verdicts pending, both waiting on milestone 1); 1 not reached; 2 done; 3
+(two of slp's eighteen verdicts pending, both waiting on milestone 1); 1 the boot builds; 2 done; 3
 done, with S-8 watched and S-11 for the maintainer; 4 done, with
 `sendmail` deferred (S-12); 5 the system builds itself and boots.
 Each milestone below ends with its own line.
@@ -198,14 +198,17 @@ multiboot entry slp added stays, as a second way in (maintainer,
 12 October 2026), and `docs/tools/boot.sh` keeps it as an option. The
 `hd.c` changes made for a boot without a BIOS (`dev`'s `052a105`,
 slp's `7e81018`) are tested again under a BIOS boot before any is
-adopted. *State:* not reached. `build -here stand` compiles past
-`-m386` since 0052 and stops at `boot.h`'s `#include <ufs/fs.h>`,
+adopted. *State:* begun. Until 0077, `build -here stand` compiled past
+`-m386` since 0052 and stopped at `boot.h`'s `#include <ufs/fs.h>`,
 which nothing in the tree exports (`docs/deferred.md`, "Booting with
 OSF's own boot loader"); the system boots by the multiboot entry.
-16 October: the boot's sources predate their tree -- six headers it
-includes left the MK or were the OSF/1 server's -- and on the running
-system, with them supplied, `libboot.a` builds as written; the
-primary stops on Lites' `dirent.h` (same section).
+16 and 17 October: the boot's sources predate their tree -- six
+headers it includes left the MK or were the OSF/1 server's. OSF's own
+answer for an MK without that server, the Self-Contained Mach
+Distribution (barbou, 1995, in MkLinux 1.0b2's `osfmk`), is carried
+onto DR3's boot in 0077, and the running system builds the primary
+(7,903 bytes) and `mach_boot`. Under QEMU's BIOS the primary loads and
+goes quiet (same section).
 
 **2. The three servers.** `bootstrap.conf` as OSF's template and
 release notes give it: `name_server`, `default_pager` on partition b,

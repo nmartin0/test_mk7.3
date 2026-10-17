@@ -101,7 +101,12 @@ WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #include "versiondate.h"
 #include "boot.h"
 #include "bios.h"
-#include <sys/reboot.h>
+/*
+ * AI-ONLY NOTE: <sys/reboot.h> no longer included; nothing here uses
+ * it.  OSF's Self-Contained Mach Distribution removed it the same way
+ * (barbou, 28 Dec 1995; MkLinux 1.0b2's osfmk).  Compile-blocking;
+ * docs/deferred.md, "Booting with OSF's own boot loader".
+ */
 #include "secondary/net.h"
 
 static struct region_desc regions[MAXREGIONS];

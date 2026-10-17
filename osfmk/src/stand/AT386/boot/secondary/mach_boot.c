@@ -80,9 +80,23 @@ WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 #include "boot.h"
 #include "bios.h"
-#include <sys/reboot.h>
 #include <mach/fs/file_system.h>
 #include <i386/disk.h>
+
+/*
+ * AI-ONLY NOTE: defined here, as OSF's Self-Contained Mach
+ * Distribution did (barbou, 28 Dec 1995; MkLinux 1.0b2's osfmk), for
+ * <sys/reboot.h>, which only the OSF/1 server provided.  The values
+ * are OSF's.  Compile-blocking; docs/deferred.md, "Booting with OSF's
+ * own boot loader".
+ */
+/* from OSF/1's sys/reboot.h */
+#define B_TYPESHIFT	0
+#define B_TYPEMASK	0xff
+#define B_UNITSHIFT	16
+#define B_UNITMASK	0xff
+#define B_PARTITIONSHIFT 8
+#define B_PARTITIONMASK	0xff
 #include <secondary/net.h>
 #include <secondary/net/dlink.h>
 extern struct dlink_st dlink;
