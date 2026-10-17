@@ -335,6 +335,11 @@ EXT(mp_boot_pde):
 	.align	ALIGN
 	.globl	EXT(pstart)
 LEXT(pstart)
+	/* AI-ONLY NOTE: a multiboot loader leaves 0x2BADB002 in %eax;
+	 * kept, before %ax is cleared below, to choose between the two
+	 * ways in under "Get startup parameters".  docs/deferred.md,
+	 * "Booting with OSF's own boot loader". */
+	movl	%eax,PA(EXT(multiboot_magic))
 	mov	$0,%ax			/ fs must be zeroed;
 	mov	%ax,%fs			/ some bootstrappers don`t do this
 	mov	%ax,%gs
@@ -365,14 +370,25 @@ multiboot_entry:
  * Get startup parameters.
  */
 
+/* AI-ONLY NOTE: two ways in.  A multiboot loader (slp's 444954a, the
+ * second way, kept) passes its information block in %ebx; the kernel
+ * copies it and takes 0x500000 as its first free physical address.
+ * OSF's boot loader, stand/AT386/boot, passes its arguments on the
+ * stack, which asm_startup.h reads as DR3 did: before this note, the
+ * #include below was under #if 0 and OSF's loader could not boot
+ * this kernel. */
+	cmpl	$0x2BADB002,PA(EXT(multiboot_magic))
+	jne	osf_startup
         movl    %ebx, %esi
         lea     PA(EXT(mb_info)), %edi
         movl    PA(EXT(mb_info_size)), %ecx
         cld
         rep
 	movsb
+	movl	$0x500000,%ebx
+	jmp	startup_done
+osf_startup:
 
-#if 0
 #ifdef	SYMMETRY
 #include <sqt/asm_startup.h>
 #endif
@@ -385,14 +401,13 @@ multiboot_entry:
 #ifdef	iPSC386
 #include <i386ipsc/asm_startup.h>
 #endif
-#endif
+startup_done:
 
 /*
  * Build initial page table directory and page tables.
  * %ebx holds first available physical address.
  */
 
-	movl	$0x500000,%ebx
 	addl	$(NBPG-1),%ebx		/ round first avail physical addr
 	andl	$(-NBPG),%ebx		/ to machine page size
 	leal	-KVTOPHYS(%ebx),%eax	/ convert to virtual address

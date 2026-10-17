@@ -266,6 +266,13 @@ unsigned int	avail_remaining;
 /* parameters passed from GRUB */
 int mb_info_size = sizeof(struct multiboot_info);
 struct multiboot_info mb_info = { 0 };
+/*
+ * AI-ONLY NOTE: %eax at entry, kept by start.s: MULTIBOOT_VALID when a
+ * multiboot loader started the kernel, anything else when OSF's boot
+ * loader did.  Initialized, so in .data: start.s writes it before the
+ * BSS is cleared.
+ */
+int multiboot_magic = 0;
 extern vm_offset_t boot_start;
 extern vm_size_t boot_size;
 extern pt_entry_t *kpde;
@@ -321,8 +328,13 @@ machine_startup(void)
 
 	/*
 	 * Prepare multiboot information
+	 *
+	 * AI-ONLY NOTE: only when a multiboot loader started the kernel.
+	 * OSF's boot loader passes the same facts on the stack, and
+	 * start.s's asm_startup.h has already stored them.
 	 */
-	parse_multiboot();
+	if (multiboot_magic == MULTIBOOT_VALID)
+		parse_multiboot();
 	
 	/*
 	 * Parse startup arguments

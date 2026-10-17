@@ -162,8 +162,8 @@ The real Lites update, to Lite2 proper, is its own work order after
 this goal: built on, and run as a child server under, this one as its
 parent.
 
-**State on 17 October 2026**, milestone by milestone: 0 mostly done
-(two of slp's eighteen verdicts pending, both waiting on milestone 1); 1 the boot builds; 2 done; 3
+**State on 17 October 2026**, milestone by milestone: 0 done; 1 done,
+OSF's boot loader booting what the running system builds; 2 done; 3
 done, with S-8 watched and S-11 for the maintainer; 4 done, with
 `sendmail` deferred (S-12); 5 the system builds itself and boots.
 Open at the boundary with Tier 1: O-1, O-2 and O-4 to O-7, Lites
@@ -186,10 +186,10 @@ that CVS repository, by DR3's own procedure (`docs/tools/mkhostbin.sh`),
 as milestone 5 will build them on the running system. The target's
 assembler is chosen to read OSF's sources as written: GNU as for
 i386-elf, which keeps the System V assembler's `/` comments
-(`docs/tools/mkbinutils.sh`). *State:* Lites restored; sixteen of
-slp's eighteen commits have verdicts. `444954a` (multiboot's loader)
-and `7e81018` (`hd.c` under QEMU) wait on milestone 1, OSF's boot
-loader, which each verdict needs (`docs/provenance/verdicts.md`).
+(`docs/tools/mkbinutils.sh`). *State:* done. Lites restored; all
+eighteen of slp's commits have verdicts, the last two, `444954a`
+(multiboot's loader) and `7e81018` (`hd.c` under QEMU), once OSF's
+boot loader ran (17 October 2026; `docs/provenance/verdicts.md`).
 
 **1. Boot as OSF did.** OSF's primary boot and `mach_boot`
 (`stand/AT386/boot`) on the vtoc disk, loading `/mach_kernel` and
@@ -199,17 +199,17 @@ multiboot entry slp added stays, as a second way in (maintainer,
 12 October 2026), and `docs/tools/boot.sh` keeps it as an option. The
 `hd.c` changes made for a boot without a BIOS (`dev`'s `052a105`,
 slp's `7e81018`) are tested again under a BIOS boot before any is
-adopted. *State:* begun. Until 0077, `build -here stand` compiled past
-`-m386` since 0052 and stopped at `boot.h`'s `#include <ufs/fs.h>`,
-which nothing in the tree exports (`docs/deferred.md`, "Booting with
-OSF's own boot loader"); the system boots by the multiboot entry.
-16 and 17 October: the boot's sources predate their tree -- six
-headers it includes left the MK or were the OSF/1 server's. OSF's own
-answer for an MK without that server, the Self-Contained Mach
-Distribution (barbou, 1995, in MkLinux 1.0b2's `osfmk`), is carried
-onto DR3's boot in 0077, and the running system builds the primary
-(7,903 bytes) and `mach_boot`. Under QEMU's BIOS the primary loads and
-goes quiet (same section).
+adopted. *State:* done, 17 October 2026. OSF's boot, carried onto
+DR3's text with OSF's own 1995 changes for an MK without the OSF/1
+server (0077), is built on the running system; `mkbootdisk.sh` installs
+it and `boot.sh BIOS=1` boots it (0079); the kernel takes OSF's
+arguments again beside multiboot's (0079); and the running system's
+kernel, bootstrap task, servers and Lites come up multi-user from
+OSF's primary and pass the compile-and-install loop. `hd.c` is DR3's
+but for one flag at probe time (0079). A kernel linked on the Linux
+host still boots by multiboot: OSF's loader places a GNU ld 2.42
+kernel 4 KB off (`docs/deferred.md`, "Booting with OSF's own boot
+loader").
 
 **2. The three servers.** `bootstrap.conf` as OSF's template and
 release notes give it: `name_server`, `default_pager` on partition b,

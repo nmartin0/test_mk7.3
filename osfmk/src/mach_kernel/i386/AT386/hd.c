@@ -1127,9 +1127,7 @@ hderror(
 	else {
 		/* lets do a recalibration */
 		waitcontroller(ctrl);
-		/* XXX This hangs with qemu, disable it for now */
-		/* ctrl_p->state.restore_request = 1; */
-		ctrl_p->state.restore_request = 0;
+		ctrl_p->state.restore_request = 1;
 		outb(PORT_PRECOMP(addr), parm->precomp>>2);
 		outb(PORT_NSECTOR(addr), parm->nsec);
 		outb(PORT_SECTOR(addr), ctrl_p->state.sector);
@@ -1380,8 +1378,18 @@ void hd_read_id (
 	hdisk_t		parm;
 
 	waitcontroller(ctrl);
-	/* XXX This hangs with qemu, disable it for now */
-	/* ctrl_p->state.restore_request = 1; */
+	/*
+	 * AI-ONLY NOTE: 0, where DR3 set 1.  No restore is issued here:
+	 * the command below is IDENTIFY, polled, and its interrupt reaches
+	 * hdintr() with the controller idle ("HD: false interrupt"),
+	 * which leaves the flag set; the first read's interrupt is then
+	 * taken for a finished restore and the read is issued again.
+	 * Under QEMU a 465 MB disk hung there, by OSF's boot loader and by
+	 * multiboot alike, and a 165 MB one did not.  The recalibration
+	 * after an error, in hderror(), sets the flag and issues
+	 * CMD_RESTORE, and is DR3's as written; slp's 7e81018 had turned
+	 * both off.  docs/provenance/verdicts.md, 7e81018.
+	 */
 	ctrl_p->state.restore_request = 0;
 	outb(PORT_PRECOMP(addr), 0);
 	outb(PORT_NSECTOR(addr), 0);

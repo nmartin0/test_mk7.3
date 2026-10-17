@@ -108,6 +108,37 @@ AT386 has `conf/AT386/config.makeboot` and a boot path under
 
 ## The boot
 
+**By OSF's own boot loader, 17 October 2026** (milestone 1). The boot,
+kernel and bootstrap task are the ones the running system builds
+("Hosting itself"); the disk carries them where OSF's loader looks:
+
+	BOOT=boot MACH_BOOT=mach_boot KERNEL=mach_kernel.PRODUCTION \
+	BOOTSTRAP=bootstrap sh docs/tools/mkbootdisk.sh disk.img \
+	    name_server default_pager startup emulator
+	BIOS=1 sh docs/tools/boot.sh disk.img
+
+and the screen shows OSF's sequence, as the MK7.3 Release Notes print
+it (section 2.5.3; the sizes are one build's):
+
+	Primary boot
+	>> 639/64384k (? for help, ^C for intr)
+	Loading hd(0,a)/stand/mach_boot
+	29956+32+22924[+5456+3687]
+	>> Secondary Mach boot ...
+	boot:
+	Loading hd(0,a)/mach_kernel
+	482018+76644+139952[+74608+66317]
+	Loading hd(0,a)/mach_servers/bootstrap
+	108974+5832+496[+12848+13925]
+
+then the bootstrap task, the three servers and NetBSD's `/etc/rc`, to
+`login:`, and the compile-and-install loop runs clean. What it took is
+in `docs/deferred.md`, "Booting with OSF's own boot loader". A kernel
+linked on the Linux host is loaded 4 KB off by OSF's loader, and boots
+by multiboot, below, as before.
+
+**By multiboot**, the second way in:
+
 	qemu-system-i386 -kernel mach_kernel.PRODUCTION \
 	    -initrd bootstrap -m 64 -display none -no-reboot
 
