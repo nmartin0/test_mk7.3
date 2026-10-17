@@ -603,6 +603,25 @@ BSS after it. Options:
 three region sizes are measured from the segment's page; for a
 segment that starts on a page they are what they were.
 
+### The first free address after a multiboot loader
+
+`start.s` builds the kernel's page tables at the first free physical
+address, in `%ebx`. OSF's loader hands it over, the top of what it
+loaded (`asm_startup.h`, "mem top"). On the multiboot path slp's
+`444954a` wrote a constant, `0x500000`: about 3 MB past a kernel that
+ends at `0x1dd084`, room for a bootstrap module of that size and no
+more, with everything between unused by the VM system
+(`i386_init()`'s hole runs to `first_avail`). The multiboot
+specification gives no such top. Utah's multiboot Mach, the
+specification's first kernel, keeps clear of the kernel, the
+information block, the command line, the module list and each module
+(Mach4, `i386at/model_dep.c`, `init_alloc_aligned()`), and since 0081
+`%ebx` is the highest end among those, the offsets coming from Utah's
+`multiboot.h` through `genassym`, the kernel's own way of giving C
+layouts to its assembler. Measured under QEMU: the page directory at
+`0x20c000`, just past the 183,252-byte bootstrap module, where it was
+at `0x500000`; multi-user boot.
+
 ### One locore.s for two assemblers
 
 `locore.s` carries dev's `3036fdb` (dev3, from dev `10e3591`): thirteen
