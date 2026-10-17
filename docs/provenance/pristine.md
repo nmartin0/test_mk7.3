@@ -227,7 +227,10 @@ The symlink is `osfmk/export/at386`, never `osfmk/export`.
 
 ## Verifying it
 
-`docs/tools/checkdev3.sh` is the check, and it is written to catch what
+*Not carried here:* `checkdev3.sh` is the Lite2 tree's check, and this
+tree has none yet; its deviation record is `git diff` against the two
+imports (`docs/provenance/imports.md`). What follows is that tree's
+account. `checkdev3.sh` is written to catch what
 a casual look misses: dotfiles, dot-directories, symlinks, submodules,
 empty directories, ignored-but-present files, and file modes against
 the vendor import.

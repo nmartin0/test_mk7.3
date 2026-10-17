@@ -10,9 +10,11 @@ skipped, each caught only after the work was committed, and the sweep
 that followed found five more. This file is the equivalent for this
 project.
 
-**Nothing to audit yet.** The method is recorded now so that the first
-sweep is run against a rule that already existed, rather than invented
-to excuse what it finds.
+**No sweep has been run yet.** The method was recorded first so that
+the first sweep is run against a rule that already existed, rather
+than invented to excuse what it finds. Corrections made so far live
+where the claims do (`RULES.md` 7.2): `deferred.md` (S-12, "Corrected
+15 October"), `verdicts.md` row 1, `imports.md`.
 
 This file and `docs/provenance/verdicts.md` are two halves. That one
 walks `dev`'s 131 commits and decides what this project takes. This one

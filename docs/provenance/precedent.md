@@ -585,13 +585,16 @@ two images differ in 112 bytes: inode numbering order, the random
 which a 4.3BSD file system does not have and `version=0` leaves zero.
 
 Making disks as OSF did — `newfs`, mount and copy, on the running
-system — waits for a server that can do it: `docs/deferred.md` §2.
+system — is possible since 13 October 2026 and not yet the procedure:
+`docs/deferred.md` §2.
 
-**Still not OSF's:** the boot loader. OSF's is in the tree,
+**Not OSF's until 0079:** the boot loader. OSF's is in the tree,
 `stand/AT386/boot/` — a primary boot in block 0 and a secondary that
 reads the file system and loads `/mach_kernel` and
-`/mach_servers/bootstrap` — and this project boots with QEMU's
-multiboot `-kernel` instead. `docs/deferred.md` §2 holds it.
+`/mach_servers/bootstrap` — and this project booted with QEMU's
+multiboot `-kernel` instead. Since 0079 OSF's boot loader, built on
+the running system, boots it, and multiboot is the second way in
+(`docs/deferred.md`, "Booting with OSF's own boot loader").
 
 ## What runs first: /sbin/init, not mach_init
 

@@ -1,9 +1,10 @@
 # What was decided, what was deferred, and what the record says to do instead
 
 The Lite2 tree's version of this file is written out of 127 commits.
-This one has no commits to read yet, so it records the decisions taken
-during design, each with the primary source that settled it, so that
-none is reopened from memory.
+This one began before any, recording the decisions taken during
+design, each with the primary source that settled it, so that none is
+reopened from memory; the work since is recorded with them. Several
+sections under "Deferred" now end in what was done, and say so.
 
 Where a decision is deferred rather than made, that is said, with what
 would settle it.
@@ -282,7 +283,9 @@ files Lites rewrote most — this becomes a merge rather than a choice.
 `bootstrap.conf`'s default list is `name_server`, `default_pager`,
 `startup`. Nothing has established whether our server needs to register
 with the first of those, or what currently runs on the maintainer's
-booting system.
+booting system. *Since:* the running system's `bootstrap.conf` is the
+template's three lines (roadmap milestone 2), and the question is now
+O-6, below.
 
 **What would settle it:** reading the running system's
 `bootstrap.conf`, and `mach_services/servers/netname/netname.c`, which
@@ -587,7 +590,7 @@ by multiboot, with the host's bootstrap task, it boots multi-user.
 ### The multiboot loader and a System V data segment
 
 `do_bootstrap_compat()` in `kern/bootstrap.c`, slp's `444954a` (verdict
-pending, milestone 1), maps each PT_LOAD segment from
+then pending; **adopt reworked** since 0079), maps each PT_LOAD segment from
 `trunc_page(p_vaddr)` for `round_page(p_filesz)` (text) or
 `round_page(p_memsz)` (data) bytes. That is the whole segment only if
 it starts on a page. binutils 2.7's `ld` puts the data segment right
@@ -604,7 +607,8 @@ BSS after it. Options:
 1. `444954a`'s loader sized as `bootstrap/elf.c` sizes: from
    `trunc_page(p_vaddr)` to `round_page(p_vaddr + p_memsz)` (data) or
    `p_filesz` (text and read-only). It then takes either `ld`'s
-   layout. Its verdict stays pending on milestone 1.
+   layout. Its verdict waited on milestone 1 (since 0079: adopt
+   reworked).
 2. The running system links the bootstrap task with its data on a
    page (`ld -Tdata`), and the loader keeps its assumption. That puts
    a host-tool workaround where the defect is the loader's.
@@ -747,7 +751,9 @@ tree as it stands.
 
 ### Making disks on the running system, as OSF did
 
-**Possible since 13 October 2026; not yet the project's procedure.**
+**Possible since 13 October 2026; not the project's procedure** --
+the host's `mkbootdisk.sh` makes the disks, and the paragraph's "not
+yet runs `newfs`" below is from before the 13 October test.
 NetBSD 1.0's `newfs`, under Lites, made a 100 MB file system in 13
 cylinder groups on a second disk (`newfs /dev/rwd1a qemu100`, with a
 `disktab` entry for the vtoc's partition a, because Lites answers
@@ -1165,7 +1171,10 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   not a signal; left.
 - **S-6. Driver noise.** "hdintr: interrupt w/controller not done." and
   "HD: false interrupt", already open (`docs/status.md`; `dev`'s
-  `052a105`).
+  `052a105`). Explained since 0084: the interrupts of the driver's
+  polled commands, RESTORE, IDENTIFY and SETPARAMETERS ("`hd.c`: a
+  race, not the disk's size"). Harmless with the probe's flag clear;
+  `052a105`, which masks them, is not taken.
 
 ### The `ne` driver, measured on 14 October 2026
 
@@ -1263,7 +1272,8 @@ Lites gets its arguments from OSF's bootstrap").
 - **O-7. `-s` at the boot prompt may not reach the server.** "-s --
   single-user mode (passed to server)", the Release Notes say; on
   i386 the kernel's `startup_single_user` is never set, in DR3 as in
-  this tree. **Work**: check with OSF's boot loader, when it is built.
+  this tree. **Work**: check with OSF's boot loader, built and booting
+  since 0079.
 - **O-8. `default_pager` takes the paging partition.** Now S-2.
 - **O-9. `name_server` first in `bootstrap.conf`**, as the template and
   the Release Notes' example have it. It builds since 0046 and starts
@@ -1289,10 +1299,10 @@ Lites toward the OSF/1 server.
 
 1. **Stability first** -- S-2 (configuration) and S-1 (the disk tool),
    both done; S-3 and S-7, done in 0053; S-4, 0060; S-5, 0058; S-8
-   (the shell; not seen since S-9, 0054). Everything after is tested on top of these;
+   (the shell; watched, seen once more on 14 October). Everything after is tested on top of these;
    a server that dies on a write makes every later result doubtful.
 2. **Then the boundary items that are configuration or small**: O-8
-   with S-2 (done), O-9 (builds and runs; `build_world` waits), then O-1, O-2, O-4, O-5 and
+   with S-2 (done), O-9 (builds and runs; in `build_world` since 0051), then O-1, O-2, O-4, O-5 and
    O-6, each a contained change in `server/serv/server_init.c` or the
    server's port handling, under `OSFMACH3`. O-6 lets OSFMK's own test
    programs (`mach_perf`) check the system from inside.
@@ -1320,8 +1330,8 @@ Lites toward the OSF/1 server.
 **What happened, 17 October 2026.** Self-hosting came first after all:
 the maintainer took the roadmap's milestones in order, and milestone 5
 is reached (`docs/status.md`, "Hosting itself"). The O-items in step 2
-are still open -- O-1, O-2 and O-4 to O-6 -- and O-7 waits on OSF's
-boot loader, milestone 1, which is next. They belong to the boundary
+are still open -- O-1, O-2 and O-4 to O-6 -- and O-7 can be
+checked now that OSF's boot loader runs (milestone 1, 0079). They belong to the boundary
 between the intermediate goal and Tier 1, and are taken there.
 
 ## 2a. Tooling defects, to fix in a later patch

@@ -183,7 +183,7 @@ kept in the repository. The maintainer's copies of the MkLinux CVS
 repository and of the Lites tarball check both. The host tools are
 built, not carried: `config` and `migcom` from OSF's 1999 sources in
 that CVS repository, by DR3's own procedure (`docs/tools/mkhostbin.sh`),
-as milestone 5 will build them on the running system. The target's
+as milestone 5 builds them on the running system. The target's
 assembler is chosen to read OSF's sources as written: GNU as for
 i386-elf, which keeps the System V assembler's `/` comments
 (`docs/tools/mkbinutils.sh`). *State:* done. Lites restored; all
@@ -199,7 +199,7 @@ multiboot entry slp added stays, as a second way in (maintainer,
 12 October 2026), and `docs/tools/boot.sh` keeps it as an option. The
 `hd.c` changes made for a boot without a BIOS (`dev`'s `052a105`,
 slp's `7e81018`) are tested again under a BIOS boot before any is
-adopted. *State:* done, 17 October 2026. OSF's boot, carried onto
+adopted: `7e81018` adopted reworked, `052a105` not taken (0079, 0084). *State:* done, 17 October 2026. OSF's boot, carried onto
 DR3's text with OSF's own 1995 changes for an MK without the OSF/1
 server (0077), is built on the running system; `mkbootdisk.sh` installs
 it and `boot.sh BIOS=1` boots it (0079); the kernel takes OSF's
@@ -252,7 +252,7 @@ were built with, in its OSF/1 i386 ELF configuration -- rebuild the
 kernel, the servers and Lites, and the result boots. The first
 compiler is NetBSD 1.0's own, running under Lites, as Lites
 self-hosted in 1995. Later GCCs come after this is stable.
-*State:* begun: NetBSD 1.0's `cc` compiles, links and installs
+*State:* done. Begun with NetBSD 1.0's `cc`, which compiles, links and installs
 programs under Lites, among them Lite2's `ftpd` (S-12), and the
 compile-and-install loop that once killed the server runs (S-14). On
 the running system, 15 October: ODE's minimal tools, binutils 2.7 and

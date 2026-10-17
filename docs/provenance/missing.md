@@ -29,7 +29,7 @@ it and none ever will.
 The first row is the direct ancestor of the slot this project fills.
 The kernel has always expected a `startup` and has never shipped one.
 
-**Consequence for the project:** these are the holes `docs/imports.md`
+**Consequence for the project:** these are the holes `docs/provenance/imports.md`
 kind E exists to fill. Written from specification, not restored.
 
 ### 2. Documented but not implemented

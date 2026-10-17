@@ -1,11 +1,16 @@
 # Where the work stands
 
-**The microkernel boots.** Three trees run independently; none of
-the design work in `docs/roadmap.md` has started. This file is honest
-about that and will be rewritten as soon as it is not true.
+**The restored system runs and rebuilds itself** (17 October 2026,
+0088). OSF's boot loader loads OSFMK 7.3 and OSF's bootstrap task,
+which starts `name_server`, `default_pager` and Lites 1.1.u3; Lites
+runs NetBSD 1.0's userland multi-user, on the network, and the running
+system builds the whole system again, identically but for its build
+stamps. The roadmap's intermediate goal is reached; none of Tier 1's
+design work has started. What is open is in `docs/deferred.md`.
 
 `RULES.md` 7.1: an honest account of what is open ships with the work.
-At this point the account is almost entirely open.
+The sections below are dated; where a later one supersedes an earlier,
+the earlier says so.
 
 ## The build
 
@@ -26,11 +31,11 @@ sandbox's `tools_base`, outside the tree. The host needs `flex`, its
 
 | | |
 | --- | --- |
-| `mach_kernel.PRODUCTION` | 885,972 bytes, ELF 32-bit LSB executable, Intel 80386, statically linked |
+| `mach_kernel.PRODUCTION` | 907,224 bytes (0088, from a clean clone), ELF 32-bit LSB executable, Intel 80386, statically linked |
 | `bootstrap` | 183,252 bytes, same format; two PT_LOAD segments, R+X and R+W; reads UFS only |
 | errors | 0 |
-| vendor files modified | 107 in `osfmk/` against `f8fee21`, 3,393 insertions and 8,048 deletions. 63 of them, 1,867 insertions and 5,214 deletions, are `config` and `migcom` -- OSF's 1999 sources restored from the MkLinux CVS repository, slp's 1995 ones, built objects and binaries deleted, two `AT386/machdep.mk` added -- and `link/tools`, spelt as CVS spells it (`docs/provenance/imports.md`, kinds C and F). 24, 1,273 insertions and 1,261 deletions, put DR3's assembler files back -- the kernel's sixteen under their `.s` names and with OSF's comments, and `libsa_mach`'s six -- with `template.mk`'s lines that name them and all of `conf/AT386/files`; `config.devices` keeps PCI out, because its sources are not in DR3. Against DR3 they differ by a 60-line diff in three files, `locore.s`, `i386_lock.s` and `start.s`: operand fixes no current GNU as lets pass, and the multiboot entry (`docs/provenance/verdicts.md`, `18c9d31`). Seven of the rest return files to DR3 exactly (`kern/boot_script.[ch]` deleted, `conf/files`, `ext2fs/ext2_fs.h`, `kern/lock.c`, `i386/proc_reg.h`, `mach/i386/vm_param.h`), because `f8fee21` is `slp/osfmk-mklinux`'s 2012 tree, not DR3 (`docs/provenance/verdicts.md`, "slp's eighteen commits"); in Lites, at `osfmk/src/lites` against `9d1c98a`, Utah's 1.1.u3 release, one file removed (`Makeconf`), one replaced (`makefile`), and the source fixes for today's compiler and for OSFMK 7.3 that `docs/provenance/imports.md` lists under kinds B and C, each with a note at its site |
-| kernel text | 685,735 bytes |
+| vendor files modified | 136 in `osfmk/` against `f8fee21`, 4,005 insertions and 8,095 deletions (0088; 107, 3,393 and 8,048 when this row was written). 63 of them, 1,867 insertions and 5,214 deletions, are `config` and `migcom` -- OSF's 1999 sources restored from the MkLinux CVS repository, slp's 1995 ones, built objects and binaries deleted, two `AT386/machdep.mk` added -- and `link/tools`, spelt as CVS spells it (`docs/provenance/imports.md`, kinds C and F). 24, 1,273 insertions and 1,261 deletions, put DR3's assembler files back -- the kernel's sixteen under their `.s` names and with OSF's comments, and `libsa_mach`'s six -- with `template.mk`'s lines that name them and all of `conf/AT386/files`; `config.devices` keeps PCI out, because its sources are not in DR3. Against DR3 they then differed by a 60-line diff in three files, `locore.s`, `i386_lock.s` and `start.s`: operand fixes no current GNU as lets pass, and the multiboot entry (`docs/provenance/verdicts.md`, `18c9d31`); since, `interrupt.s` (0055), `locore.s` (0076), `start.s` and `asm_startup.h` (0079--0081) have changed, each with its note. Seven of the rest return files to DR3 exactly (`kern/boot_script.[ch]` deleted, `conf/files`, `ext2fs/ext2_fs.h`, `kern/lock.c`, `i386/proc_reg.h`, `mach/i386/vm_param.h`), because `f8fee21` is `slp/osfmk-mklinux`'s 2012 tree, not DR3 (`docs/provenance/verdicts.md`, "slp's eighteen commits"); in Lites, at `osfmk/src/lites` against `9d1c98a`, Utah's 1.1.u3 release, one file removed (`Makeconf`), one replaced (`makefile`), and the source fixes for today's compiler and for OSFMK 7.3 that `docs/provenance/imports.md` lists under kinds B and C, each with a note at its site |
+| kernel text | 686,283 bytes (0088); 685,735 when the paragraph below ends |
 
 The kernel text was 818,058 after `5af8713` and 818,102 after
 `c964add`, whose `mods_count` guards added 44 bytes; 809,290 once the
@@ -149,13 +154,16 @@ Zero exceptions, zero CPU resets, and on the VGA framebuffer:
 	Available physical space from 0x101000 to 0x100000
 	Mach 3.0 VERSION(PMK1.1): root <>; mach_kernel/PRODUCTION (vm)
 
+(the first boot's screen: "0x101000 to 0x100000" is the empty
+memory verdict 13 fixed; the screen below has the right range.)
+
 PMK1.1 is the OSF branch name that XNU's own revision histories record,
 printed by the kernel we built.
 
 **The console is VGA, not serial.**  `-r` sets `cons_is_com1`, but the
 kernel does not read the multiboot command line yet, so `-append` has
 no effect and every serial capture is empty.  Reading the command line
-is `nmartin0/test_mk7.3` `dev` commit 419e109, still ahead of us.
+is `nmartin0/test_mk7.3` `dev` commit 419e109, deferred (verdict 27).
 Capture the screen with QEMU's monitor instead:
 
 	-monitor unix:/tmp/mon.sock,server,nowait
@@ -201,8 +209,10 @@ argument is needed.
 each IDE interrupt seconds late and the same boot takes many minutes —
 `docs/method.md` §4, "Slow is not hung". KVM has not been tried here;
 there is none in this environment. Two driver messages appear,
-"hdintr: interrupt w/controller not done." and "HD: false interrupt";
-`dev`'s `052a105` explains the second, and is the next commit.
+"hdintr: interrupt w/controller not done." and "HD: false interrupt":
+the polled commands' own interrupts, S-6, explained in
+`docs/deferred.md`, "`hd.c`: a race, not the disk's size" (0084);
+`dev`'s `052a105` would mask them, and is not taken.
 
 **Lites runs NetBSD 1.0's userland, multi-user.** The root is NetBSD
 1.0's i386 `base` and `etc` sets, set up as Lites' own install notes
@@ -512,6 +522,10 @@ argument for re-measuring rather than inheriting a number.
 
 ## What runs
 
+*Superseded* by "The boot" above and "Hosting itself" below: OSFMK
+and Lites are measured in this repository, and Utah's tarball is its
+Lites. The table is kept as it was first written.
+
 | | state | measured |
 |---|---|---|
 | OSFMK 7.3 under QEMU, i386 | boots | by the maintainer, outside this repository |
@@ -602,7 +616,7 @@ Recorded so Tier 1 inherits them rather than rediscovers them.
 | `i386/i386_rpc.c:607` | `"movl %0, %%edx; movl %%edx, %1"` writes `%1`, declared `"g"` input. Identical to the defect that blocked the build; escapes only because `*new_argv` is not a constant |
 | `i386/i386_rpc.c` 195, 411, 464, 521, 567 | each does `addl $4, %N` on an operand declared `"r"` input. GCC may assume inputs unmodified and reuse the register; these want `"+r"` |
 | `mach_services/lib/libmach/sbrk.c:38` | returns `-1` from a function declared `void *`. An unimplemented stub whose body is one `fprintf` |
-| `i386/start.s:354` | suffix/width mismatch inside `#if NCPUS > 1`; PRODUCTION builds `NCPUS 1` so it never reaches the assembler. Left as OSF wrote it |
+| `i386/start.s:354` | suffix/width mismatch inside `#if NCPUS > 1`; PRODUCTION builds `NCPUS 1` so it never reaches the assembler. Left as OSF wrote it then; since 0080 `movb $1,%al`, which binutils 2.7 encodes alike (`docs/deferred.md`) |
 
 The whole kernel was scanned for int/pointer confusion by rebuilding
 with `-Wint-conversion`, `-Wpointer-to-int-cast`, `-Wint-to-pointer-cast`
@@ -611,6 +625,9 @@ and `-Wpointer-compare` enabled.  After the eleven sites fixed in
 `sbrk.c` above.
 
 ## What has not been checked and should be, first
+
+*Superseded:* both were measured; "The two Utah traps, measured",
+below.
 
 Both are greps, both take minutes, and both change the shape of Tier 1
 if they fire.

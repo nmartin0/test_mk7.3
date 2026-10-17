@@ -455,9 +455,10 @@ the kernel faults 15,377 times before its first line of output.
   The serverisation is concentrated in `vfs_bio.c` (13% similar),
   `tty_subr.c` (14%), `kern_xxx.c` (30%), `init_main.c` (35%),
   `uipc_syscalls.c` (40%), `ufs_ihash.c` (39%), `nfs_serv.c` (42%).
-- **Two traps Utah recorded and we have not yet checked for.** The
+- **Two traps Utah recorded, since measured** (`docs/status.md`, "The
+  two Utah traps, measured": the first fires, the second does not). The
   OSF/1 server put its `uthread` on the service thread's stack at a
   constant offset, assuming a fixed-size C-threads stack; and BSD
   service routines do their own `copyin`/`copyout`, so generated stubs
   that also copy move every argument twice. Both apply to Lites by
-  inheritance and neither has been measured here.
+  inheritance.
