@@ -331,11 +331,26 @@ do_bootstrap_compat(void)
 				printf("Too many PT_LOAD regions, ignoring one\n");
 				continue;
 			}
+			/*
+			 * AI-ONLY NOTE: each region runs from the page of
+			 * p_vaddr to the page past p_vaddr plus the segment's
+			 * size, as bootstrap/elf.c sizes the servers'
+			 * segments.  It was round_page() of the size alone,
+			 * which is the whole segment only when it starts on a
+			 * page.  binutils 2.7's ld starts the data segment
+			 * where the text ends, congruent to its file offset,
+			 * as System V's ELF allows: the bootstrap task the
+			 * running system links has data at 0x080639b0 ending
+			 * at 0x08065268, mapped only to 0x08065000, and it
+			 * never ran.  docs/deferred.md, "The multiboot loader
+			 * and a System V data segment".
+			 */
 			if (ph->p_flags == (PF_R | PF_X)) {
 				printf("Found text region\n");
 				regions[boot_region_count].prot = VM_PROT_READ|VM_PROT_EXECUTE;
 				regions[boot_region_count].addr = trunc_page(ph->p_vaddr);
-				regions[boot_region_count].size = round_page(ph->p_filesz);
+				regions[boot_region_count].size = round_page(ph->p_vaddr + ph->p_filesz) -
+				    trunc_page(ph->p_vaddr);
 				regions[boot_region_count].offset = trunc_page(ph->p_offset);
 				regions[boot_region_count].mapped = TRUE;
 			}
@@ -343,7 +358,8 @@ do_bootstrap_compat(void)
 				printf("Found data region\n");
 				regions[boot_region_count].prot = VM_PROT_READ|VM_PROT_WRITE;
 				regions[boot_region_count].addr = trunc_page(ph->p_vaddr);
-				regions[boot_region_count].size = round_page(ph->p_memsz);
+				regions[boot_region_count].size = round_page(ph->p_vaddr + ph->p_memsz) -
+				    trunc_page(ph->p_vaddr);
 				regions[boot_region_count].offset = trunc_page(ph->p_offset);
 				regions[boot_region_count].mapped = TRUE;
 				bzero((char *) (boot_start+ph->p_offset+ph->p_filesz),
@@ -369,7 +385,8 @@ do_bootstrap_compat(void)
 				printf("Found read-only region\n");
 				regions[boot_region_count].prot = VM_PROT_READ;
 				regions[boot_region_count].addr = trunc_page(ph->p_vaddr);
-				regions[boot_region_count].size = round_page(ph->p_filesz);
+				regions[boot_region_count].size = round_page(ph->p_vaddr + ph->p_filesz) -
+				    trunc_page(ph->p_vaddr);
 				regions[boot_region_count].offset = trunc_page(ph->p_offset);
 				regions[boot_region_count].mapped = TRUE;
 			}

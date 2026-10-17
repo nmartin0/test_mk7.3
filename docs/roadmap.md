@@ -166,7 +166,7 @@ parent.
 **State on 16 October 2026**, milestone by milestone: 0 mostly done
 (two of slp's eighteen verdicts pending, both waiting on milestone 1); 1 not reached; 2 done; 3
 done, with S-8 watched and S-11 for the maintainer; 4 done, with
-`sendmail` deferred (S-12); 5 built there, booting but for one loader.
+`sendmail` deferred (S-12); 5 the system builds itself and boots.
 Each milestone below ends with its own line.
 
 **0. The releases, not the copies.** Neither import is its upstream's
@@ -251,13 +251,13 @@ programs under Lites, among them Lite2's `ftpd` (S-12), and the
 compile-and-install loop that once killed the server runs (S-14). On
 the running system, 15 October: ODE's minimal tools, binutils 2.7 and
 gcc 2.7.2.1 for OSF/1 i386 ELF, built (`docs/status.md`, "Hosting
-itself"). 16 October: `build_world` there builds every component;
-the kernel with DR3's `locore.s`, which binutils 2.7 reads and GNU as
-2.42 does not, so the tree's text is for the maintainer
-(`docs/deferred.md`, "One locore.s for two assemblers"). What it
-built boots multi-user but for the bootstrap task, which multiboot's
-loader maps short (same file, "The multiboot loader and a System V
-data segment").
+itself"). 16 and 17 October: `build_world` there builds every
+component, and what it built boots multi-user and runs the
+compile-and-install loop clean -- after 0076 wrote three `locore.s`
+instructions as bytes both assemblers take and sized multiboot's
+loader for a System V data segment (`docs/deferred.md`). Next, for
+this milestone: the running system rebuilding itself from what it
+built, and a later GCC.
 
 The kernel configuration stays PRODUCTION, OSF's documented default;
 FAST, with the debugger, is for debugging only.

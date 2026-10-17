@@ -495,6 +495,10 @@ BSS after it. Options:
    loader, which `444954a` replaced. The running system's bootstrap
    task waits for it.
 
+**Decided 17 October 2026** (maintainer): option 1, in 0076. The
+three region sizes are measured from the segment's page; for a
+segment that starts on a page they are what they were.
+
 ### One locore.s for two assemblers
 
 `locore.s` carries dev's `3036fdb` (dev3, from dev `10e3591`): thirteen
@@ -516,6 +520,11 @@ without a suffix fails on 2.7 as `movl` does. Options:
 3. DR3's text, and the host assembles with binutils 2.7 too. That
    assembler would also read GCC 13's output for every C file, which
    it predates (`.cfi_*`, `.section .note.GNU-stack` and more).
+
+**Decided 17 October 2026** (maintainer): option 1, in 0076. The
+host's kernel disassembles the same at `trap_set_segs` (`8c d0`,
+`8e d8`, `8e c0`), and the running system builds the kernel from the
+tree as it stands.
 
 ### Making disks on the running system, as OSF did
 

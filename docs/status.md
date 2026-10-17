@@ -879,31 +879,34 @@ OSF's or Utah's sources:
 - **`locore.s`**: binutils 2.7 rejects three lines of the trap entry,
   `movl %ss,%eax`, `movl %eax,%ds` and `movl %eax,%es`, dev's
   `3036fdb` spellings of DR3's `movl %ss,%ax` for GNU as 2.42, which
-  rejects DR3's. binutils 2.7 assembles DR3's `locore.s` as written,
-  and with it the kernel builds there: `mach_kernel.PRODUCTION`
-  726,261 bytes, text 481,970. Which text the tree keeps is open
-  (`docs/deferred.md`, "One locore.s for two assemblers").
+  rejects DR3's. Since 0076 the three are bytes, DR3's encoding, as
+  the same file writes `movl %eax,%cr4` (`docs/deferred.md`, "One
+  locore.s for two assemblers"). The kernel then builds there from
+  the tree as it stands: `mach_kernel.PRODUCTION` 726,309 bytes.
 
-**Booting what it built, 16 October 2026.** The seven programs came out
-by `ftp` (binary, `cksum` checked) onto a disk made as before. The
-kernel boots and loads the bootstrap task, and stops after "I've
-found: 2 sections". With the host's bootstrap task in its place, the
-rest -- the running system's kernel, `name_server`, `default_pager`,
-Lites and its emulator -- comes up multi-user to `login:`, and the
-compile-and-install loop runs clean (fifteen `cc` and `install`
-rounds, `cmp` of a copied `ftpd`, the program run). The
-bootstrap task itself is sound; the kernel's loader for it is not.
-binutils 2.7's `ld` starts the data segment where the text ends,
-congruent to its file offset (`0x080639b0`), as System V's ELF allows;
-today's `ld` starts it on a page. `do_bootstrap_compat()` maps
-`round_page(p_memsz)` bytes from `trunc_page(p_vaddr)`, which covers
-the segment only when it starts on a page: here it ends at
-`0x08065268` and the map at `0x08065000`, so the end of the BSS is
-not mapped. That loader is slp's `444954a`, multiboot's, not DR3's;
-the bootstrap task's own loader, `bootstrap/elf.c`, sizes a segment
-from its start, `p_vaddr + p_filesz - trunc_page(p_vaddr)`
-(`docs/deferred.md`, "The multiboot loader and a System V data
-segment").
+**Booting what it built, 16 and 17 October 2026.** The programs came
+out by `ftp` (binary, `cksum` checked) onto a disk made as before. At
+first the kernel loaded the bootstrap task and stopped after "I've
+found: 2 sections"; with the host's bootstrap task in its place the
+rest came up. The bootstrap task was sound and the kernel's loader
+for it was not. binutils 2.7's `ld` starts the data segment where the
+text ends, congruent to its file offset (`0x080639b0`), as System V's
+ELF allows; today's `ld` starts it on a page. `do_bootstrap_compat()`
+mapped `round_page(p_memsz)` bytes from `trunc_page(p_vaddr)`, the
+whole segment only when it starts on a page: here it ends at
+`0x08065268` and the map at `0x08065000`. That loader is slp's
+`444954a`, multiboot's, not DR3's; the bootstrap task's own loader,
+`bootstrap/elf.c`, measures a segment from its page, and since 0076
+this one does too (`docs/deferred.md`, "The multiboot loader and a
+System V data segment").
+
+Then everything the running system built -- kernel, bootstrap task,
+`name_server`, `default_pager`, Lites and its emulator -- boots
+multi-user, and the compile-and-install loop runs clean (fifteen `cc`
+and `install` rounds, `cmp` of a copied `ftpd`, the program run). The
+host's build of the same tree does too; its kernel text is 64 bytes
+longer, for the loader's arithmetic, and `trap_set_segs` disassembles
+as before.
 
 `makeboot` is not on the path, as on the host, and is PowerMac's.
 GNU make 3.75 stops on a file "has modification time in the future",
