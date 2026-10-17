@@ -170,9 +170,13 @@ monitor_server.o_CFLAGS+=${CFLAGS} ${MIG_CFLAGS}
 # Only for a compiler that makes sibling calls: GCC 3.0 and later.
 # GCC 2.7.2.1 has no such optimization and no option to turn it off,
 # and rejects the file given one; it builds this kernel on the running
-# system (docs/status.md, "Hosting itself").  The test is after the
-# .include of the rules below, where ${_CC_} is defined.
+# system (docs/status.md, "Hosting itself").  The compiler is the one
+# Buildconf names in GCC_LATEST, as makedefs/osf.gcc.mk tests it for
+# 2.7.1's -Wno-unused-parm; a sandbox with another sets it there.
 #
+.if empty(GCC_LATEST:M[012]_*)
+hardclock.o_CFLAGS+=${CFLAGS} -fno-optimize-sibling-calls
+.endif
 
 #
 #  These macros are filled in by the config program depending on the
@@ -200,12 +204,6 @@ monitor_server.o_CFLAGS+=${CFLAGS} ${MIG_CFLAGS}
 %MACHDEP
 
 .include <${RULES_MK}>
-
-# hardclock.o: see the AI-ONLY NOTE above, "-fno-optimize-sibling-calls".
-_KCC_VERSION_=${_CC_:!${_CC_} -dumpversion!}
-.if empty(_KCC_VERSION_:M[012].*)
-hardclock.o_CFLAGS+=${CFLAGS} -fno-optimize-sibling-calls
-.endif
 
 .if	defined(DYNAMIC) && !defined(TOSTAGE)
 

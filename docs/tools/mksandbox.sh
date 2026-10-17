@@ -377,6 +377,16 @@ replace setenv TRADITIONAL_CC "gcc -m32 -B\${tools_base}/elf/ -fno-builtin -trad
 replace setenv HOST_CC "gcc -m32 -fno-builtin"
 
 #
+# GCC_LATEST: Buildconf's name for the compiler, "2_7_1", or "2_7_2_1"
+# on Linux -- MkLinux's.  makedefs/osf.gcc.mk tests it (2.7.1 gets
+# -Wno-unused-parm), and conf/template.mk gives hardclock.o
+# -fno-optimize-sibling-calls only when it is not a 0.x, 1.x or 2.x
+# (see the AI-ONLY NOTE there).  Here it names the compiler ANSI_CC
+# runs, in Buildconf's spelling.
+#
+replace setenv GCC_LATEST $(gcc -dumpfullversion | tr . _)
+
+#
 # LDOPTS: conf/AT386/template.mk line 279 is "LDFLAGS+=\${LDOPTS}", the
 # last line of the file, using += precisely so the link can be extended
 # without editing it.  ld on x86-64 defaults to elf_x86_64 and reports

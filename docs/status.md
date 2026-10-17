@@ -894,7 +894,9 @@ OSF's or Utah's sources:
 - **`hardclock.o`'s `-fno-optimize-sibling-calls`**, an option GCC
   3.0 brought with the optimization it turns off; `cc1` 2.7.2.1 stops
   on it. Since 0075 `template.mk` adds it only for a compiler that
-  does not report a 0.x, 1.x or 2.x version (`-dumpversion`).
+  does not report a 0.x, 1.x or 2.x version (`-dumpversion`); since
+  0085, for a `GCC_LATEST` that is not one, Buildconf's own name for
+  the compiler, which `mksandbox.sh` sets from the host's.
 - **`lites/makefile`**, ours, assumed GNU's `env -u`, a `configure`
   path relative to the source directory, and the host's `strip`,
   `size` and `nm`. NetBSD's are a.out; the sandbox's ELF tools are in
