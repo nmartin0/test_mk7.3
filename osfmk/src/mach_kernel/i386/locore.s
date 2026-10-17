@@ -813,14 +813,16 @@ trap_push_segs:
 	pushl	%gs
 
 trap_set_segs:
-	/* AI-ONLY NOTE: %ax -> %eax. GNU as 2.42 rejects movl with a
-	 * 16-bit register. Suffix and encoding are unchanged
-	 * (8c d0 / 8e d8 / 8e c0); only the register name is
-	 * corrected. movw would have added a 66 prefix the original
-	 * never had. Compile-blocking. */
-	movl	%ss,%eax
-	movl	%eax,%ds
-	movl	%eax,%es			# switch to kernel data seg
+	/* AI-ONLY NOTE: DR3's three instructions as bytes, as set_cr4
+	 * below writes one.  GNU as 2.42 rejects DR3's "movl %ss,%ax";
+	 * binutils 2.7, which builds this file on the running system,
+	 * rejects "movl %ss,%eax"; "movw" adds a 66 prefix DR3 never
+	 * had.  The bytes are DR3's encoding under either assembler.
+	 * Compile-blocking; docs/deferred.md, "One locore.s for two
+	 * assemblers". */
+	.byte	0x8c,0xd0		/ movl	%ss,%ax
+	.byte	0x8e,0xd8		/ movl	%ax,%ds
+	.byte	0x8e,0xc0		/ movl	%ax,%es	# switch to kernel data seg
 	cld				/ clear direction flag
 	testl	$(EFL_VM),R_EFLAGS(%esp) / in V86 mode?
 	jnz	trap_from_user		/ user mode trap if so
