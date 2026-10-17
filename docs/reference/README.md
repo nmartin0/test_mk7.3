@@ -18,11 +18,21 @@ same, and inherits from both projects above us.
 
 | from | commit | why |
 |---|---|---|
-| `github.com/nmartin0/test_mk7.3` | pin one | its documents and its `build/` and `tools/` as it arranges them |
+| `github.com/nmartin0/test_mk7.3` | `b1190b9` (`pristine`) | its documents and its `build/` and `tools/` as it arranges them; so far the two this tree's documents cite, below |
 | `github.com/nmartin0/4.4BSD-Lite2`, `dev3` | pin one | nothing yet — but see below |
 
 Record the commit and `sha1sum` every file, as the Lite2 tree does, so
 that "verbatim" is checkable rather than asserted.
+
+**Imported** (17 October 2026), from `nmartin0/test_mk7.3` at
+`b1190b9077609f0f607f959403c7aad6a921b342`, the head of its
+`pristine` branch, where `dev` has the same two files:
+
+	e0882b8df7b0c3a581a6258d86078be1be6ac6f8  test_mk7.3/RULES.md
+	3ace56592c37b5d082e3c2adc24c157b59826409  test_mk7.3/docs/METHODOLOGY.md
+
+`RULES.md`, cited through `docs/` by section ("`RULES.md` 3.3"), is
+this file; `docs/method.md` names both.
 
 ## Why test_mk7.3's rules apply here more directly than they did there
 
