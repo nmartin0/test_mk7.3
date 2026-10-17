@@ -203,7 +203,7 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # In gcc 2.7, -Wimplicit is "Warn whenever a function or parameter is
 # implicitly declared" (invoke.texi), and such a declaration defaults
 # to int without a word (c-decl.c, "No type at all: default to
-# `int'").  Today's -Wimplicit adds -Wimplicit-int, and -Werror makes
+# \`int'").  Today's -Wimplicit adds -Wimplicit-int, and -Werror makes
 # it fatal.  This takes back only the part gcc 2.7 did not have, so the
 # declarations stay as DR3 wrote them; slp's 2913827 and f4fa636 had
 # added "int" to each.  Measured: kernel text, data and bss unchanged.
