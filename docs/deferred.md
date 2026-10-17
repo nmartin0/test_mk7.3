@@ -558,6 +558,19 @@ roadmap required before deciding slp's `7e81018`: it hangs on a 465 MB
 disk under both loaders, for a reason in the driver, not the BIOS
 (`docs/provenance/verdicts.md`, `7e81018`; 0079).
 
+**Every CPU enters at `pstart`** (`mp/mp_v1_1.c`, `start_other_cpus()`
+points the AP trampoline there), so in a multiprocessor kernel the
+other CPUs would also have stored their `%eax` as the multiboot magic,
+after the first had used it. Since 0080 the value waits in `%edx`, as
+the start lock and `%ax`'s clearing use `%eax`, and only the first CPU
+stores it, after the `master_is_up` test sends the rest to
+`slave_start`. Two lines of that `NCPUS > 1` path, `movb $1,%eax` in
+`start.s` and `movb %edx,wncpu` in `asm_startup.h`, are spelt `%al` and
+`%dl` for GNU as 2.42, as `testb` was. With them `locore.o` assembles
+for FAST+MP; the rest of FAST+MP does not yet build on the Linux host
+(`ipc_port.c`'s debugger code, under today's `-Werror`), which is
+multiprocessor work for later.
+
 ### The multiboot loader and a System V data segment
 
 `do_bootstrap_compat()` in `kern/bootstrap.c`, slp's `444954a` (verdict

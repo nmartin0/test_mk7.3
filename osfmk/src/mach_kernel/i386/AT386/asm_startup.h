@@ -109,7 +109,8 @@
 2:	
 #if	NCPUS	> 1
 	shrl	$0x8,%edx
-	movb	%edx,PA(EXT(wncpu))	/ old want ncpus flag
+/* AI-ONLY NOTE: %dl for %edx, as in the testb above.  NCPUS > 1. */
+	movb	%dl,PA(EXT(wncpu))	/ old want ncpus flag
 #endif
 #endif
 
