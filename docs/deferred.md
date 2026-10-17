@@ -516,6 +516,48 @@ boot are built on the running system (`docs/status.md`, "Hosting
 itself"). Next: why the primary goes quiet, and `mkbootdisk.sh`
 writing the partition's CHS address and installing the boot.
 
+**Booted, 17 October 2026.** Three things stood between OSF's boot
+loader and a running system, none of them in the boot:
+
+- *The disk.* The primary goes quiet because it is not running: the
+  MBR's copy loads the partition's first 16 sectors by the partition
+  entry's CHS address, and QEMU's BIOS, left to guess the geometry,
+  read them from sector 51. Given the geometry the label assumes, 16
+  heads and 63 sectors (`boot.sh`, `BIOS=1`), and a partition entry
+  carrying its CHS addresses (`mkbootdisk.sh`; it wrote zeros), the
+  primary prints "Primary boot", loads `hd(0,a)/stand/mach_boot`, and
+  the secondary loads `/mach_kernel` and `/mach_servers/bootstrap`,
+  printing sizes as the MK7.3 Release Notes show them.
+- *The kernel's way in.* slp's `444954a` put DR3's `asm_startup.h`
+  under `#if 0` and made the multiboot copy unconditional, and
+  `machine_startup()` called `parse_multiboot()` always: under OSF's
+  loader it read the stack arguments' registers as a multiboot block
+  and faulted in `strlen()` on a real-mode pointer. `start.s` now
+  keeps `%eax` at entry and takes multiboot's path only for
+  `0x2BADB002`; otherwise DR3's `asm_startup.h` reads OSF's arguments,
+  as DR3 did. `parse_multiboot()` runs only after a multiboot entry,
+  and `do_bootstrap_compat()`'s ELF reader returns when OSF's loader
+  has given the regions. `asm_startup.h`'s three `testb $x,%edx`
+  are `%dl`, the register the `b` suffix tests; binutils 2.7 encodes
+  both `f6 c2 ib`.
+- *Which kernel.* OSF's `load_elf()` places the first PT_LOAD
+  segment's page at its load address. GNU ld 2.42 with
+  `-z noseparate-code` begins that segment one page low, at 0xff000,
+  with the ELF headers, so a kernel linked on Linux lands 4 KB off;
+  binutils 2.7 begins it at 0x100000, file offset 0x1000. So OSF's
+  loader boots the kernel the running system builds, with OSF's
+  toolchain, and the Linux host's kernel keeps the multiboot entry.
+
+Measured: everything built on the running system -- boot, kernel,
+bootstrap task, `name_server`, `default_pager`, Lites -- boots from
+OSF's primary to `login:`, multi-user, and passes the
+compile-and-install loop (`BIOS=1`; `docs/status.md`, "The boot").
+
+With OSF's loader running, `hd.c` was tested as DR3 wrote it, as the
+roadmap required before deciding slp's `7e81018`: it hangs on a 465 MB
+disk under both loaders, for a reason in the driver, not the BIOS
+(`docs/provenance/verdicts.md`, `7e81018`; 0079).
+
 ### The multiboot loader and a System V data segment
 
 `do_bootstrap_compat()` in `kern/bootstrap.c`, slp's `444954a` (verdict

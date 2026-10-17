@@ -89,16 +89,21 @@
 	popl	PA(EXT(cnvmem))		/ conventional memory, in K
 	popl	%edx			/ old boothowto
 #if	SYS_REBOOT_COMPAT
+/* AI-ONLY NOTE: %dl for %edx in the three testb below.  GNU as 2.42
+ * rejects a byte test of a 32-bit register; %dl is the register the
+ * b suffix tests, and binutils 2.7 encodes both spellings alike
+ * (f6 c2 ib).  Compile-blocking; docs/deferred.md, "Booting with
+ * OSF's own boot loader". */
 #define RB_SINGLE	0x2
 #define RB_HALT		0x8
 #define RB_ALTBOOT	0x40
-	testb	$(RB_SINGLE),%edx	/ old RB_SINGLE flag ?
+	testb	$(RB_SINGLE),%dl	/ old RB_SINGLE flag ?
 	je	2f
 	incl	PA(EXT(startup_single_user))
-2:	testb	$(RB_HALT),%edx		/ old RB_HALT flag ?
+2:	testb	$(RB_HALT),%dl		/ old RB_HALT flag ?
 	je	2f
 	incl	PA(EXT(halt_in_debugger))
-2:	testb	$(RB_ALTBOOT),%edx	/ old RB_ALTBOOT flag ?
+2:	testb	$(RB_ALTBOOT),%dl	/ old RB_ALTBOOT flag ?
 	je	2f
 	incl	PA(EXT(cons_is_com1))
 2:	

@@ -47,7 +47,14 @@
 # ROOT_MB sets partition a's size, default 16; PAGING_MB partition b's,
 # default 16.
 #
-# Boot with docs/tools/boot.sh.
+# For OSF's own boot loader (roadmap milestone 1), built on the running
+# system: BOOT=<stand/AT386/boot/primary/boot> installs the primary in
+# the MBR and at the partition's start, MACH_BOOT=<secondary/mach_boot>
+# puts the second stage at /stand/mach_boot, and KERNEL=<file> and
+# BOOTSTRAP=<file> put /mach_kernel and /mach_servers/bootstrap, which
+# it loads.
+#
+# Boot with docs/tools/boot.sh; BIOS=1 for OSF's boot loader.
 #
 set -eu
 
@@ -83,6 +90,14 @@ for f in "$@"; do
 	[ -f "$f" ] || { echo "no such file: $f" >&2; exit 1; }
 	cp "$f" "$TMP/root/mach_servers/"
 done
+# What OSF's boot loader reads from partition a: its second stage, the
+# kernel and the bootstrap task.
+if [ -n "${MACH_BOOT:-}" ]; then
+	mkdir -p "$TMP/root/stand"
+	cp "$MACH_BOOT" "$TMP/root/stand/mach_boot"
+fi
+[ -z "${KERNEL:-}" ] || cp "$KERNEL" "$TMP/root/mach_kernel"
+[ -z "${BOOTSTRAP:-}" ] || cp "$BOOTSTRAP" "$TMP/root/mach_servers/bootstrap"
 if [ -n "${BOOTSTRAP_CONF:-}" ]; then
 	cp "$BOOTSTRAP_CONF" "$TMP/root/mach_servers/bootstrap.conf"
 else
@@ -143,9 +158,18 @@ heads, secs = 16, 63
 cyls = total // (heads * secs)
 img = bytearray((base + 64) * 512)
 
-# MBR: one partition, active (0x80), type 99 (UNIXOS), LBA fields
-img[446:462] = struct.pack("<B3sB3sII", 0x80, b"\0\0\0", 99, b"\0\0\0",
-                           base, usize)
+# MBR: one partition, active (0x80), type 99 (UNIXOS), with its first
+# and last sectors as cylinder, head and sector, as fdisk writes them,
+# and as LBA fields.  OSF's primary boot (stand/AT386/boot/primary/
+# start.s, "found:") reads the partition's first 16 sectors through
+# the BIOS at the CHS address, so it has to be right for the geometry
+# the BIOS uses: the nominal one, which boot.sh's BIOS=1 gives QEMU.
+def chs(lba):
+    c, h, s = lba // (heads * secs), lba // secs % heads, lba % secs + 1
+    c = min(c, 1023)
+    return bytes([h, s | (c >> 2 & 0xc0), c & 0xff])
+img[446:462] = struct.pack("<B3sB3sII", 0x80, chs(base), 99,
+                           chs(base + usize - 1), base, usize)
 img[510:512] = b"\x55\xaa"
 
 # struct evtoc at base + HDPDLOC (29); offsets from i386/AT386/disk.h
@@ -174,6 +198,26 @@ EOF
 dd if=/dev/zero of="$OUT" bs=512 count="$TOTAL" status=none
 dd if="$TMP/label.img" of="$OUT" conv=notrunc status=none
 dd if="$TMP/a.img" of="$OUT" bs=512 seek="$A_START" conv=notrunc status=none
+
+# OSF's primary boot, when BOOT names it: in the MBR, around the
+# partition table already there, and in the partition's first 16
+# sectors, which the MBR's copy loads (start.s, LOADSZ).  The primary
+# then loads /stand/mach_boot from partition a.  stand/AT386/boot/
+# primary/README: "installed as a primary boot on a disk ... (first
+# 8K)"; its 8 KB end before the vtoc at sector 29.
+if [ -n "${BOOT:-}" ]; then
+	python3 - "$OUT" "$BOOT" "$BASE" <<'EOF3'
+import sys
+out, boot, base = sys.argv[1], sys.argv[2], int(sys.argv[3])
+b = open(boot, "rb").read()
+assert len(b) <= 16 * 512 and b[510:512] == b"\x55\xaa", "not a primary boot"
+f = open(out, "r+b")
+f.seek(0); mbr = bytearray(f.read(512))
+first = bytearray(b[:512]); first[446:510] = mbr[446:510]
+f.seek(0); f.write(first + b[512:])
+f.seek(base * 512); f.write(b)
+EOF3
+fi
 
 echo "$OUT: $((TOTAL / 2048)) MB; a: UFS ${ROOT_MB} MB, b: paging ${PAGING_MB} MB"
 sed 's/^/  bootstrap.conf: /' "$TMP/root/mach_servers/bootstrap.conf"

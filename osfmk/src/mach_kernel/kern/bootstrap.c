@@ -314,6 +314,16 @@ do_bootstrap_compat(void)
 	if (boot_size == 0)		/* if we don't have a bootstrap */
 		return;			/* there isn't anything we can do */
 
+	/*
+	 * AI-ONLY NOTE: OSF's boot loader describes the bootstrap task's
+	 * regions and thread state itself, and asm_startup.h stores them:
+	 * boot_region_count is then nonzero, and there is nothing for
+	 * this ELF reader, multiboot's, to do.  DR3's version of this
+	 * function returned the same way, "if we don't have load info".
+	 */
+	if (boot_region_count != 0)
+		return;
+
 	entry = (vm_offset_t) ehdr->e_entry;
 	phdr = (Elf32_Phdr *) (boot_start + ehdr->e_phoff);
 	
