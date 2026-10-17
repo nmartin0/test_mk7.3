@@ -83,6 +83,36 @@ mkdir -p "${MK_BUILD}/tools/i386/i386_linux/hostbin"
 ln -sfn "${MK_BUILD}/tools/i386" "${OSFMK}/tools/i386"
 ln -sfn "${MK_BUILD}/tools/i386/i386_linux" "${OSFMK}/tools/at386"
 
+# --- 1b. the kernel's link script --------------------------------------
+#
+# GNU ld's own default script for elf_i386 with -z noseparate-code,
+# from "ld --verbose", with one change: its first statement no longer
+# adds SIZEOF_HEADERS to the text segment's start.  The kernel links
+# with "-Ttext 0x100000" (conf/AT386/template.mk), a page boundary with
+# no room below it for the ELF and program headers.  binutils 2.7 then
+# left the headers out of the segments: the kernel built on the running
+# system has its text segment at 0x100000, file offset 0x1000.  Today's
+# ld, told by SIZEOF_HEADERS that the script wants the headers loaded,
+# puts them in the page below instead (bfd/elf.c, "Deal with -Ttext or
+# something similar"), and the text segment starts at 0xff000, file
+# offset 0.  OSF's boot loader puts the first segment's first page at
+# the kernel's load address (stand/AT386/boot/lib/elf.c), so it loaded
+# that kernel 4 KB off and it never started.  Without SIZEOF_HEADERS,
+# ld falls back to its rule for "old scripts": the headers go in the
+# first segment only when the script left room for them below the
+# first section -- the rule binutils 2.7 had.  The kernel then links
+# as it does on the running system.  The script's own notice permits
+# copying it with or without modification; it is written here, outside
+# the tree, from the ld that will use it.  LDOPTS, below, gives it to
+# the kernel's link.
+mkdir -p "${MK_BUILD}/tools/i386/i386_linux/elf"
+ld --verbose -m elf_i386 -z noseparate-code |
+	sed -n '/^=====/,/^=====/p' | sed '1d;$d' |
+	sed 's/ + SIZEOF_HEADERS;/;/' \
+	> "${MK_BUILD}/tools/i386/i386_linux/elf/elf_i386.x"
+grep -q SIZEOF_HEADERS "${MK_BUILD}/tools/i386/i386_linux/elf/elf_i386.x" &&
+	{ echo "elf_i386.x: SIZEOF_HEADERS still there" >&2; exit 1; }
+
 # --- 2. Buildconf.local ------------------------------------------------
 #
 # ODE's designed override point.  lib/libode/builddata.c looks for it at
@@ -353,7 +383,15 @@ replace setenv HOST_CC "gcc -m32 -fno-builtin"
 # "skipping incompatible ... cannot find -lmach" for 32-bit archives --
 # it found them and refused them.
 #
-replace setenv LDOPTS "-m elf_i386"
+# -T elf_i386.x: section 1b's script, so that the kernel's segments are
+# laid out as binutils 2.7 laid them out and OSF's boot loader can load
+# it.  Lites' ld (src/lites/makefile) is the kernel link's linker and
+# options, so the server and emulator get it too; its rule for where
+# the headers go is binutils 2.7's.  Programs linked through
+# osf.prog.mk -- bootstrap, default_pager, name_server -- keep ld's
+# default script, as they kept binutils 2.7's.
+#
+replace setenv LDOPTS "-m elf_i386 -T \${tools_base}/elf/elf_i386.x"
 
 #
 # AT386_LDFLAGS: bootstrap/Makefile line 37 assigns LDFLAGS with a plain

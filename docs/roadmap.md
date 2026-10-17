@@ -205,10 +205,10 @@ it and `boot.sh BIOS=1` boots it (0079); the kernel takes OSF's
 arguments again beside multiboot's (0079); and the running system's
 kernel, bootstrap task, servers and Lites come up multi-user from
 OSF's primary and pass the compile-and-install loop. `hd.c` is DR3's
-but for one flag at probe time (0079). A kernel linked on the Linux
-host still boots by multiboot: OSF's loader places a GNU ld 2.42
-kernel 4 KB off (`docs/deferred.md`, "Booting with OSF's own boot
-loader").
+but for one flag at probe time (0079). The set linked on the Linux
+host boots from OSF's primary as well, its kernel linked as binutils
+2.7 links it (0083; `docs/deferred.md`, "A kernel linked on the Linux
+host, by OSF's loader").
 
 **2. The three servers.** `bootstrap.conf` as OSF's template and
 release notes give it: `name_server`, `default_pager` on partition b,
