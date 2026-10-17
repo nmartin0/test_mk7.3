@@ -32,7 +32,7 @@ Measured against the trees as they stand:
 
 | | state |
 |---|---|
-| OSFMK 7.3 boots | yes: OSF's bootstrap task reads `bootstrap.conf` from UFS on a vtoc-labelled IDE disk, as OSF's own did, and starts `name_server`, `default_pager` and the server, in the template's order; the kernel is still entered by multiboot, OSF's boot loader being milestone 1 |
+| OSFMK 7.3 boots | yes: OSF's primary boot and `mach_boot` load the kernel and bootstrap task from a vtoc-labelled IDE disk (milestone 1, 0079), and the bootstrap task reads `bootstrap.conf` from UFS, as OSF's own did, and starts `name_server`, `default_pager` and the server, in the template's order; multiboot stays as a second way in |
 | Lites runs on it | yes, multi-user with NetBSD 1.0's userland: Utah's 1.1.u3 in this tree, each change to it in `docs/provenance/imports.md` |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
 | the three are one repository | **done** for two of them — the kernel at `osfmk/`, and Lites at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was |
