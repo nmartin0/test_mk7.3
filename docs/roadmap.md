@@ -164,7 +164,8 @@ parent.
 **State on 17 October 2026**, milestone by milestone: 0 done; 1 done,
 OSF's boot loader booting what the running system builds; 2 done; 3
 done, with S-8 watched and S-11 for the maintainer; 4 done, with
-`sendmail` deferred (S-12); 5 the system builds itself and boots.
+`sendmail` deferred (S-12); 5 done, the system rebuilding itself
+identically but for three build stamps.
 Open at the boundary with Tier 1: O-1, O-2 and O-4 to O-7, Lites
 against the OSF/1 server's documented behaviour (`docs/deferred.md`).
 Each milestone below ends with its own line.
@@ -260,9 +261,12 @@ itself"). 16 and 17 October: `build_world` there builds every
 component, and what it built boots multi-user and runs the
 compile-and-install loop clean -- after 0076 wrote three `locore.s`
 instructions as bytes both assemblers take and sized multiboot's
-loader for a System V data segment (`docs/deferred.md`). Next, for
-this milestone: the running system rebuilding itself from what it
-built, and a later GCC.
+loader for a System V data segment (`docs/deferred.md`). Done, 17
+October: booted from OSF's primary with nothing running that it had
+not built, the system built itself again, and 589 of 592 object files
+came out identical; the other three carry the build's date and time
+(`docs/status.md`, "Rebuilding itself"). After this, as the milestone
+says, a later GCC.
 
 The kernel configuration stays PRODUCTION, OSF's documented default;
 FAST, with the debugger, is for debugging only.
