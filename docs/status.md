@@ -970,3 +970,33 @@ does not build and is not needed.
 GNU make 3.75 stops on a file "has modification time in the future",
 and the running system's clock starts behind under QEMU's `-icount`;
 set it (`date`) before building.
+
+**Rebuilding itself, 17 October 2026** (milestone 5). Generation 1:
+the running system -- the host's kernel and bootstrap task by
+multiboot, Lites built earlier -- ran `build_world` and `build -here
+stand` on the tree at 0087 and installed what they made where OSF's
+loader and bootstrap task look: `/mach_kernel`, `/stand/mach_boot`,
+`/mach_servers/{bootstrap,name_server,default_pager,startup,emulator}`,
+and the primary in the master boot record and at the partition's
+start. Generation 2: that disk booted from OSF's primary, so that
+every program running -- boot, kernel, bootstrap task, the three
+servers, the emulator -- was one the system had built, and it ran the
+same two builds from the same sources into a fresh object tree.
+
+Of 592 object files, 589 are identical, byte for byte. The three
+that differ hold the time of the build: the kernel's `vers.o` and
+Lites' (`newvers.sh`, "Mach 3.0 VERSION(PMK1.1): ... Sat Oct 17
+11:40:51 PDT 2026" against 14:39:28) and `mach_boot`'s `boot.o`
+(`__DATE__` and `__TIME__`). So among the products, `bootstrap`,
+`name_server`, `default_pager`, the emulator and the primary boot are
+identical; the kernel, `startup` and `mach_boot` differ in four or
+five bytes, all in those strings. The compiler and binutils are the
+ones built in October with NetBSD 1.0's `cc`; rebuilding them with
+themselves is gcc's own three-stage bootstrap, not done here.
+
+One thing learned on the way: a running system's servers are replaced
+by a new file renamed into place, not by copying over the old one.
+Every Lites process maps the emulator from `/mach_servers/emulator`;
+`cp` truncated it while they ran, and the first attempt ended at once
+with Lites' "panic: init died". `install`(1), or `cp` to a new name
+and `mv`, leaves the old file to the processes that map it.
