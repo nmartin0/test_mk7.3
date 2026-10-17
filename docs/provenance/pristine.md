@@ -132,7 +132,10 @@ is `test_mk7.3`'s mechanism and its `.gitignore` states the reasoning:
 > stays empty.
 
 Six paths: `osfmk/obj`, `export/at386`, three `makedefs/*.mk`, and
-`rc_files/osc/Buildconf.local`.
+`rc_files/osc/Buildconf.local`. This tree's `.gitignore` (0089) lists
+the five `mksandbox.sh` makes here: `osfmk/obj`, `osfmk/export/at386`,
+`osfmk/tools/i386`, `osfmk/tools/at386` and
+`osfmk/rc_files/osc/Buildconf.local`.
 
 `mksandbox.sh` also records why the obvious alternative fails, which is
 worth not rediscovering: putting the sandbox in `MK_BUILD` with `src`

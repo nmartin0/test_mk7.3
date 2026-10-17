@@ -1352,8 +1352,8 @@ five are live ignore rules:
 
 The failure mode is the bad kind — a file that should be tracked is
 silently skipped and `git status` says nothing.  Not fixed here because
-this tree has no `.gitignore` yet; recorded so ours is written with
-`#` from the start.
+this tree had no `.gitignore`; recorded so ours is written with `#`
+from the start, as it is (0089).
 
 ## 3. Refused
 

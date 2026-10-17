@@ -1,0 +1,10 @@
+# Made by docs/tools/mksandbox.sh.  The build writes through these
+# symlinks into MK_BUILD, outside the repository, and Buildconf.local
+# is generated from the host each time; none is ever committed.
+/osfmk/obj
+/osfmk/export/at386
+/osfmk/tools/i386
+/osfmk/tools/at386
+/osfmk/rc_files/osc/Buildconf.local
+# Python's byte-code cache, from running docs/tools/aoutsyms.py.
+__pycache__/
