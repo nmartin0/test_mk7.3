@@ -9,6 +9,13 @@
 #   rc_files/osc/Buildconf.local   generated, never committed
 #   a .sandboxrc for the caller to install as ~/.sandboxrc
 #
+# Run from the repository:
+#
+#   ODE4LINUX=<ode4linux clone> [MK_BUILD=<dir>] sh docs/tools/mksandbox.sh
+#
+# MK_BUILD, default ~/.cache/osfmk, is where the build's output and the
+# host tools live; docs/tools/bootstrap-ode.sh puts ODE there too.
+#
 # It does NOT drive the build.  OSF ships build_world for that, and
 # OSFMK_BUILD.README documents it:
 #
@@ -366,10 +373,11 @@ replace setenv NO_STRICT_ANSI 1
 # GNU as keeps that convention for i386-elf and drops it for
 # i386-linux, where the same line is a division and an error.  So the
 # assembler is GNU as built for i386-elf, by docs/tools/mkbinutils.sh,
-# into the directory Buildconf names ELF_CC_EXEC_PREFIX
-# (\${tools_base}/elf/) and osf.gcc.mk line 92 hands the compiler as
-# -B -- OSF's own place for the target's tools.  gcc finds its as
-# there and everything else where it always does.  HOST_CC has no -B:
+# into \${tools_base}/elf/, the directory Buildconf line 118 names
+# ELF_CC_EXEC_PREFIX -- OSF's own place for the target's tools, which
+# osf.gcc.mk line 92 hands the compiler as -B.  Buildconf line 152
+# blanks the prefix for a Linux host, so the -B is written here.  gcc
+# finds its as there and everything else where it always does.  HOST_CC has no -B:
 # config and migcom are host programs.
 #
 replace setenv ANSI_CC "gcc -m32 -B\${tools_base}/elf/ -fno-builtin"
@@ -388,7 +396,7 @@ replace setenv GCC_LATEST $(gcc -dumpfullversion | tr . _)
 
 #
 # LDOPTS: conf/AT386/template.mk line 279 is "LDFLAGS+=\${LDOPTS}", the
-# last line of the file, using += precisely so the link can be extended
+# last line of its LDFLAGS block, using += precisely so the link can be extended
 # without editing it.  ld on x86-64 defaults to elf_x86_64 and reports
 # "skipping incompatible ... cannot find -lmach" for 32-bit archives --
 # it found them and refused them.

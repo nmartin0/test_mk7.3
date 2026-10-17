@@ -22,8 +22,9 @@
 # comments to assemble with Linux's as and renamed every file .S
 # (18c9d31, 81429d0, 364472d, 090a2dc); built for i386-elf, as reads
 # OSF's files as written.  Buildconf already names the place for the
-# target's tools, ELF_CC_EXEC_PREFIX, ${tools_base}/elf/, and
-# osf.gcc.mk hands it to the compiler as -B.
+# target's tools, ELF_CC_EXEC_PREFIX, ${tools_base}/elf/ (line 118),
+# which osf.gcc.mk hands the compiler as -B; for a Linux host line 152
+# blanks it, and mksandbox.sh writes the -B into ANSI_CC instead.
 #
 # Which.  GNU binutils 2.42, the release the host's own as is on the
 # Ubuntu 24.04 this was built on, so that the only difference from the

@@ -27,7 +27,8 @@
 #
 # The file system is UFS in the 4.3BSD format OSF's reader expects,
 # written by NetBSD's makefs(8) with "-o version=0": the nbmakefs that
-# docs/tools/mknbmakefs.sh builds, or NBMAKEFS=<path>.  It contains
+# docs/tools/mknbmakefs.sh builds under MK_BUILD (default
+# ~/.cache/osfmk), or NBMAKEFS=<path>.  It contains
 #
 #   /mach_servers/bootstrap.conf    one "<name> <name>" line per server
 #   /mach_servers/<server>...       the files given, by basename

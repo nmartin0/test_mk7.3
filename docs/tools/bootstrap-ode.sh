@@ -3,22 +3,23 @@
 #
 # Build the ODE toolset that OSFMK 7.3 is built with.
 #
-#   ODE4LINUX=~/ode4linux sh build/bootstrap-ode.sh
+#   ODE4LINUX=~/ode4linux [MK_BUILD=<dir>] sh docs/tools/bootstrap-ode.sh
 #
 # OSFMK 7.3 is built by ODE, not GNU make, and not by make alone: its
 # makefiles are driven by ODE's `build` front end, which reads
-# osfmk7.3/osfmk/src/osc/Buildconf and derives the whole environment from
+# osfmk/src/osc/Buildconf and derives the whole environment from
 # it. `workon` establishes the sandbox that `build` runs inside. So the
 # toolset, not just make, has to exist.
 #
 # ODE's own setup.sh bootstraps all of this. We run it in a scratch copy
-# under ${MK_BUILD} so that neither this repository nor the ode4linux
+# under ${MK_BUILD} (default ~/.cache/osfmk, as the other scripts in
+# docs/tools) so that neither this repository nor the ode4linux
 # clone is written to. Verified by fingerprinting every file in the clone
 # before and after a run: sha1 unchanged.
 set -e
 
 : "${ODE4LINUX:?set ODE4LINUX to your ode4linux clone}"
-: "${MK_BUILD:=${HOME}/.cache/mk7.3}"
+: "${MK_BUILD:=${HOME}/.cache/osfmk}"
 
 [ -f "${ODE4LINUX}/src/ode/setup/setup.sh" ] || {
 	echo "no ode/setup/setup.sh under ${ODE4LINUX} -- is ODE4LINUX right?" >&2
@@ -49,8 +50,7 @@ cp "${SB}/src/ode/bin/make/LINUXARCH/arch_fmtdep.c" \
 # `ar crl <archive> <objs>` fails with "file format not recognized" --
 # the l modifier consumes the archive name, so ar tries to open the first
 # object as an archive. `ar cr` works. osf.std.mk uses ?= so the
-# environment wins. Note OSFMK's own Buildconf already sets DEF_ARFLAGS
-# to cr, so this only affects ODE's self-build.
+# environment wins.
 # -std=gnu89: GCC 14 makes implicit function declarations, implicit int,
 # int-conversion and incompatible-pointer-types hard errors. All four
 # were valid C89 and are pervasive in this 1990s code -- ODE's libode
@@ -160,8 +160,8 @@ fi
 # times by anything we run, and its own Makefile overrides CFLAGS with
 # a plain `=` so our dialect flag cannot reach it -- it fails on GCC 14
 # with implicit-int. Fighting that to build a tool we never call would
-# be work for nothing. workon is likewise built but deliberately unused
-# (see AGENTS.md). Both are reported, neither is fatal.
+# be work for nothing. workon is likewise built but deliberately unused:
+# mksandbox.sh writes the sandbox and ~/.sandboxrc that build reads. Both are reported, neither is fatal.
 missing=
 for t in make build genpath makepath md; do
 	[ -x "${BIN}/${t}" ] || missing="${missing} ${t}"

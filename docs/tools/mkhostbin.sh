@@ -65,7 +65,7 @@ done
 # 1.  Fails, by design, where migcom is first wanted.
 build -k MAKEFILE_PASS=FIRST > "${OSFMK}/obj/hostbin-first.log" 2>&1 || :
 [ -f "${OSFMK}/export/at386/include/mach/std_types.h" ] || {
-	echo "the headers were not exported; see obj/hostbin-first.log" >&2
+	echo "the headers were not exported; see ${OSFMK}/obj/hostbin-first.log" >&2
 	exit 1; }
 
 # 2.
