@@ -146,6 +146,7 @@
 #if	NCPUS > 1
 #include <i386/mp_desc.h>
 #endif
+#include <i386/multiboot.h>	/* AI-ONLY NOTE: for start.s; below */
 #ifdef	SYMMETRY
 #include <sqt/slic.h>
 #include <sqt/intctl.h>
@@ -281,6 +282,19 @@ main(
 	DECLARE("VM_MIN_ADDRESS",	VM_MIN_ADDRESS);
 	DECLARE("VM_MAX_ADDRESS",	VM_MAX_ADDRESS);
 	DECLARE("KERNELBASE",		VM_MIN_KERNEL_ADDRESS);
+	/*
+	 * AI-ONLY NOTE: the multiboot information start.s reads to find
+	 * the first free physical address after a multiboot loader;
+	 * offsets from Utah's i386/multiboot.h.
+	 */
+	DECLARE("MULTIBOOT_CMDLINE",	MULTIBOOT_CMDLINE);
+	DECLARE("MULTIBOOT_MODS",	MULTIBOOT_MODS);
+	DECLARE("MBI_FLAGS",	offsetof(struct multiboot_info *, flags));
+	DECLARE("MBI_CMDLINE",	offsetof(struct multiboot_info *, cmdline));
+	DECLARE("MBI_MODS_COUNT", offsetof(struct multiboot_info *, mods_count));
+	DECLARE("MBI_MODS_ADDR", offsetof(struct multiboot_info *, mods_addr));
+	DECLARE("MBM_MOD_END",	offsetof(struct multiboot_module *, mod_end));
+	DECLARE("MBM_SIZE",	sizeof(struct multiboot_module));
 	DECLARE("LINEAR_KERNELBASE",	LINEAR_KERNEL_ADDRESS);
 	DECLARE("KERNEL_STACK_SIZE",	KERNEL_STACK_SIZE);
 

@@ -379,11 +379,21 @@ multiboot_entry:
 
 /* AI-ONLY NOTE: two ways in.  A multiboot loader (slp's 444954a, the
  * second way, kept) passes its information block in %ebx; the kernel
- * copies it and takes 0x500000 as its first free physical address.
- * OSF's boot loader, stand/AT386/boot, passes its arguments on the
- * stack, which asm_startup.h reads as DR3 did: before this note, the
- * #include below was under #if 0 and OSF's loader could not boot
- * this kernel. */
+ * copies it.  OSF's boot loader, stand/AT386/boot, passes its
+ * arguments on the stack, which asm_startup.h reads as DR3 did: before
+ * this note, the #include below was under #if 0 and OSF's loader could
+ * not boot this kernel.
+ *
+ * Either way %ebx leaves here as the first free physical address,
+ * where the page tables go: from OSF's loader, the top of what it
+ * loaded.  For multiboot it was slp's constant, 0x500000, which a
+ * large bootstrap module would have overrun.  It is now the highest
+ * end of what the loader reports and the kernel reads later -- the
+ * kernel's own end, the information block, the command line, the
+ * module list and each module -- the regions Utah's multiboot Mach
+ * keeps clear (Mach4, i386at/model_dep.c, init_alloc_aligned()).
+ * Regions below the kernel change nothing.  0x1BADB002's flags ask
+ * for no symbol table, so there is none to keep. */
 	cmpl	$0x2BADB002,PA(EXT(multiboot_magic))
 	jne	osf_startup
         movl    %ebx, %esi
@@ -392,8 +402,38 @@ multiboot_entry:
         cld
         rep
 	movsb
-	movl	$0x500000,%ebx
-	jmp	startup_done
+	movl	%esi,%edx		/ end of the information block
+	lea	PA(EXT(end)),%ebx	/ end of the kernel
+	cmpl	%edx,%ebx
+	jae	0f
+	movl	%edx,%ebx
+0:	testl	$(MULTIBOOT_CMDLINE),PA(EXT(mb_info))+MBI_FLAGS	/ flags: command line?
+	jz	2f
+	movl	PA(EXT(mb_info))+MBI_CMDLINE,%edx
+1:	cmpb	$0,(%edx)		/ to its terminating null
+	leal	1(%edx),%edx
+	jne	1b
+	cmpl	%edx,%ebx
+	jae	2f
+	movl	%edx,%ebx
+2:	testl	$(MULTIBOOT_MODS),PA(EXT(mb_info))+MBI_FLAGS	/ flags: modules?
+	jz	startup_done
+	movl	PA(EXT(mb_info))+MBI_MODS_COUNT,%ecx
+	movl	PA(EXT(mb_info))+MBI_MODS_ADDR,%esi
+	imull	$(MBM_SIZE),%ecx,%edx
+	addl	%esi,%edx		/ end of the module list
+	cmpl	%edx,%ebx
+	jae	3f
+	movl	%edx,%ebx
+3:	testl	%ecx,%ecx
+	jz	startup_done
+	movl	MBM_MOD_END(%esi),%edx	/ end of this module
+	cmpl	%edx,%ebx
+	jae	4f
+	movl	%edx,%ebx
+4:	addl	$(MBM_SIZE),%esi
+	decl	%ecx
+	jmp	3b
 osf_startup:
 
 #ifdef	SYMMETRY
