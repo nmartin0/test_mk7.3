@@ -31,15 +31,15 @@ Measured against the trees as they stand:
 
 | | state |
 |---|---|
-| OSFMK 7.3 boots | yes: OSF's bootstrap task reads `bootstrap.conf` from UFS on a vtoc-labelled IDE disk, as OSF's own did, and starts `name_server`, `default_pager` and the server, in the template's order |
-| Lites runs on it | yes, via a 1,414-line patch — but that patch lives in `dev`, not here |
+| OSFMK 7.3 boots | yes: OSF's bootstrap task reads `bootstrap.conf` from UFS on a vtoc-labelled IDE disk, as OSF's own did, and starts `name_server`, `default_pager` and the server, in the template's order; the kernel is still entered by multiboot, OSF's boot loader being milestone 1 |
+| Lites runs on it | yes, multi-user with NetBSD 1.0's userland: Utah's 1.1.u3 in this tree, each change to it in `docs/provenance/imports.md` |
 | the 4.4BSD-Lite2 personality runs | yes, standalone, in its own repository |
 | the three are one repository | **done** for two of them — the kernel at `osfmk/`, and Lites at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was |
 | one build drives all three | **done** for the kernel and Lites -- `build_world` builds the kernel, the bootstrap task, `name_server`, `default_pager` and Lites (0051, 0059), Lites with `build -here lites`, OSF's step 8; the server runs NetBSD 1.0's userland multi-user (`docs/status.md`) |
 | the two Utah traps checked for | **done** — trap 1 fires, trap 2 does not on the generic path; `docs/status.md` |
 
-Those rows were brought up to date on 14 October 2026; the
-milestones below carry their state as of that day.
+Those rows were brought up to date on 17 October 2026; the
+milestones below carry their own dates.
 
 **Lites is in the repository; its place has now been read rather than
 inferred.** OSF's MK6.1 and MK7.3 release notes build the OSF/1 server
@@ -55,7 +55,7 @@ belongs to the runtime slot in `/mach_servers`, not to a source
 directory. `docs/provenance/precedent.md`, "Where the server lives,
 and why", has the sources.
 
-**Lites builds and starts; it now runs a userland** (milestone 3).
+**Lites builds, starts and runs a userland** (milestone 3).
 `osfmk/src/lites/makefile` runs Lites' own configure build under ODE
 (`docs/provenance/precedent.md`, "How Lites meets ODE"; option A,
 reviving Lites' CMU ODE build, is held in `docs/deferred.md` §2), and
@@ -63,10 +63,10 @@ reviving Lites' CMU ODE build, is held in `docs/deferred.md` §2), and
 and for OSFMK 7.3's interfaces, each recorded in
 `docs/provenance/imports.md`; its `OSF_ENVIRONMENT` switch, brought to
 7.3, links it the way OSF linked its own servers. Started by OSF's
-bootstrap task as `startup`, it mounts its root and stops where a
-system with no userland must: there is no `mach_init` to exec. Since
-then a root built by `docs/tools/mkbootdisk.sh` from NetBSD 1.0's
-binaries supplies one (`docs/status.md`).
+bootstrap task as `startup`, it mounts its root and execs
+`/mach_servers/mach_init`, which a root built by
+`docs/tools/mkbootdisk.sh` from NetBSD 1.0's binaries links to
+`/sbin/init` (O-2; `docs/status.md`).
 
 **Trap 1 fires, and it is a constraint on Tier 1 item 2.** C-threads
 finds a thread's identity by masking its stack pointer to a fixed
@@ -95,27 +95,25 @@ the order:
 	build -here mach_kernel MACH_KERNEL_CONFIG=PRODUCTION
 	makeboot
 
-Our server builds after `mach_kernel`, linking against those four
-libraries: `build -here lites`, in this list since 13 October 2026. That answers "where do the Mach libraries live" by OSF's
+`makeboot` is PowerMac's step and is not found on AT386. Our server
+builds after `mach_kernel`, linking against those four
+libraries: `build -here lites`, in this list since 13 October 2026.
+AT386's boot loader is the MK7.3 Release Notes' last step, `build
+-here stand`; it builds on the running system only, whose binutils
+read its 16-bit code (0077), so it is not in this list. That answers
+"where do the Mach libraries live" by OSF's
 precedent rather than by preference: they stay in `osfmk7.3/` and the
 server links against them.
 
-**The existing Lites adaptation, and its overlap with Tier 1.**
-`test_mk7.3`'s `tools/lites/lites-osfmk73.patch` is 1,414 lines across
-29 files, and it is what makes Lites run on OSFMK 7.3. It is not a
-vendor change in our sense — it was applied at build time against an
-external checkout, where we carry Lites as an import.
-
-Six of its 29 files are files Tier 1 rewrites: `server/serv/user_copy.c`,
-`serv_syscalls.c`, `server_init.c`, `server_exec.c`, `xmm_interface.c`
-and `vn_pager_misc.c`. Adopting its changes there and then rewriting
-them is work done twice. The walk in `docs/provenance/verdicts.md`
-should reach those six and say so rather than discover it later.
-
-Its other 23 files are the adaptation proper — `conf/`, `include/`,
-`emulator/`, `server/kern/`, `server/libkern/` — and are Tier 0 work
-that is already done and needs only to be re-expressed as changes to
-`lites/`.
+**The existing Lites adaptation.** `test_mk7.3`'s
+`tools/lites/lites-osfmk73.patch` (1,414 lines, 29 files) made Lites
+run on OSFMK 7.3 at build time against an external checkout. It is
+history now: Utah's tarball is this tree's Lites, and each change made
+to it is recorded in `docs/provenance/imports.md` with its precedent.
+Six of the patch's files are ones Tier 1 rewrites --
+`server/serv/user_copy.c`, `serv_syscalls.c`, `server_init.c`,
+`server_exec.c`, `xmm_interface.c` and `vn_pager_misc.c` -- so changes
+there are kept to what the running system needs.
 
 **The two Utah traps, checked before anything is designed.** Both are
 greps and both change the shape of Tier 1 if they fire.
@@ -163,10 +161,12 @@ The real Lites update, to Lite2 proper, is its own work order after
 this goal: built on, and run as a child server under, this one as its
 parent.
 
-**State on 16 October 2026**, milestone by milestone: 0 mostly done
+**State on 17 October 2026**, milestone by milestone: 0 mostly done
 (two of slp's eighteen verdicts pending, both waiting on milestone 1); 1 the boot builds; 2 done; 3
 done, with S-8 watched and S-11 for the maintainer; 4 done, with
 `sendmail` deferred (S-12); 5 the system builds itself and boots.
+Open at the boundary with Tier 1: O-1, O-2 and O-4 to O-7, Lites
+against the OSF/1 server's documented behaviour (`docs/deferred.md`).
 Each milestone below ends with its own line.
 
 **0. The releases, not the copies.** Neither import is its upstream's
@@ -213,8 +213,10 @@ goes quiet (same section).
 **2. The three servers.** `bootstrap.conf` as OSF's template and
 release notes give it: `name_server`, `default_pager` on partition b,
 `startup` -- Lites -- with the root, partition a. `name_server` builds.
-No `mach_init`: OSF's bootstrap task and `name_server` provide what it
-did. *State:* done; `build_world` builds all three (0051, 0059), and
+No `mach_init` server: OSF's bootstrap task and `name_server` provide
+what it did. (Lites still execs `/mach_servers/mach_init`, which is
+`/sbin/init` here: O-2, milestone 3.) *State:* done; `build_world`
+builds all three (0051, 0059), and
 `mkbootdisk.sh` writes the template's `bootstrap.conf`.
 
 **3. Lites, multi-user.** Lites 1.1.u3 configured `STD+WS+osfmach3`,

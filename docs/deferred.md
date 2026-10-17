@@ -1147,6 +1147,13 @@ Lites toward the OSF/1 server.
      Lites -- already works (above), so the first step toward it is
      measured, not assumed.
 
+**What happened, 17 October 2026.** Self-hosting came first after all:
+the maintainer took the roadmap's milestones in order, and milestone 5
+is reached (`docs/status.md`, "Hosting itself"). The O-items in step 2
+are still open -- O-1, O-2 and O-4 to O-6 -- and O-7 waits on OSF's
+boot loader, milestone 1, which is next. They belong to the boundary
+between the intermediate goal and Tier 1, and are taken there.
+
 ## 2a. Tooling defects, to fix in a later patch
 
 Found while auditing `nmartin0/test_mk7.3` `dev`'s build scripts.  The
