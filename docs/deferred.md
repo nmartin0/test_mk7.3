@@ -557,6 +557,8 @@ loader and a running system, none of them in the boot:
   binutils 2.7 begins it at 0x100000, file offset 0x1000. So OSF's
   loader boots the kernel the running system builds, with OSF's
   toolchain, and the Linux host's kernel keeps the multiboot entry.
+  (Since 0083 the host's kernel links as binutils 2.7's does and OSF's
+  loader boots it too: "A kernel linked on the Linux host", below.)
 
 Measured: everything built on the running system -- boot, kernel,
 bootstrap task, `name_server`, `default_pager`, Lites -- boots from
@@ -631,6 +633,47 @@ information block, the command line, the module list and each module
 layouts to its assembler. Measured under QEMU: the page directory at
 `0x20c000`, just past the 183,252-byte bootstrap module, where it was
 at `0x500000`; multi-user boot.
+
+### A kernel linked on the Linux host, by OSF's loader
+
+Why GNU ld 2.42 puts the kernel's headers a page low is in its own
+source. `bfd/elf.c` (`_bfd_elf_map_sections_to_segments`) loads the
+ELF and program headers in the first PT_LOAD segment when the link
+script says it wants them -- any use of `SIZEOF_HEADERS` sets
+`load_phdrs` -- and, "to deal with -Ttext or something similar such
+that the first section is not adjacent to the program headers", puts
+them in the page below the first section. The default script opens
+with `. = SEGMENT_START("text-segment", 0x08048000) + SIZEOF_HEADERS`,
+so with the kernel's `-Ttext 0x100000` the headers go to 0xff000 and
+the segment starts there. A script without `SIZEOF_HEADERS` leaves
+`load_phdrs` clear, and ld falls back to the rule it keeps "for
+compatibility with old scripts": headers in the segment only when the
+first section's offset in its page leaves room for them. That is what
+binutils 2.7 does on the running system: its kernel at 0x100000 has
+no headers loaded (file offset 0x1000), its emulator at 0xa0001020
+none, and its `default_pager`, whose text follows the headers from
+0x08048000, has them.
+
+So `mksandbox.sh` writes ld's own default `elf_i386` script, `-z
+noseparate-code` variant, from `ld --verbose`, with only `+
+SIZEOF_HEADERS` taken out, into `MK_BUILD` (its notice permits copying
+with or without modification), and passes it as `-T` in `LDOPTS`, the
+kernel link's hook (`conf/AT386/template.mk`, `LDFLAGS+=${LDOPTS}`),
+which Lites' `ld` also takes. Programs linked through `osf.prog.mk`
+keep the default script, as they kept binutils 2.7's. Not taken: the
+same script in `LDARGS`, which reaches every link and would drop the
+headers from `bootstrap`, `default_pager` and `name_server`, where
+binutils 2.7 loads them; and changing OSF's `load_elf()` to honour
+`p_vaddr`, a vendor change where configuration serves.
+
+Measured: the kernel's segments at 0x100000 (file offset 0x1000) and
+0x1a8000, entry 0x100128, `etext`, `edata` and `end` where they were;
+the Lites server at 0x08048000 and the emulator at 0xa0001000, both
+file offset 0x1000; `bootstrap`, `default_pager` and `name_server`
+unchanged in shape, headers loaded at 0x08048000. The whole set built
+on the host -- kernel, bootstrap task, `name_server`, `default_pager`,
+Lites -- boots multi-user from OSF's primary (`BIOS=1`) and by
+multiboot, and passes the compile-and-install loop both ways.
 
 ### One locore.s for two assemblers
 

@@ -133,9 +133,10 @@ it (section 2.5.3; the sizes are one build's):
 
 then the bootstrap task, the three servers and NetBSD's `/etc/rc`, to
 `login:`, and the compile-and-install loop runs clean. What it took is
-in `docs/deferred.md`, "Booting with OSF's own boot loader". A kernel
-linked on the Linux host is loaded 4 KB off by OSF's loader, and boots
-by multiboot, below, as before.
+in `docs/deferred.md`, "Booting with OSF's own boot loader". The set
+built on the Linux host boots the same way, and passes the same loop,
+since its kernel links as binutils 2.7's does (0083; `docs/deferred.md`,
+"A kernel linked on the Linux host, by OSF's loader").
 
 **By multiboot**, the second way in:
 
