@@ -166,9 +166,10 @@ OSF's boot loader booting what the running system builds; 2 done; 3
 done, with S-11 for the maintainer (S-8 closed, 18 October); 4 done, with
 `sendmail` deferred (S-12); 5 done, the system rebuilding itself
 identically but for three build stamps.
-Open at the boundary with Tier 1: O-1, O-2 and O-4 to O-6, Lites
-against the OSF/1 server's documented behaviour (`docs/deferred.md`);
-O-7, `-s` at the boot prompt, is fixed.
+Open at the boundary with Tier 1: O-2, O-5 and O-6, Lites against
+the OSF/1 server's documented behaviour (`docs/deferred.md`); O-7,
+`-s` at the boot prompt, and O-1 and O-4, OSF's own `startup` lines,
+are fixed.
 Each milestone below ends with its own line. The system at this point
 is kept as the `restored` branch, a checkpoint not committed to again
 (`docs/restored.md`).

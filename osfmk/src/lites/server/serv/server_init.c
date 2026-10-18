@@ -300,6 +300,20 @@ void init_ports()
 
 char default_root[] = "hd0a"; /* XXX */
 
+/*
+ * AI-ONLY NOTE: added, with the uses below.  The kernel's boot
+ * device, the first word of its host_get_boot_info reply ("hd0a"
+ * from i386/AT386/model_dep.c's machine_boot_info()), set by
+ * get_config_info() before parse_arguments() runs; empty when the
+ * kernel did not say.  A startup line with no root means this
+ * device: MK7.3 Release Notes, bug 2271, call the OSF/1 server's
+ * other choice "the wrong default root device", the right one being
+ * the boot partition.  It also names OSF's /dev/boot_device/.
+ * Utah's default_root stays the last resort.  docs/deferred.md, O-1
+ * and O-4.
+ */
+char boot_device_name[32];
+
 void parse_arguments(
 	int	argc,
 	char	**argv)
@@ -310,6 +324,7 @@ void parse_arguments(
 	char		*pname;
 	char   rootdev_name[50];
 	char   *rootname = (char *)NULL;
+	char   *pslash;	/* AI-ONLY NOTE: pname's last '/'; O-1 */
 
 
 	/*
@@ -324,11 +339,18 @@ void parse_arguments(
 
 	/*
 	 * Arg 1 should be flags
+	 *
+	 * AI-ONLY NOTE: a line with no arguments -- OSF's template
+	 * line, "startup startup" -- is parsed through, for the default
+	 * root and the server directory below, rather than returning with
+	 * neither; and the loop stops at the end of the arguments, so
+	 * that flags alone ("startup startup -s") no longer run past it.
+	 * docs/deferred.md, O-1.
 	 */
-	if (argc == 0)
+	if (argc < 0)
 	    return;
 
-	while (argv[0][0] == '-') {
+	while (argc > 0 && argv[0][0] == '-') {
 	    register char *cp = argv[0];
 	    register char c;
 
@@ -434,10 +456,49 @@ void parse_arguments(
 	 * Arg 3 (now 1) should be server_dir_name (3.0 style)
 	 */
 
+	/*
+	 * AI-ONLY NOTE: with no root given, the kernel's boot device
+	 * before Utah's default_root.  docs/deferred.md, O-4.
+	 */
 	if (! rootname)
-	  rootname = argc ? argv[0] : default_root;
+	  rootname = argc ? argv[0]
+			  : (boot_device_name[0] ? boot_device_name
+						 : default_root);
 
-	if (argc < 2) {
+	/*
+	 * AI-ONLY NOTE: added.  OSF's bootstrap task names the server by
+	 * its path in the bootstrap's own name space,
+	 * "/dev/boot_device/mach_servers/startup" (bootstrap/bootstrap.c,
+	 * parse_path()), which already says where the servers are: its
+	 * directory is the server directory, with OSF's boot_device
+	 * alias given the boot device's own name.  Utah's derivation
+	 * below put the root's name in front of that path,
+	 * "/dev/hd0a/dev/boot_device/mach_servers".  It stays for a CMU
+	 * path.  docs/deferred.md, O-1.
+	 */
+	pslash = pname + strlen(pname);
+	while (pslash > pname && *--pslash != '/')
+		;
+	if (argc < 2 && bcmp(pname, dev_prefix, strlen(dev_prefix)) == 0
+	    && pslash > pname + strlen(dev_prefix)
+	    && strlen(pname) + strlen(boot_device_name) < sizeof(server_dir)) {
+		char *dev = pname + strlen(dev_prefix);
+		char *slash = pslash;
+		int len;
+		static char alias[] = "boot_device/";
+
+		strcpy(server_dir, dev_prefix);
+		if (boot_device_name[0]
+		    && bcmp(dev, alias, sizeof(alias) - 1) == 0) {
+			strcat(server_dir, boot_device_name);
+			dev += sizeof(alias) - 2;	/* at the '/' */
+		}
+		len = strlen(server_dir);
+		bcopy(dev, server_dir + len, slash - dev);
+		server_dir[len + (slash - dev)] = '\0';
+		dprintf("(lites): server_dir(%s) from the server's path\r\n",
+			server_dir);
+	} else if (argc < 2) {
 		strcpy(server_dir, dev_prefix);
 		strcat(server_dir, rootname);
 		if (*pname == '/') {
@@ -722,10 +783,10 @@ void get_config_info(
 	 * below that fetches the boot info was never reached and the
 	 * flags were lost.  Here the reply's flag words, those beginning
 	 * with '-', go ahead of bootstrap.conf's own flags; its root
-	 * name and server directory still decide those two.  The root
-	 * device in the reply is not used.  Only when bootstrap.conf gives
-	 * the server an argument: with none, Utah's parse_arguments()
-	 * returns before reading flags, and that is left as it was.
+	 * name and server directory still decide those two.  The reply's
+	 * first word, the boot device, is kept in boot_device_name, the
+	 * root when bootstrap.conf names none (O-4), unless the kernel
+	 * could only say "boot_device".
 	 * docs/deferred.md, O-7.
 	 */
 	if (argc) {
@@ -734,7 +795,7 @@ void get_config_info(
 		int i;
 		char *cp;
 
-		if (argc < 2 || argc >= 32) {
+		if (argc >= 32) {
 			parse_arguments(argc, argv);
 			return;
 		}
@@ -758,6 +819,10 @@ void get_config_info(
 				cp++;
 			if (*cp != '\0')
 				*cp++ = '\0';
+			if (word == kernel_boot_info && word[0] != '-'
+			    && strcmp(word, "boot_device") != 0
+			    && strlen(word) < sizeof(boot_device_name))
+				strcpy(boot_device_name, word);
 			if (word[0] == '-' && word[1] != '\0'
 			    && merged_argc + argc < 32) {
 				dprintf("(lites) boot flag from the kernel: %s\n",

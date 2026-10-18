@@ -39,6 +39,10 @@
 # bootstrap.template says it may ("the default_pager can taking a
 # paging device name"); without one it has no paging space at all.
 # PAGING_DEV=<name> names another, for a disk that is not hd0.
+# startup's line is bootstrap.template's, "startup startup": Lites
+# takes its root from the kernel's boot device and its server
+# directory from its own path (docs/deferred.md, O-1, O-4).  The
+# emulator, Lites' file and not a server, gets no line.
 #
 # BOOTSTRAP_CONF=<file> uses that file as bootstrap.conf instead.
 # ROOT_TREE=<dir> puts the tree in <dir> on the file system first --
@@ -114,7 +118,9 @@ if [ -n "${BOOTSTRAP_CONF:-}" ]; then
 else
 	for f in "$@"; do
 		n=$(basename "$f")
-		if [ "$n" = default_pager ]; then
+		if [ "$n" = emulator ]; then
+			continue
+		elif [ "$n" = default_pager ]; then
 			printf '%s %s %s\n' "$n" "$n" "${PAGING_DEV:-hd0b}"
 		else
 			printf '%s %s\n' "$n" "$n"

@@ -224,29 +224,29 @@ nodes, the console getty on. Lites' device numbers are NetBSD's, so
 NetBSD's nodes are right as made: `wd0a` is Lites' `hd0a`. The disk:
 
 	sh docs/tools/mklitesroot.sh root <sets>	# as root
-	ROOT_TREE=root ROOT_MB=40 PAGING_MB=64 BOOTSTRAP_CONF=bootstrap.conf \
+	ROOT_TREE=root ROOT_MB=40 PAGING_MB=64 \
 	    sh docs/tools/mkbootdisk.sh disk.img default_pager startup emulator
 
-with `startup` and `emulator` the files `build -here lites` makes,
-and `bootstrap.conf`
+with `startup` and `emulator` the files `build -here lites` makes.
+`mkbootdisk.sh` writes `bootstrap.conf` as OSF's template has it,
+the emulator, not a server, getting no line:
 
 	default_pager default_pager hd0b
-	startup startup hd0a /dev/hd0a/mach_servers
+	startup startup
 
-(`startup startup -s hd0a ...` for single-user on every boot; for
-one boot, `-s` after the kernel's name at OSF's `boot:` prompt,
-`/mach_kernel -s /mach_servers/bootstrap`, O-7). `hd0b`, partition b,
-is the paging space, as the Release Notes' example gives it
-(`def_pager /mach_servers/default_pager sd0b`); without it there is
-none (S-2). The last argument
-is the server directory, which `parse_arguments()` in
-`server/serv/server_init.c` takes as "server_dir_name (3.0 style)".
-CMU's bootstrap passed it; OSF's passes only what `bootstrap.conf`
-gives, after `argv[0]`, `/dev/boot_device/mach_servers/startup`, from
-which Lites cannot derive it, and the first program is not found
-(`xc002`). The same vector is the one Lites' own `OSFMACH3` code
-hard-codes for OSF's microkernel (`docs/provenance/precedent.md`,
-"How Lites gets its arguments from OSF's bootstrap").
+`hd0b`, partition b, is the paging space, as the Release Notes'
+example gives it (`def_pager /mach_servers/default_pager sd0b`);
+without it there is none (S-2). Since 0106 the bare `startup` line is
+enough: Lites takes its root from the kernel's boot device and its
+server directory from its own path, `/dev/boot_device/mach_servers/startup`
+(O-1, O-4). Before, it needed both spelled out, `startup startup hd0a
+/dev/hd0a/mach_servers`, the vector Lites' own `OSFMACH3` code
+hard-codes (`docs/provenance/precedent.md`, "How Lites gets its
+arguments from OSF's bootstrap"); that line, a root alone, and
+`BOOTSTRAP_CONF=<file>` for any other all still work. Single-user:
+`-s` on the line (`startup startup -s`) for every boot, or `-s` after
+the kernel's name at OSF's `boot:` prompt,
+`/mach_kernel -s /mach_servers/bootstrap`, for one (O-7).
 
 `/sbin/init` runs as pid 1, the first program, as OSF's design has it
 on this bootstrap: "The OSF/1 server runs /sbin/init. There is no
@@ -314,7 +314,7 @@ Put first in `bootstrap.conf`, as OSF's
 
 	name_server name_server
 	default_pager default_pager hd0b
-	startup startup hd0a /dev/hd0a/mach_servers
+	startup startup
 
 the screen shows "(name_server): started" before "(default_pager):
 started", and Lites boots to `login:` as before.

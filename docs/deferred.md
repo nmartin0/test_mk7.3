@@ -1333,13 +1333,29 @@ describe. Sources: MK7.3 Release Notes §2.4.2.1 and §2.5.3,
 §5.1 (`docs/provenance/precedent.md`, "What runs first" and "How
 Lites gets its arguments from OSF's bootstrap").
 
-- **O-1. OSF's `startup` lines do not work as written.**
-  `startup startup`, `startup: /dev/boot_device/mach_servers/startup
-  -s -a fd0b` and `-k startup /mach_servers/osf1_server.INK sd0a` give
-  only flags and a root; Lites also needs its 3.0-style server
-  directory, so this project's line is
-  `startup startup -s hd0a /dev/hd0a/mach_servers`. **Work**: the
-  server finds `/mach_servers` from OSF's arguments alone.
+- **O-1. OSF's `startup` lines did not work as written. Fixed, 18
+  October 2026.** `startup startup`, `startup:
+  /dev/boot_device/mach_servers/startup -s -a fd0b` and `-k startup
+  /mach_servers/osf1_server.INK sd0a` give only flags and a root;
+  Lites also wanted its 3.0-style server directory, so this project's
+  line was `startup startup hd0a /dev/hd0a/mach_servers`. With a root
+  alone Lites put the root's name in front of its own path,
+  `/dev/hd0a/dev/boot_device/mach_servers`; with nothing it returned
+  before reading anything, and with flags alone it read past the end
+  of its arguments. Now, in `server/serv/server_init.c`, the server
+  directory with none given is the directory of the server's own
+  path, which OSF's bootstrap task already gives as
+  `/dev/boot_device/mach_servers/startup`, its `boot_device` alias
+  named as the kernel's boot device; a bare line is parsed through;
+  and the flag loop stops at the end of the arguments (`imports.md`,
+  C). `mkbootdisk.sh` writes the template's line, `startup startup`,
+  and gives the emulator, not a server, no line. Measured from OSF's
+  primary, each to a multi-user login: `startup startup` and `startup
+  startup hd0a` ("(lites): server_dir(/dev/hd0a/mach_servers) from
+  the server's path"), and the old full line, unchanged; `startup
+  startup -s`, and `-s` at `boot:` with the bare line, to the
+  single-user shell; the bare line passes the compile-and-install
+  loop.
 - **O-2. An OSF-installed root has no `/mach_servers/mach_init`.** The
   OSF/1 server runs `/sbin/init`; Lites runs `<server_dir>/mach_init`
   and panics without it, so this project keeps Lites' link to
@@ -1347,11 +1363,19 @@ Lites gets its arguments from OSF's bootstrap").
 - **O-3. Lites needs `/mach_servers/emulator`.** OSF/1 MK has no
   emulator; this closes with Tier 1 item 2 and is listed only so that
   `/mach_servers`' contents are on record.
-- **O-4. No root argument means `hd0a`.** The OSF/1 server falls back
-  to a default root (Release Notes bug 2271 is about it choosing
-  wrongly); Lites hard-codes `default_root[] = "hd0a"; /* XXX */`, and
-  its `OSFMACH3` boot-info branch prints "Boot info IGNORED".
-  **Work**: take the root from the kernel's boot information.
+- **O-4. No root argument meant `hd0a`. Fixed, 18 October 2026.**
+  The OSF/1 server falls back to a default root, and Release Notes
+  bug 2271 calls its choice "the wrong default root device" when it
+  is not the boot partition; Lites hard-coded `default_root[] =
+  "hd0a"; /* XXX */`. Now the root with none given is the kernel's boot
+  device, the first word of the `host_get_boot_info` reply O-7's change
+  already fetches, kept as `boot_device_name`; Utah's `hd0a` remains
+  for a kernel that cannot name it. On this disk the boot device is `hd0a` either
+  way; the measurement that the reply's name is used is the server
+  directory O-1 builds from it, `/dev/hd0a/mach_servers` out of
+  `/dev/boot_device/...`. Lites' branch for no arguments at all, the
+  kernel starting it as the first task, still prints "Boot info
+  IGNORED" as Utah left it; OSF's bootstrap task never takes it.
 - **O-5. `-a` reads differently.** OSF: `root device: [fd0b]`, with a
   default. Lites: `[lites root device]? `, without one. Text the
   Release Notes show.
@@ -1397,10 +1421,10 @@ Lites gets its arguments from OSF's bootstrap").
   decision in §1, "NetBSD 1.0's binaries as the userland,
   provisionally", recorded so it is visible.
 
-Choices already made at this boundary: the `bootstrap.conf` line is
-Lites' form (O-1); the `mach_init` link is Lites' (O-2); 0041, the
-pid-2 hack off under `OSFMACH3`, is the one change so far that moves
-Lites toward the OSF/1 server.
+Choices already made at this boundary: the `mach_init` link is Lites'
+(O-2); 0041, the pid-2 hack off under `OSFMACH3`, moved Lites toward
+the OSF/1 server, and since 18 October so do 0104 (O-7) and 0106 (O-1,
+O-4), after which the `bootstrap.conf` line is OSF's template's.
 
 ### Order of work, and when to self-host
 
@@ -1439,8 +1463,8 @@ Lites toward the OSF/1 server.
 **What happened, 17 October 2026.** Self-hosting came first after all:
 the maintainer took the roadmap's milestones in order, and milestone 5
 is reached (`docs/status.md`, "Hosting itself"). The O-items in step 2
-are still open -- O-1, O-2 and O-4 to O-6; O-7, checked once OSF's
-boot loader ran (milestone 1, 0079), is fixed. They belong to the boundary
+are still open -- O-2, O-5 and O-6; O-7, checked once OSF's boot
+loader ran (milestone 1, 0079), is fixed, and O-1 and O-4 with it. They belong to the boundary
 between the intermediate goal and Tier 1, and are taken there.
 
 ## 2a. Tooling defects, to fix in a later patch
