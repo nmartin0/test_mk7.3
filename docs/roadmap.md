@@ -163,7 +163,7 @@ parent.
 
 **State on 17 October 2026**, milestone by milestone: 0 done; 1 done,
 OSF's boot loader booting what the running system builds; 2 done; 3
-done, with S-8 watched and S-11 for the maintainer; 4 done, with
+done, with S-11 for the maintainer (S-8 closed, 18 October); 4 done, with
 `sendmail` deferred (S-12); 5 done, the system rebuilding itself
 identically but for three build stamps.
 Open at the boundary with Tier 1: O-1, O-2 and O-4 to O-6, Lites
@@ -234,7 +234,7 @@ change most later. `/mach_servers/mach_init` is a symbolic link to
 already running. *State:* done. `/etc/rc` runs to a multi-user
 login with NetBSD 1.0's daemons; programs fault, catch and return as
 on NetBSD (S-3, S-4, S-5, S-7, 0053-0062); `cc` builds and runs
-programs. Open: S-8 (likely S-13, fixed in 0067; watched) and S-11,
+programs. Open: S-11,
 Utah's `signal_send_running`, for the maintainer.
 
 **4. Online.** The kernel's own `ne` driver, already in the PRODUCTION
@@ -270,7 +270,8 @@ October: booted from OSF's primary with nothing running that it had
 not built, the system built itself again, and 589 of 592 object files
 came out identical; the other three carry the build's date and time
 (`docs/status.md`, "Rebuilding itself"). After this, as the milestone
-says, a later GCC.
+says, a later GCC -- deferred by the maintainer, 18 October 2026, for
+S-8 and the O-items first.
 
 The kernel configuration stays PRODUCTION, OSF's documented default;
 FAST, with the debugger, is for debugging only.

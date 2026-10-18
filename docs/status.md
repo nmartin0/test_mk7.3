@@ -286,9 +286,9 @@ boot (S-1, fixed). Not yet stable: `default_pager` has no paging
 space unless given `hd0b` (S-2, now `mkbootdisk.sh`'s default); every
 bad access gets NetBSD 1.0's signal and a handler runs (S-3, S-7
 and S-4, fixed in 0053 and 0060); a shell
-dropped the rest of its line after a pipeline (S-8; seen again after
-0054 fixed S-9, a server stall, and likely S-13, the server's
-kernel-thread limit, fixed in 0067); the server died writing back
+dropped the rest of its line after a pipeline (S-8, closed 18
+October as two server stalls: S-9, fixed in 0054, and S-13, the
+server's kernel-thread limit, fixed in 0067); the server died writing back
 a page of a mapped file (S-14, fixed in 0069); `timed` died in the emulator's
 `adjtime` (S-5, fixed in 0058); a caught signal does not reach a
 process that makes no system calls, as Utah left it (S-11); NetBSD

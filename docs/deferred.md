@@ -1021,7 +1021,9 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   0062. Not for Linux binaries: the emulator's own exception port for
   them (`emulator/i386/e_exception.c`) still forwards with
   `exception_raise` and CMU's arguments.
-- **S-8. A shell sometimes stops after a pipeline.** `cat /etc/* |
+- **S-8. A shell sometimes stopped after a pipeline. Closed, 18
+  October 2026, as S-9 and S-13:** not seen in 18,900 pipelines since
+  both were fixed (measured below). `cat /etc/* |
   sort | wc -l` prints its count and the shell, NetBSD 1.0's `sh`,
   neither prints a prompt nor runs what follows on the same line --
   `; echo DONE`, the rest of a `while` loop -- in about half the runs.
@@ -1043,6 +1045,23 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   finished, and nothing typed after it ran; one boot in seven of that
   sequence, none in 75 iterations of it from `sh`, and the run had no
   gdb stub. Every boot since runs with one. Watched, not closed.
+
+  **Measured, 18 October 2026, with `dev3` after 0104**, booted from
+  OSF's primary, PRODUCTION, three machines at a time under QEMU on a
+  two-CPU host. Each logged in as root and typed, at `csh`, `cat
+  /etc/* | sort | wc -l; echo CSHOK` -- the 14 October shape, a csh
+  command line just after login -- then, at `sh`, a one-line `while`
+  loop of the pipeline with `cc` compiling in a loop in the
+  background. Three boots of 300 iterations against one compile loop
+  of 60, then nine boots of 2,000 iterations against three such loops
+  run back to back: 18,900 pipelines, every one finished, and the
+  nine longer boots' csh lines printed CSHOK and each machine answered
+  `echo ALIVE` after its loop. The two causes
+  found are both fixed: S-9's stall (0054), which gdb saw as the
+  shell asleep on "ttyin" with "typing a further command runs it",
+  and S-13's (0067), whose shell "echoed and never ran" -- the 14
+  October `csh` sighting is from the day before 0067. Reopen if seen,
+  with the server's thread state from gdb: every boot has the stub.
 - **S-9. The whole system could stop, idle, with work queued.**
   Fixed in 0054. Seen first with the `ne` card (below), then at
   random: `csh` never printing its prompt after `tset`, other
@@ -1166,6 +1185,7 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   under `USEACTIVATIONS`. Likely S-8's cause as well -- "typing a
   further command runs it" is a message arriving and a receiver
   returning -- and S-8 stays watched until runs without it say so.
+  They have: S-8 closed, 18 October 2026.
 - **S-14. The server died writing a mapped file back.** Fixed in
   0069. A compile and copy loop on the running system --
   `cc -o h hello.c && cp /usr/libexec/ftpd /tmp/f && install -c -s
@@ -1388,7 +1408,7 @@ Lites toward the OSF/1 server.
 
 1. **Stability first** -- S-2 (configuration) and S-1 (the disk tool),
    both done; S-3 and S-7, done in 0053; S-4, 0060; S-5, 0058; S-8
-   (the shell; watched, seen once more on 14 October). Everything after is tested on top of these;
+   (the shell; closed 18 October, as S-9 and S-13). Everything after is tested on top of these;
    a server that dies on a write makes every later result doubtful.
 2. **Then the boundary items that are configuration or small**: O-8
    with S-2 (done), O-9 (builds and runs; in `build_world` since 0051), then O-1, O-2, O-4, O-5 and
