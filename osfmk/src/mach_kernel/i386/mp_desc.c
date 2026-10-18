@@ -113,8 +113,16 @@ vm_offset_t	int_stack_high;
 /*
  * First cpu`s interrupt stack.
  */
-char		intstack[];	/* bottom */
-char		eintstack[];	/* top */
+/*
+ * AI-ONLY NOTE: extern, which OSF's declarations lacked.  The two
+ * symbols are defined in i386/start.s; written without extern, an
+ * array of no size is a tentative definition, and GCC 13 stops on
+ * "array assumed to have one element" (a warning no -W option
+ * controls, made an error by -Werror).  i386/db_trace.c declares
+ * intstack the same way.  NCPUS > 1 only.
+ */
+extern char	intstack[];	/* bottom */
+extern char	eintstack[];	/* top */
 
 /*
  * We allocate interrupt stacks from physical memory.

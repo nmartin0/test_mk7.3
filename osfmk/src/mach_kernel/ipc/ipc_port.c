@@ -1627,7 +1627,15 @@ ipc_port_print(
 		iprintf("timestamp=0x%x", port->ip_timestamp);
 	} else if (port->ip_receiver_name == MACH_PORT_NULL) {
 		iprintf("destination=0x%x (", port->ip_destination);
-		if (port->ip_destination != MACH_PORT_NULL &&
+		/*
+		 * AI-ONLY NOTE: IP_NULL, where OSF wrote MACH_PORT_NULL.
+		 * ip_destination is an ipc_port_t, a pointer; MACH_PORT_NULL
+		 * is a port name, an integer, and GCC 13 stops on the
+		 * comparison (-Werror=pointer-compare).  The same value, as
+		 * b88f799 gave the other eleven such sites; this one is
+		 * MACH_KDB code, compiled only in FAST and DEBUG kernels.
+		 */
+		if (port->ip_destination != IP_NULL &&
 		    (task = db_task_from_space(port->ip_destination->
 					       ip_receiver, &task_id)))
 			printf("task%d at 0x%x", task_id, task);

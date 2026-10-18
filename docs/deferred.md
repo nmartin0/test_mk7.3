@@ -573,9 +573,10 @@ stores it, after the `master_is_up` test sends the rest to
 `slave_start`. Two lines of that `NCPUS > 1` path, `movb $1,%eax` in
 `start.s` and `movb %edx,wncpu` in `asm_startup.h`, are spelt `%al` and
 `%dl` for GNU as 2.42, as `testb` was. With them `locore.o` assembles
-for FAST+MP; the rest of FAST+MP does not yet build on the Linux host
-(`ipc_port.c`'s debugger code, under today's `-Werror`), which is
-multiprocessor work for later. Measured on the running system (17
+for FAST+MP; the rest of FAST+MP did not yet build on the Linux host
+(`ipc_port.c`'s debugger code, under today's `-Werror`). Since 0095 it
+does, and since 0096 it boots on two CPUs: "The multiprocessor kernel
+on the host", below. Measured on the running system (17
 October 2026): its binutils 2.7 assembles `movb $1,%eax` and `movb
 $1,%al` alike, `b0 01`, and `movb %edx,wncpu` and `movb %dl,wncpu`
 alike.
