@@ -212,8 +212,8 @@ each IDE interrupt seconds late and the same boot takes many minutes —
 there is none in this environment. Two driver messages appear,
 "hdintr: interrupt w/controller not done." and "HD: false interrupt":
 the polled commands' own interrupts, S-6, explained in
-`docs/deferred.md`, "`hd.c`: a race, not the disk's size" (0084);
-`dev`'s `052a105` would mask them, and is not taken.
+`docs/deferred.md`, "`hd.c`: a race, not the disk's size" (0084).
+Gone since 0098, which masks them as `dev`'s `052a105` did.
 
 **Lites runs NetBSD 1.0's userland, multi-user.** The root is NetBSD
 1.0's i386 `base` and `etc` sets, set up as Lites' own install notes

@@ -201,7 +201,8 @@ multiboot entry slp added stays, as a second way in (maintainer,
 12 October 2026), and `docs/tools/boot.sh` keeps it as an option. The
 `hd.c` changes made for a boot without a BIOS (`dev`'s `052a105`,
 slp's `7e81018`) are tested again under a BIOS boot before any is
-adopted: `7e81018` adopted reworked, `052a105` not taken (0079, 0084). *State:* done, 17 October 2026. OSF's boot, carried onto
+adopted: `7e81018` adopted reworked (0079), `052a105` adopted reworked
+(0098). *State:* done, 17 October 2026. OSF's boot, carried onto
 DR3's text with OSF's own 1995 changes for an MK without the OSF/1
 server (0077), is built on the running system; `mkbootdisk.sh` installs
 it and `boot.sh BIOS=1` boots it (0079); the kernel takes OSF's

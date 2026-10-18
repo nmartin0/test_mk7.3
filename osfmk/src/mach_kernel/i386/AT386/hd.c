@@ -417,12 +417,31 @@ hdprobe(
 	if (ctrl_p = hd_ctrl[ctrl])
 		return(1);
 
+	/*
+	 * AI-ONLY NOTE: nIEN, bit 1 of the device control register, set
+	 * around each of the driver's three polled commands -- this
+	 * RESTORE, IDENTIFY in hd_read_id() and SETPARAMETERS in
+	 * set_controller() -- so that the drive raises no interrupt for
+	 * them.  Polling clears the drive's INTRQ, but IRQ 14 is edge
+	 * triggered and the PIC has latched it: the interrupt reached
+	 * hdintr() later, at an idle controller ("HD: false interrupt")
+	 * or in the middle of the first read ("interrupt w/controller
+	 * not done"), S-6 in docs/deferred.md.  nIEN is the ATA way to
+	 * issue a polled command from an interrupt-driven driver; the
+	 * driver writes this register already, 4 for SRST and 0 after.
+	 * dev's 052a105 set it for the last two; the probe's RESTORE
+	 * is polled the same way.
+	 */
+	outb(FIXED_DISK_REG(ctrl), 2);			/* nIEN */
 	outb(PORT_DRIVE_HEADREGISTER(addr),0);
 	outb(PORT_COMMAND(addr),CMD_RESTORE);
-	if (inb(PORT_STATUS(addr))&(STAT_ECC|STAT_WRITEFAULT|STAT_ERROR))
+	if (inb(PORT_STATUS(addr))&(STAT_ECC|STAT_WRITEFAULT|STAT_ERROR)) {
+		outb(FIXED_DISK_REG(ctrl), 0);
 		return(0);
+	}
 	for (i=200; i && inb(PORT_STATUS(addr))&STAT_BUSY; i--)
 	  	delay(10000);
+	outb(FIXED_DISK_REG(ctrl), 0);
 	if (i && (inb(PORT_STATUS(addr))&(STAT_READY|STAT_ERROR)) == STAT_READY) {
 		ctrl_p = (hd_ctrl_t) kalloc(sizeof(struct hd_ctrl));
 		if (!ctrl_p) {
@@ -1152,9 +1171,11 @@ set_controller(
 	outb(PORT_DRIVE_HEADREGISTER(addr),
 	     (hd_drive[unit]->label.d_ntracks - 1) |
 	     ((unit&1) << 4) | FIXEDBITS);
+	outb(FIXED_DISK_REG(ctrl), 2);	/* nIEN: AI-ONLY NOTE, hdprobe() */
 	outb(PORT_NSECTOR(addr), hd_drive[unit]->label.d_nsectors);
 	outb(PORT_COMMAND(addr), CMD_SETPARAMETERS);
 	waitcontroller(ctrl);
+	outb(FIXED_DISK_REG(ctrl), 0);
 }
 
 void
@@ -1380,19 +1401,22 @@ void hd_read_id (
 	waitcontroller(ctrl);
 	/*
 	 * AI-ONLY NOTE: 0, where DR3 set 1.  No restore is issued here:
-	 * the command below is IDENTIFY, polled, and its interrupt reaches
+	 * the command below is IDENTIFY, polled, and its interrupt reached
 	 * hdintr() with the controller idle ("HD: false interrupt"),
-	 * which leaves the flag set.  hdstart() then issues the polled
-	 * CMD_SETPARAMETERS, whose interrupt is still pending when the
-	 * first read is issued.  If that interrupt is taken first, it
-	 * clears the flag and the read completes.  If the read completes
-	 * first, the drive raises the same edge-triggered line and the
-	 * PIC delivers one interrupt for both; hdintr() takes it for a
-	 * finished restore and issues the read again, which a drive with
-	 * DRQ set ignores, and no interrupt follows.  Under QEMU, whose
+	 * which left the flag set.  hdstart() then issued the polled
+	 * CMD_SETPARAMETERS, whose interrupt was still pending when the
+	 * first read was issued.  If that interrupt was taken first, it
+	 * cleared the flag and the read completed.  If the read completed
+	 * first, the drive raised the same edge-triggered line and the
+	 * PIC delivered one interrupt for both; hdintr() took it for a
+	 * finished restore and issued the read again, which a drive with
+	 * DRQ set ignores, and no interrupt followed.  Under QEMU, whose
 	 * reads finish on another thread, each order happened on each of
 	 * a 165 MB and a 465 MB disk: the hang depends on timing, not on
-	 * the disk.  The recalibration after an error, in hderror(), sets
+	 * the disk.  Since the polled commands raise no interrupt (nIEN,
+	 * hdprobe()), there is no interrupt for the flag to consume, and
+	 * set it would take the first read for a restore every time.
+	 * The recalibration after an error, in hderror(), sets
 	 * the flag and issues CMD_RESTORE, and is DR3's as written; slp's
 	 * 7e81018 had turned both off.  docs/provenance/verdicts.md,
 	 * 7e81018.
@@ -1404,9 +1428,11 @@ void hd_read_id (
 	outb(PORT_CYLINDERLOWBYTE(addr), 0);
 	outb(PORT_CYLINDERHIBYTE(addr), 0);
 	outb(PORT_DRIVE_HEADREGISTER(addr), (unit&1)<<4);
+	outb(FIXED_DISK_REG(ctrl), 2);	/* nIEN: AI-ONLY NOTE, hdprobe() */
 	outb(PORT_COMMAND(addr), CMD_IDENTIFY);
 	waitcontroller(ctrl);
 	linw(PORT_DATA(addr), (int *)&id, sizeof(id)/2);
+	outb(FIXED_DISK_REG(ctrl), 0);
 
 	n = *(unsigned long *)phystokv(dev->address);
 	tbl = (unsigned char *)phystokv((n&0xffff) + ((n>>12)&0xffff0));

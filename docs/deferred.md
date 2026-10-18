@@ -756,7 +756,8 @@ With the flag clear at probe (0079), the stale SETPARAMETERS interrupt
 is taken as the read's: `hdintr()` waits out BUSY ("interrupt
 w/controller not done"), and the read's data is there when it reads
 it; either order boots. Those two messages are S-6's noise, the
-polled commands' interrupts, which `dev`'s `052a105` masks. On a drive
+polled commands' interrupts, which `dev`'s `052a105` masks (since
+0098, with the probe's RESTORE as well: S-6). On a drive
 whose reads take milliseconds, the first order is the usual one,
 which may be why DR3's flag did no harm on the hardware OSF had; that
 is a reading, not something DR3 says.
@@ -1212,8 +1213,12 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   "HD: false interrupt", already open (`docs/status.md`; `dev`'s
   `052a105`). Explained since 0084: the interrupts of the driver's
   polled commands, RESTORE, IDENTIFY and SETPARAMETERS ("`hd.c`: a
-  race, not the disk's size"). Harmless with the probe's flag clear;
-  `052a105`, which masks them, is not taken.
+  race, not the disk's size"). **Fixed in 0098**: nIEN, bit 1 of the
+  device control register, set around the three polled commands, so
+  the drive raises no interrupt for them -- `dev`'s `052a105`, which
+  set it for IDENTIFY and SETPARAMETERS, with the probe's RESTORE
+  added. Measured: "HD: false interrupt" no longer on the screen; the
+  compile-and-install loop passes by multiboot and from OSF's primary.
 
 ### The `ne` driver, measured on 14 October 2026
 
