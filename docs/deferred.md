@@ -718,9 +718,13 @@ compile-and-install loop; on one CPU it boots multi-user; FAST boots
 multi-user. On the running system (0099), gcc 2.7.2.1 builds PRODUCTION,
 FAST and FAST+MP from the tree with 0095--0098, without a warning, and
 its FAST+MP runs on two CPUs, both `machine_slot`s running with ticks
-counting; its PRODUCTION, with 0098's `hd.c`, boots multi-user. Not
-yet booted from OSF's primary with more than one CPU, whose boot
-passes the CPU count (`asm_startup.h`, `wncpu`).
+counting; its PRODUCTION, with 0098's `hd.c`, boots multi-user. From
+OSF's primary (0101): with the running system's boot, kernel,
+bootstrap task, servers and Lites, all built there, and QEMU's
+`BIOS=1` with two sockets, both CPUs run user code, ticks counting,
+and the compile-and-install loop passes. No CPU count was typed at the
+boot prompt ("mach [-sah#]", `model_dep.c`), so the kernel took all
+the MP table lists.
 
 ### `hd.c`: a race, not the disk's size
 
