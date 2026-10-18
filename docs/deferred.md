@@ -715,9 +715,12 @@ none in OSF's design:
 Measured, host build: FAST+MP on two CPUs boots multi-user, both CPUs'
 `machine_slot` running with ticks counting, and passes the
 compile-and-install loop; on one CPU it boots multi-user; FAST boots
-multi-user. Not yet built on the running system with these changes,
-nor booted from OSF's primary, whose boot passes the CPU count
-(`asm_startup.h`, `wncpu`).
+multi-user. On the running system (0099), gcc 2.7.2.1 builds PRODUCTION,
+FAST and FAST+MP from the tree with 0095--0098, without a warning, and
+its FAST+MP runs on two CPUs, both `machine_slot`s running with ticks
+counting; its PRODUCTION, with 0098's `hd.c`, boots multi-user. Not
+yet booted from OSF's primary with more than one CPU, whose boot
+passes the CPU count (`asm_startup.h`, `wncpu`).
 
 ### `hd.c`: a race, not the disk's size
 
@@ -1219,6 +1222,14 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   set it for IDENTIFY and SETPARAMETERS, with the probe's RESTORE
   added. Measured: "HD: false interrupt" no longer on the screen; the
   compile-and-install loop passes by multiboot and from OSF's primary.
+- **S-15. "dev 0: alternate sectors corrupt"** at every boot, from
+  `i386/AT386/bios_label.c` (line 340) as the bootstrap task reads the
+  label. `mkbootdisk.sh` writes the alternates table where the vtoc's
+  `alt_ptr` says, 15360 bytes into the partition, sector 93, with
+  `ALT_SANITY` (0xdeadbeef) first, and the image holds it there; the
+  kernel reads something else. Found 17 October 2026 while checking
+  S-6's screens, on kernels before and after 0098. Harmless so far --
+  the table is empty -- and not yet looked into.
 
 ### The `ne` driver, measured on 14 October 2026
 
