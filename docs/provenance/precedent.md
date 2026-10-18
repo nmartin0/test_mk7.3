@@ -686,6 +686,12 @@ Release Notes, section 2.5.3, start servers from `bootstrap.conf` --
 so the branch, which fetches `host_get_boot_info` and prints "Boot
 info IGNORED", is left as Utah shipped it.
 
+Since 18 October 2026 the kernel's boot information is read on the
+other branch too, for its flags only: `-s` at OSF's `boot:` prompt,
+which the Release Notes say is "passed to server", reaches Lites that
+way (`docs/deferred.md`, O-7). The root and server directory still
+come from `bootstrap.conf`.
+
 ## Where to look, in order
 
 1. **This tree itself** — any of the three subdirectories, and

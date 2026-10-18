@@ -1343,11 +1343,26 @@ Lites gets its arguments from OSF's bootstrap").
   task's bootstrap port its BSD request port and offers CMU's
   `task_by_pid(-1)` and `(-2)` instead, so OSFMK's own tools fail
   under it. **Work**: answer `bootstrap.defs` on that port.
-- **O-7. `-s` at the boot prompt may not reach the server.** "-s --
-  single-user mode (passed to server)", the Release Notes say; on
-  i386 the kernel's `startup_single_user` is never set, in DR3 as in
-  this tree. **Work**: check with OSF's boot loader, built and booting
-  since 0079.
+- **O-7. `-s` at the boot prompt did not reach the server. Fixed,
+  18 October 2026.** "-s -- single-user mode (passed to server)", the
+  Release Notes say (Boot Options). Measured with OSF's loader:
+  `/mach_kernel -s /mach_servers/bootstrap` booted multi-user. Two
+  links were missing. The i386 kernel's `parse_arguments()` had no
+  `s`; `startup_single_user`, which `machine_boot_info()` turns into
+  " -s" for `host_get_boot_info`, was set only by the old boothowto
+  convention. And Lites fetched the boot info only when it had no
+  arguments, which under OSF's bootstrap task it always has. Now the
+  kernel takes `s`, as HP700's port does, and Lites puts the reply's
+  flags ahead of `bootstrap.conf`'s (`imports.md`, A and C).
+  Measured: the same line prints "(lites) boot flag from the kernel:
+  -s" and reaches NetBSD's "Enter pathname of shell or RETURN for
+  sh:"; Control-D there goes on to multi-user; a boot without `-s` is
+  multi-user as before, and passes the compile-and-install loop.
+  The three ways OSF documents, all working: `-s` at `boot:` for one
+  boot; `-s` on `bootstrap.conf`'s `startup` line for every boot, as
+  OSF's install floppies have it (`startup … -s -a fd0b`); and `-- -a`
+  at `boot:`, the bootstrap task asking for each file, to recover from
+  a configuration that does not boot.
 - **O-8. `default_pager` takes the paging partition.** Now S-2.
 - **O-9. `name_server` first in `bootstrap.conf`**, as the template and
   the Release Notes' example have it. It builds since 0046 and starts
@@ -1404,8 +1419,8 @@ Lites toward the OSF/1 server.
 **What happened, 17 October 2026.** Self-hosting came first after all:
 the maintainer took the roadmap's milestones in order, and milestone 5
 is reached (`docs/status.md`, "Hosting itself"). The O-items in step 2
-are still open -- O-1, O-2 and O-4 to O-6 -- and O-7 can be
-checked now that OSF's boot loader runs (milestone 1, 0079). They belong to the boundary
+are still open -- O-1, O-2 and O-4 to O-6; O-7, checked once OSF's
+boot loader ran (milestone 1, 0079), is fixed. They belong to the boundary
 between the intermediate goal and Tier 1, and are taken there.
 
 ## 2a. Tooling defects, to fix in a later patch

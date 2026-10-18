@@ -712,8 +712,67 @@ void get_config_info(
 	foo_argv[3] = argv_space[3];
 	foo_argv[4] = (char *) 0;
 
+	/*
+	 * AI-ONLY NOTE: added.  The kernel's boot options reach the
+	 * server through host_get_boot_info -- MK7.3 Release Notes, Boot
+	 * Options, "-s -- single-user mode (passed to server)" -- whose
+	 * reply, from i386/AT386/model_dep.c's machine_boot_info(), is
+	 * the root device's name, then " -s" when the boot line had it.
+	 * OSF's bootstrap task always gives arguments, so the branch
+	 * below that fetches the boot info was never reached and the
+	 * flags were lost.  Here the reply's flag words, those beginning
+	 * with '-', go ahead of bootstrap.conf's own flags; its root
+	 * name and server directory still decide those two.  The root
+	 * device in the reply is not used.  Only when bootstrap.conf gives
+	 * the server an argument: with none, Utah's parse_arguments()
+	 * returns before reading flags, and that is left as it was.
+	 * docs/deferred.md, O-7.
+	 */
 	if (argc) {
-		parse_arguments(argc, argv);
+		char *merged_argv[32];
+		int merged_argc = 0;
+		int i;
+		char *cp;
+
+		if (argc < 2 || argc >= 32) {
+			parse_arguments(argc, argv);
+			return;
+		}
+		kr = host_get_boot_info(privileged_host_port,
+					kernel_boot_info);
+		if (kr != KERN_SUCCESS)
+			kernel_boot_info[0] = '\0';
+		kernel_boot_info[KERNEL_BOOT_INFO_MAX - 1] = '\0';
+
+		merged_argv[merged_argc++] = argv[0];
+		cp = kernel_boot_info;
+		while (*cp != '\0') {
+			char *word;
+
+			while (*cp == ' ' || *cp == '\t')
+				cp++;
+			if (*cp == '\0')
+				break;
+			word = cp;
+			while (*cp != '\0' && *cp != ' ' && *cp != '\t')
+				cp++;
+			if (*cp != '\0')
+				*cp++ = '\0';
+			if (word[0] == '-' && word[1] != '\0'
+			    && merged_argc + argc < 32) {
+				dprintf("(lites) boot flag from the kernel: %s\n",
+					word);
+				merged_argv[merged_argc++] = word;
+			}
+		}
+		for (i = 1; i < argc; i++)
+			merged_argv[merged_argc++] = argv[i];
+		merged_argv[merged_argc] = (char *) 0;
+
+		if (merged_argc > argc)
+			parse_arguments(merged_argc, merged_argv);
+		else
+			parse_arguments(argc, argv);
 		return;
 	}
 

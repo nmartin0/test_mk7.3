@@ -289,6 +289,7 @@ int		rebootflag = 0;	/* exported to kdintr */
 int		halt_in_debugger = 0;
 
 extern int	cons_is_com1;
+extern int	startup_single_user;	/* AI-ONLY NOTE: for -s below; O-7 */
 
 void		parse_arguments(void);
 void		parse_multiboot(void);
@@ -474,6 +475,19 @@ parse_arguments(void)
 		    break;
 		case 'r':
 		    cons_is_com1 = 1;
+		    break;
+		/*
+		 * AI-ONLY NOTE: added.  MK7.3 Release Notes, Boot Options:
+		 * "-s -- single-user mode (passed to server)".  On i386
+		 * only the old boothowto convention (asm_startup.h,
+		 * SYS_REBOOT_COMPAT) set startup_single_user, so -s typed
+		 * after the kernel's name at OSF's boot: prompt was
+		 * dropped.  As hp_pa/model_dep.c's parse_args() does with
+		 * RB_SINGLE; machine_boot_info() below hands " -s" to the
+		 * server through host_get_boot_info.  docs/deferred.md, O-7.
+		 */
+		case 's':
+		    startup_single_user = 1;
 		    break;
 		case 'm':	/* -m??:  memory size Mbytes*/
 		    mem_size = atoi_term(p, &p)*1024*1024;

@@ -233,7 +233,9 @@ and `bootstrap.conf`
 	default_pager default_pager hd0b
 	startup startup hd0a /dev/hd0a/mach_servers
 
-(`startup startup -s hd0a ...` for single-user). `hd0b`, partition b,
+(`startup startup -s hd0a ...` for single-user on every boot; for
+one boot, `-s` after the kernel's name at OSF's `boot:` prompt,
+`/mach_kernel -s /mach_servers/bootstrap`, O-7). `hd0b`, partition b,
 is the paging space, as the Release Notes' example gives it
 (`def_pager /mach_servers/default_pager sd0b`); without it there is
 none (S-2). The last argument
