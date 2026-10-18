@@ -757,6 +757,35 @@ public documents and from the trees above; where they are silent, the
 maintainer decides. Nothing unreleased is read, not even as a
 specification.
 
+### GPL files already in the tree, as imported
+
+The rule above is about what may come in. Some GPL files came in with
+the imports themselves, and stay, as imported, by the maintainer's
+decision of 18 October 2026: kept, recorded here, not built into
+anything. Found by `git grep -il "General Public\|GPL\b\|copyleft"`
+over the whole tree, each hit read; the ones that are not GPL
+(`gpl`, a floppy controller's gap length, in `chips/fdc_82077.h`,
+`i386/AT386/fd.c` and `fdreg.h`; our own notes in
+`file_systems/AT386/machdep.mk`) are left out.
+
+| files | from | notice | built? |
+|---|---|---|---|
+| `file_systems/minixfs/minix_ffs_compat.c`, `minix_ffs_compat.h`, `minix_fs.h` | the OSFMK import, `4b29812`; MkLinux's | below OSF's notice, the GNU GPL, version 2 or later: "Copyright (C) 1994 Csizmazia Balazs" on the two `minix_ffs_compat` files, and on `minix_fs.h` "stolen … from the Linux distribution Copyright (C) 1994 Linus Torvalds" | no: not for AT386 since `file_systems/AT386/machdep.mk` and `fs_switch.c` were cut to UFS ("What OSF booted from") |
+| `file_systems/POWERMAC/COPYLEFT/hfs/`, 19 of its 22 files: `block`, `btree`, `data`, `file`, `hfs`, `low`, `node`, `record`, `volume` (`.c` and `.h`) and `internal.h` | the OSFMK import, `4b29812`; MkLinux's, for the PowerMac | "hfsutils … Copyright (C) 1996, 1997 Robert Leslie", GNU GPL version 2 or later | no: only `POWERMAC/machdep.mk` includes it, and nothing here builds for the PowerMac |
+| the same directory's `mainhfs.c` | as above | OSF's and CMU's notices, then "modified from original hfslib package by Brad Midgley … GPL'd" | no, as above |
+| `lites/conf/config.guess` | Utah's Lites 1.1.u3, whose tree is `9d1c98a` (`imports.md`) | "Copyright (C) 1992, 1993, 1994 Free Software Foundation", GNU GPL version 2 or later; Utah's own `lites/doc/FILES` lists it "fsf gpl … not compiled, not necessary" | not compiled; it is run, as a program, by Lites' `configure` when no host is given, which `lites/makefile` does not give, and prints the host's name |
+
+The rest of `POWERMAC/COPYLEFT/hfs/`, `mainhfs.h` (OSF's and CMU's
+notices) and `machdep.mk` (a build file), carry no GPL text. Lites'
+two `configure` scripts are the Free Software Foundation's, but with
+"unlimited permission to copy, distribute and modify it": not GPL.
+`file_systems/ext2fs/ext2_fs.h`, with no GPL text but derived from
+Linux's header, is recorded in "What OSF booted from".
+
+None of these is a donor either: nothing here is taken from them,
+and a change that would build one of them, or link it into a
+binary, comes back to the maintainer first.
+
 ## The tree stays pristine, and config beats code
 
 `docs/provenance/pristine.md` has the rule and the four-level order of
