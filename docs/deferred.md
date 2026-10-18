@@ -701,7 +701,11 @@ none in OSF's design:
   CPU -- the clock never ticked -- and the kernel stopped after "I've
   found: 2 sections", on one CPU or two. gcc 2.7.2.1 emits the four
   stores in order. `select` and `window` are `volatile` now, as the
-  file's own `LF()` macros make the local APIC's registers.
+  file's own `LF()` macros make the local APIC's registers. And since
+  0097 the host's `CARGS` carry `-fno-dse -fno-tree-dse`: GCC 2.7
+  removed no store to memory as dead, and any other register OSF's
+  code reaches through a plain pointer keeps its stores, though not
+  their order.
 - QEMU's topology. With `-smp 2`, SeaBIOS's MP table listed one CPU:
   it lists one per package, and QEMU makes two cores of one package.
   `-smp 2,sockets=2,cores=1,threads=1` lists both, and OSF's code

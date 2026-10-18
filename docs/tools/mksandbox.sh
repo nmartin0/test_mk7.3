@@ -343,7 +343,21 @@ replace setenv MAKESYSPATH \${source_base}/makedefs:${ODE4LINUX}/src/ode/mk
 # child of e_fork_call read its arguments 4 bytes off and never
 # reached child_init: NetBSD's init forked its shell, which never ran.
 #
-replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -fno-omit-frame-pointer -fno-zero-initialized-in-bss -Wno-implicit-int -Wno-error=overflow -Wno-error=traditional -Wno-error=stringop-overflow -Wno-endif-labels"
+# -fno-dse -fno-tree-dse: the same kind of flag again.  GCC 2.7 removed
+# no store to memory as dead; GCC 13's -O2 does, in two passes, tree
+# DSE (GCC 4.0) and RTL DSE (GCC 4.3).  Found in
+# i386/AT386/mp/mp_v1_1.c, which programs the I/O APIC through plain
+# pointers to its select and window registers and writes select twice
+# for each redirection entry: GCC 13 dropped the first, and FAST+MP
+# stopped after loading the bootstrap task.  Measured on
+# mp_v1_1_take_irq(): four stores from gcc 2.7.2.1 on the running
+# system, three from GCC 13, three with -fno-tree-dse, four with both.
+# They keep such stores elsewhere in OSF's code; they do not keep
+# their order -- GCC 13's scheduler still moved the second select
+# ahead of the first window -- so that file declares its registers
+# volatile (its AI-ONLY NOTE), as it does the local APIC's.
+#
+replace setenv CARGS "-D__NO_UNDERSCORES__ -m32 -std=gnu89 -fcommon -fno-stack-protector -fno-pic -fno-strict-aliasing -fno-aggressive-loop-optimizations -fno-inline-functions -fno-inline-small-functions -fno-inline-functions-called-once -fno-partial-inlining -fno-omit-frame-pointer -fno-dse -fno-tree-dse -fno-zero-initialized-in-bss -Wno-implicit-int -Wno-error=overflow -Wno-error=traditional -Wno-error=stringop-overflow -Wno-endif-labels"
 
 #
 # NO_STRICT_ANSI: a hook osf.gcc.mk line 94 provides --
