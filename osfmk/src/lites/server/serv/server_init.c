@@ -171,6 +171,25 @@ static inline int IS_FLAG_FOR_SECOND_SERVER(int c)
 }
 #endif	/* SECOND_SERVER */
 
+#if OSFMACH3
+/*
+ * AI-ONLY NOTE: under OSFMACH3 the first program is /sbin/init, not
+ * <server directory>/mach_init: "The OSF/1 server runs /sbin/init.
+ * There is no need for mach_init as the service server is already
+ * running in the bootstrap task" (OSF RI, server co-location paper,
+ * 1993, section 5.1); and the emulator is /mach_servers/emulator on
+ * the root until Tier 1 removes it (docs/deferred.md, O-2, O-3).
+ * There is no server directory:
+ * the OSF/1 server takes flags and a root, nothing more (bootstrap/
+ * bootstrap.template).  Utah's -i and -e still name others, now by
+ * path; init_program_name is init's argv[0], the path, as 4.4BSD's
+ * start_init() passes it.
+ */
+char init_program_path[128] = "/sbin/init";
+char init_program_name[128] = "/sbin/init";
+char emulator_path[128] = "/mach_servers/emulator";
+char emulator_old_path[128] = "/mach_servers/emulator.old";
+#else	/* OSFMACH3 */
 char init_program_path[128] = "/mach_servers/mach_init";
 char init_program_name[] = "/mach_init";
 char emulator_path[128] = "/mach_servers/emulator";
@@ -178,6 +197,7 @@ char emulator_old_path[128] = "/mach_servers/emulator.old";
 char emulator_name[]    = "/emulator";
 char dev_prefix[] = "/dev/";
 char server_dir[128];
+#endif	/* OSFMACH3 */
 
 
 /* decide whether we are a second server or not */
@@ -298,21 +318,193 @@ void init_ports()
 				       &default_processor_set);
 }
 
-char default_root[] = "hd0a"; /* XXX */
+#if OSFMACH3
+/*
+ * AI-ONLY NOTE: written for OSFMACH3, in place of Utah's
+ * parse_arguments() below, which stays for the other kernels.  The
+ * OSF/1 server's arguments are flags and a root name: "-s
+ * (single-user), -a (prompt for root device), and a root file system
+ * name" (bootstrap/bootstrap.template).  get_config_info() passes
+ * this function the kernel's boot information first, as O-7 and O-4
+ * already did, and bootstrap.conf's arguments after: flags
+ * accumulate, and a root named on the startup line replaces the boot
+ * device, which MK7.3 Release Notes, bug 2271, make the default root.
+ * Nothing public gives the server any other word, so words after the
+ * root are ignored, with a message.  No server directory:
+ * docs/deferred.md, O-1, O-2, O-4, O-5.
+ */
+static char *root_name;			/* the root so far, or 0 */
+static char root_name_buf[50];		/* -a's answer */
+static char default_root[] = "hd0a";	/* Utah's, the last resort */
+
+static void copy_path(
+	char		*to,
+	const char	*from,
+	const char	*suffix)
+{
+	if (strlen(from) + strlen(suffix) >= 128)
+		panic("(lites) path too long: %s", from);
+	strcpy(to, from);
+	strcat(to, suffix);
+}
+
+void parse_arguments(
+	int	argc,
+	char	**argv)
+{
+	/*
+	 * Arg 0 is program name
+	 */
+	argv++, argc--;
+
+	while (argc > 0 && argv[0][0] == '-') {
+	    register char *cp = argv[0];
+	    register char c;
+
+	    while ((c = *cp++) != '\0') {
+		switch (c) {
+		    case 'q': /* this is what kernel (and bootstrap) passes */
+		    case 'a':
+			boothowto |= RB_ASKNAME;	/* asked below */
+			break;
+		    case 's':
+			boothowto |= RB_SINGLE;
+			break;
+		    case 'd':
+			boothowto |= RB_KDB;
+			break;
+		    case 'n':
+			boothowto |= RB_INITNAME;
+			break;
+#if	SECOND_SERVER
+		    case '2':
+		    case '3':
+		    case '4':
+		    case '5':
+		    case '6':
+		    case '7':
+		    case '8':
+		    case '9':
+			if (second_server == FALSE)
+			    panic("error: '-%c' must be the first argument.", c);
+#if MACHID_REGISTER
+			pid_registration_type = IS_FLAG_FOR_SECOND_SERVER(c);
+#endif /* MACHID_REGISTER */
+			break;
+		    case 'h':
+			if (second_server) {
+			    boothowto |= RB_KDB;
+			    printf("Suspended and ready to continue.\n");
+			    task_suspend(mach_task_self());
+			}
+			break;
+		    case 'e':
+			/* Allow non-default emulator file name: */
+			if (argc > 1) {
+			    copy_path(emulator_path, argv[1], "");
+			    copy_path(emulator_old_path, argv[1], ".old");
+			    argv++, argc--;
+			}
+			break;
+		    case 'i':
+			/* Allow non-default init program file name: */
+			if (argc > 1) {
+			    copy_path(init_program_path, argv[1], "");
+			    copy_path(init_program_name, argv[1], "");
+			    argv++, argc--;
+			}
+			break;
+#endif	/* SECOND_SERVER */
+		    case 'r':
+			/* set the root partition */
+			if (argc > 1) {
+			    root_name = argv[1];
+			    argv++, argc--;
+			}
+			break;
+#if SYSCALLTRACE
+		    case 'v':
+			/* Turn on syscall tracing: */
+			syscalltrace = -1;
+			break;
+#endif /* SYSCALLTRACE */
+#if MACHID_REGISTER && SECOND_SERVER
+		    case 'f':
+			{
+			    mach_port_t	new_dev_server_port;
+			    use_fake_server = 1;
+			    if(second_server) {
+			        mach_error_t kr;
+				kr = netname_look_up(name_server_port,
+							 "",
+							 "FakeDeviceServer",
+							 &new_dev_server_port);
+				if (kr != KERN_SUCCESS)
+				       panic("can't find fake device server.");
+			    }
+			    (void)mach_port_deallocate(mach_task_self(),
+						       device_server_port);
+			    device_server_port = new_dev_server_port;
+			}
+			break;
+#endif /* MACHID_REGISTER && SECOND_SERVER */
+#ifdef USEACTIVATIONS
+		    case 'A':
+			use_activations = TRUE;
+			break;
+#endif
+		    default:
+			break;
+		}
+	    }
+	    argv++, argc--;
+	}
+
+	/*
+	 * The first word that is not a flag is the root.
+	 */
+	if (argc > 0) {
+		root_name = argv[0];
+		argv++, argc--;
+	}
+
+	/*
+	 * Nothing after the root is the server's.
+	 */
+	for (; argc > 0; argv++, argc--)
+		dprintf("(lites) startup argument ignored: %s\r\n", argv[0]);
+}
 
 /*
- * AI-ONLY NOTE: added, with the uses below.  The kernel's boot
- * device, the first word of its host_get_boot_info reply ("hd0a"
- * from i386/AT386/model_dep.c's machine_boot_info()), set by
- * get_config_info() before parse_arguments() runs; empty when the
- * kernel did not say.  A startup line with no root means this
- * device: MK7.3 Release Notes, bug 2271, call the OSF/1 server's
- * other choice "the wrong default root device", the right one being
- * the boot partition.  It also names OSF's /dev/boot_device/.
- * Utah's default_root stays the last resort.  docs/deferred.md, O-1
- * and O-4.
+ * AI-ONLY NOTE: added.  After both parses: -a asks for the root,
+ * with OSF's prompt, "root device: [fd0b]" (MK7.3 Release Notes,
+ * 2.4.2.1), the root so far as its default; then, with no root at
+ * all, Utah's default_root, as Lites has always had it.
+ * docs/deferred.md, O-4, O-5.
  */
-char boot_device_name[32];
+static void set_root(void)
+{
+	if (boothowto & RB_ASKNAME) {
+		if (root_name)
+			dprintf("root device: [%s] ", root_name);
+		else
+			dprintf("root device: ");
+		dget_string((char *)0, root_name_buf, sizeof(root_name_buf));
+		if (root_name_buf[0])
+			root_name = root_name_buf;
+	}
+	if (root_name == (char *)0)
+		root_name = default_root;
+
+	dprintf("(lites): root(%s)\r\n", root_name);
+	dprintf("(lites): emulator_path(%s)\r\n", emulator_path);
+	dprintf("(lites): init_program(%s)\r\n", init_program_path);
+
+	rootdev = parse_root_device(root_name);
+}
+
+#else	/* OSFMACH3 */
+char default_root[] = "hd0a"; /* XXX */
 
 void parse_arguments(
 	int	argc,
@@ -324,7 +516,6 @@ void parse_arguments(
 	char		*pname;
 	char   rootdev_name[50];
 	char   *rootname = (char *)NULL;
-	char   *pslash;	/* AI-ONLY NOTE: pname's last '/'; O-1 */
 
 
 	/*
@@ -339,18 +530,11 @@ void parse_arguments(
 
 	/*
 	 * Arg 1 should be flags
-	 *
-	 * AI-ONLY NOTE: a line with no arguments -- OSF's template
-	 * line, "startup startup" -- is parsed through, for the default
-	 * root and the server directory below, rather than returning with
-	 * neither; and the loop stops at the end of the arguments, so
-	 * that flags alone ("startup startup -s") no longer run past it.
-	 * docs/deferred.md, O-1.
 	 */
-	if (argc < 0)
+	if (argc == 0)
 	    return;
 
-	while (argc > 0 && argv[0][0] == '-') {
+	while (argv[0][0] == '-') {
 	    register char *cp = argv[0];
 	    register char c;
 
@@ -456,49 +640,10 @@ void parse_arguments(
 	 * Arg 3 (now 1) should be server_dir_name (3.0 style)
 	 */
 
-	/*
-	 * AI-ONLY NOTE: with no root given, the kernel's boot device
-	 * before Utah's default_root.  docs/deferred.md, O-4.
-	 */
 	if (! rootname)
-	  rootname = argc ? argv[0]
-			  : (boot_device_name[0] ? boot_device_name
-						 : default_root);
+	  rootname = argc ? argv[0] : default_root;
 
-	/*
-	 * AI-ONLY NOTE: added.  OSF's bootstrap task names the server by
-	 * its path in the bootstrap's own name space,
-	 * "/dev/boot_device/mach_servers/startup" (bootstrap/bootstrap.c,
-	 * parse_path()), which already says where the servers are: its
-	 * directory is the server directory, with OSF's boot_device
-	 * alias given the boot device's own name.  Utah's derivation
-	 * below put the root's name in front of that path,
-	 * "/dev/hd0a/dev/boot_device/mach_servers".  It stays for a CMU
-	 * path.  docs/deferred.md, O-1.
-	 */
-	pslash = pname + strlen(pname);
-	while (pslash > pname && *--pslash != '/')
-		;
-	if (argc < 2 && bcmp(pname, dev_prefix, strlen(dev_prefix)) == 0
-	    && pslash > pname + strlen(dev_prefix)
-	    && strlen(pname) + strlen(boot_device_name) < sizeof(server_dir)) {
-		char *dev = pname + strlen(dev_prefix);
-		char *slash = pslash;
-		int len;
-		static char alias[] = "boot_device/";
-
-		strcpy(server_dir, dev_prefix);
-		if (boot_device_name[0]
-		    && bcmp(dev, alias, sizeof(alias) - 1) == 0) {
-			strcat(server_dir, boot_device_name);
-			dev += sizeof(alias) - 2;	/* at the '/' */
-		}
-		len = strlen(server_dir);
-		bcopy(dev, server_dir + len, slash - dev);
-		server_dir[len + (slash - dev)] = '\0';
-		dprintf("(lites): server_dir(%s) from the server's path\r\n",
-			server_dir);
-	} else if (argc < 2) {
+	if (argc < 2) {
 		strcpy(server_dir, dev_prefix);
 		strcat(server_dir, rootname);
 		if (*pname == '/') {
@@ -547,6 +692,7 @@ void parse_arguments(
 
 	rootdev = parse_root_device(rootname);
 }
+#endif	/* OSFMACH3 */
 
 void msgbuf_init()
 {
@@ -754,103 +900,67 @@ void main(
 #if OSFMACH3
 kernel_boot_info_t kernel_boot_info;
 
-char argv_space[10][40] = {"/dev/hd0f/mach_servers/startup", 
-			   "-s",
-			   "hd0a",
-			   "/dev/hd0a/mach_servers",
-			   (char *)0,};
-
+/*
+ * AI-ONLY NOTE: rewritten for OSF's kernel and bootstrap task, in place
+ * of Utah's, which parsed bootstrap.conf's arguments alone and, with
+ * none, printed "Boot info IGNORED" and used a fixed vector.  The
+ * kernel's boot information is parsed first, as a command line, and
+ * the server's own arguments after it, so that a root on the startup
+ * line wins (docs/deferred.md, O-1, O-4, O-7).  The reply comes from
+ * i386/AT386/model_dep.c's machine_boot_info(): the boot device's
+ * name, then " -s" when the boot line had -s, then any old-convention
+ * boot string.  Its first word is a root unless the kernel could only
+ * say "boot_device", an alias Lites' device table does not know; its
+ * flag words are flags; other words are not for the server.
+ */
 void get_config_info(
 	int	argc,
 	char	**argv)
 {
 	kern_return_t	kr;
-	char *foo_argv[10];
+	char	*boot_argv[32];
+	int	boot_argc = 0;
+	char	*boot_root = (char *)0;
+	char	*cp;
+	int	first = 1;
 
-	foo_argv[0] = argv_space[0];
-	foo_argv[1] = argv_space[1];
-	foo_argv[2] = argv_space[2];
-	foo_argv[3] = argv_space[3];
-	foo_argv[4] = (char *) 0;
+	kr = host_get_boot_info(privileged_host_port, kernel_boot_info);
+	if (kr != KERN_SUCCESS)
+		kernel_boot_info[0] = '\0';
+	kernel_boot_info[KERNEL_BOOT_INFO_MAX - 1] = '\0';
 
-	/*
-	 * AI-ONLY NOTE: added.  The kernel's boot options reach the
-	 * server through host_get_boot_info -- MK7.3 Release Notes, Boot
-	 * Options, "-s -- single-user mode (passed to server)" -- whose
-	 * reply, from i386/AT386/model_dep.c's machine_boot_info(), is
-	 * the root device's name, then " -s" when the boot line had it.
-	 * OSF's bootstrap task always gives arguments, so the branch
-	 * below that fetches the boot info was never reached and the
-	 * flags were lost.  Here the reply's flag words, those beginning
-	 * with '-', go ahead of bootstrap.conf's own flags; its root
-	 * name and server directory still decide those two.  The reply's
-	 * first word, the boot device, is kept in boot_device_name, the
-	 * root when bootstrap.conf names none (O-4), unless the kernel
-	 * could only say "boot_device".
-	 * docs/deferred.md, O-7.
-	 */
-	if (argc) {
-		char *merged_argv[32];
-		int merged_argc = 0;
-		int i;
-		char *cp;
+	boot_argv[boot_argc++] = (argc > 0) ? argv[0] : "startup";
+	cp = kernel_boot_info;
+	while (*cp != '\0') {
+		char *word;
 
-		if (argc >= 32) {
-			parse_arguments(argc, argv);
-			return;
+		while (*cp == ' ' || *cp == '\t')
+			cp++;
+		if (*cp == '\0')
+			break;
+		word = cp;
+		while (*cp != '\0' && *cp != ' ' && *cp != '\t')
+			cp++;
+		if (*cp != '\0')
+			*cp++ = '\0';
+		if (first && word[0] != '-') {
+			if (strcmp(word, "boot_device") != 0)
+				boot_root = word;
+		} else if (word[0] == '-' && word[1] != '\0'
+			   && boot_argc < 30) {
+			dprintf("(lites) boot flag from the kernel: %s\n", word);
+			boot_argv[boot_argc++] = word;
 		}
-		kr = host_get_boot_info(privileged_host_port,
-					kernel_boot_info);
-		if (kr != KERN_SUCCESS)
-			kernel_boot_info[0] = '\0';
-		kernel_boot_info[KERNEL_BOOT_INFO_MAX - 1] = '\0';
-
-		merged_argv[merged_argc++] = argv[0];
-		cp = kernel_boot_info;
-		while (*cp != '\0') {
-			char *word;
-
-			while (*cp == ' ' || *cp == '\t')
-				cp++;
-			if (*cp == '\0')
-				break;
-			word = cp;
-			while (*cp != '\0' && *cp != ' ' && *cp != '\t')
-				cp++;
-			if (*cp != '\0')
-				*cp++ = '\0';
-			if (word == kernel_boot_info && word[0] != '-'
-			    && strcmp(word, "boot_device") != 0
-			    && strlen(word) < sizeof(boot_device_name))
-				strcpy(boot_device_name, word);
-			if (word[0] == '-' && word[1] != '\0'
-			    && merged_argc + argc < 32) {
-				dprintf("(lites) boot flag from the kernel: %s\n",
-					word);
-				merged_argv[merged_argc++] = word;
-			}
-		}
-		for (i = 1; i < argc; i++)
-			merged_argv[merged_argc++] = argv[i];
-		merged_argv[merged_argc] = (char *) 0;
-
-		if (merged_argc > argc)
-			parse_arguments(merged_argc, merged_argv);
-		else
-			parse_arguments(argc, argv);
-		return;
+		first = 0;
 	}
+	if (boot_root)
+		boot_argv[boot_argc++] = boot_root;
+	boot_argv[boot_argc] = (char *)0;
 
-	kr = host_get_boot_info(privileged_host_port,
-				kernel_boot_info);
-	if (kr != KERN_SUCCESS || *kernel_boot_info == 0) {
+	parse_arguments(boot_argc, boot_argv);
+	if (argc > 0)
 		parse_arguments(argc, argv);
-		return;
-	}
-
-	dprintf("(lites) Boot info IGNORED: %s\n", kernel_boot_info);
-
-	parse_arguments(4, foo_argv); /* XXX */
+	set_root();
 }
 
 #else /* OSFMACH3 */

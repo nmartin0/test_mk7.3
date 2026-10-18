@@ -65,8 +65,8 @@ and for OSFMK 7.3's interfaces, each recorded in
 7.3, links it the way OSF linked its own servers. Started by OSF's
 bootstrap task as `startup`, it mounts its root and execs
 `/mach_servers/mach_init`, which a root built by
-`docs/tools/mkbootdisk.sh` from NetBSD 1.0's binaries links to
-`/sbin/init` (O-2; `docs/status.md`).
+`docs/tools/mkbootdisk.sh` from NetBSD 1.0's binaries linked to
+`/sbin/init` -- since 0107, `/sbin/init` itself (O-2; `docs/status.md`).
 
 **Trap 1 fires, and it is a constraint on Tier 1 item 2.** C-threads
 finds a thread's identity by masking its stack pointer to a fixed
@@ -166,10 +166,10 @@ OSF's boot loader booting what the running system builds; 2 done; 3
 done, with S-11 for the maintainer (S-8 closed, 18 October); 4 done, with
 `sendmail` deferred (S-12); 5 done, the system rebuilding itself
 identically but for three build stamps.
-Open at the boundary with Tier 1: O-2, O-5 and O-6, Lites against
-the OSF/1 server's documented behaviour (`docs/deferred.md`); O-7,
-`-s` at the boot prompt, and O-1 and O-4, OSF's own `startup` lines,
-are fixed.
+Open at the boundary with Tier 1: O-6, Lites against the OSF/1
+server's documented behaviour (`docs/deferred.md`; O-3 closes with
+Tier 1 item 2). Fixed: O-7, `-s` at the boot prompt; O-1, O-2, O-4
+and O-5, the OSF/1 server's arguments, root and first program.
 Each milestone below ends with its own line. The system at this point
 is kept as the `restored` branch, a checkpoint not committed to again
 (`docs/restored.md`).
@@ -220,8 +220,8 @@ host, by OSF's loader").
 release notes give it: `name_server`, `default_pager` on partition b,
 `startup` -- Lites -- with the root, partition a. `name_server` builds.
 No `mach_init` server: OSF's bootstrap task and `name_server` provide
-what it did. (Lites still execs `/mach_servers/mach_init`, which is
-`/sbin/init` here: O-2, milestone 3.) *State:* done; `build_world`
+what it did. (Lites execed `/mach_servers/mach_init`, a link to
+`/sbin/init`, until 0107 had it run `/sbin/init` itself: O-2.) *State:* done; `build_world`
 builds all three (0051, 0059), and
 `mkbootdisk.sh` writes the template's `bootstrap.conf`.
 
@@ -230,9 +230,10 @@ run as an ordinary task, not collocated. Root on partition a in the
 old UFS format OSF's reader and boot loader read and Lites mounts
 read-write. Userland: NetBSD 1.0's i386 binaries, the release Lites'
 own documents name -- marked as provisional; this layer is expected to
-change most later. `/mach_servers/mach_init` is a symbolic link to
+change most later. `/mach_servers/mach_init` was a symbolic link to
 `/sbin/init`, as Lites' `doc/README` allows when a name server is
-already running. *State:* done. `/etc/rc` runs to a multi-user
+already running; since 0107 Lites runs `/sbin/init` itself, as the
+OSF/1 server does (O-2). *State:* done. `/etc/rc` runs to a multi-user
 login with NetBSD 1.0's daemons; programs fault, catch and return as
 on NetBSD (S-3, S-4, S-5, S-7, 0053-0062); `cc` builds and runs
 programs. Open: S-11,

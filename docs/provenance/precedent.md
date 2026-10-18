@@ -690,12 +690,22 @@ Since 18 October 2026 the kernel's boot information is read on the
 other branch too, for its flags only: `-s` at OSF's `boot:` prompt,
 which the Release Notes say is "passed to server", reaches Lites that
 way (`docs/deferred.md`, O-7). The root and server directory still
-come from `bootstrap.conf` when it gives them. When it does not
-(0106; O-1, O-4), the root is the boot device that reply names, and
-the server directory is the directory of the server's own path,
-`/dev/boot_device/mach_servers`, its alias given that device's name:
-so OSF's template line, `startup startup`, is enough, and the 3.0-style
-line above is no longer needed. The order is boot information first, as a command line, then the server's own arguments.
+come from `bootstrap.conf` when it gives them.
+
+**Since 0107, the OSF/1 server's arguments, not CMU's.** The section
+above explains the 3.0-style line; the project is moving toward the
+OSF/1 server, which takes flags and a root and nothing more
+(`bootstrap.template`), runs `/sbin/init` (co-location paper §5.1), and
+so has no server directory. Under `OSFMACH3` Lites now does the same:
+the kernel's boot information is parsed first as a command line and
+`bootstrap.conf`'s arguments after it; the root is the last one given,
+else the boot device the kernel names (Release Notes bug 2271), else
+Utah's `hd0a`; a word after the root is ignored, with a message,
+since nothing documents one. OSF's template line, `startup startup`, is the
+whole configuration. 0106 had kept the server directory, deriving it
+from the server's own path; 0107 removes it, and Utah's code for it
+stays only in the build for CMU's kernels (`docs/deferred.md`, O-1,
+O-2, O-4, O-5).
 
 ## Where to look, in order
 

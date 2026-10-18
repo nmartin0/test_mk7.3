@@ -218,9 +218,10 @@ Gone since 0098, which masks them as `dev`'s `052a105` did.
 **Lites runs NetBSD 1.0's userland, multi-user.** The root is NetBSD
 1.0's i386 `base` and `etc` sets, set up as Lites' own install notes
 say (`osfmk/src/lites/doc/README.lites-1.1.u1`, "Installing Lites on
-the x86"): `/mach_servers/mach_init` a symbolic link to `/sbin/init`,
-`/dev` from NetBSD's `MAKEDEV all` and Lites' `time` and `timezone`
-nodes, the console getty on. Lites' device numbers are NetBSD's, so
+the x86"), but for their `/mach_servers/mach_init` link to
+`/sbin/init`, which Lites no longer needs (O-2): `/dev` from
+NetBSD's `MAKEDEV all` and Lites' `time` and `timezone` nodes, the
+console getty on. Lites' device numbers are NetBSD's, so
 NetBSD's nodes are right as made: `wd0a` is Lites' `hd0a`. The disk:
 
 	sh docs/tools/mklitesroot.sh root <sets>	# as root
@@ -236,17 +237,18 @@ the emulator, not a server, getting no line:
 
 `hd0b`, partition b, is the paging space, as the Release Notes'
 example gives it (`def_pager /mach_servers/default_pager sd0b`);
-without it there is none (S-2). Since 0106 the bare `startup` line is
-enough: Lites takes its root from the kernel's boot device and its
-server directory from its own path, `/dev/boot_device/mach_servers/startup`
-(O-1, O-4). Before, it needed both spelled out, `startup startup hd0a
-/dev/hd0a/mach_servers`, the vector Lites' own `OSFMACH3` code
-hard-codes (`docs/provenance/precedent.md`, "How Lites gets its
-arguments from OSF's bootstrap"); that line, a root alone, and
-`BOOTSTRAP_CONF=<file>` for any other all still work. Single-user:
-`-s` on the line (`startup startup -s`) for every boot, or `-s` after
-the kernel's name at OSF's `boot:` prompt,
-`/mach_kernel -s /mach_servers/bootstrap`, for one (O-7).
+without it there is none (S-2). Since 0107 Lites takes the OSF/1
+server's arguments -- flags, then a root, the kernel's boot device
+when none is given -- and runs `/sbin/init` (O-1, O-2, O-4). Before,
+it needed CMU 3.0's form, `startup startup hd0a /dev/hd0a/mach_servers`,
+the vector Lites' own `OSFMACH3` code hard-coded
+(`docs/provenance/precedent.md`, "How Lites gets its arguments from
+OSF's bootstrap"); that line still boots, its last word ignored with
+a message. `BOOTSTRAP_CONF=<file>` gives any other. Single-user: `-s` on
+the line (`startup startup -s`) for every boot, or `-s` after the
+kernel's name at OSF's `boot:` prompt,
+`/mach_kernel -s /mach_servers/bootstrap`, for one (O-7); `-a` on the
+line asks `root device: [hd0a]` (O-5).
 
 `/sbin/init` runs as pid 1, the first program, as OSF's design has it
 on this bootstrap: "The OSF/1 server runs /sbin/init. There is no

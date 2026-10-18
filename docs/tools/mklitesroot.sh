@@ -12,13 +12,17 @@
 # osfmk/src/lites/doc/README.lites-1.1.u1, "Installing Lites on the
 # x86", says:
 #
-#   /mach_servers/mach_init   "ln -s /sbin/init /mach_servers/mach_init"
 #   /dev                      NetBSD's own "sh MAKEDEV all", then
 #                             Lites' mapped-time devices from that
 #                             file's appendix: "mknod time c 25 0",
 #                             "mknod timezone c 26 0"
 #   /etc/ttys                 the console getty on, ttyv0's off, as
 #                             the file shows "On NetBSD-1.0"
+#
+# /mach_servers is made empty, for the servers.  The notes' link,
+# "ln -s /sbin/init /mach_servers/mach_init", is not made: under OSF's
+# kernel Lites runs /sbin/init itself, as the OSF/1 server does
+# (docs/deferred.md, O-2).
 #
 # and /etc/fstab is NetBSD's sample /etc/fstab.wd, root on wd0a, which
 # is how NetBSD's installer left it.  Lites' device numbers are
@@ -52,9 +56,8 @@ for s in "$@"; do
 	echo "$ROOT: $s"
 done
 
-# /mach_servers/mach_init
+# /mach_servers, for the servers
 mkdir -p "$ROOT/mach_servers"
-ln -s /sbin/init "$ROOT/mach_servers/mach_init"
 
 # /dev
 (cd "$ROOT/dev" && sh MAKEDEV all 2>/dev/null) || true
