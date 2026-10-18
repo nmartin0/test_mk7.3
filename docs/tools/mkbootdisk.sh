@@ -77,7 +77,17 @@ A_SIZE=$((ROOT_MB * 2048))
 B_START=$((A_START + A_SIZE))
 B_SIZE=$((PAGING_MB * 2048))
 END=$((B_START + B_SIZE))
-TOTAL=$(( (END + 2047) / 2048 * 2048 ))	# whole megabytes
+# Whole cylinders of the vtoc's nominal geometry, 16 heads and 63
+# sectors, so that the UNIX partition ends where a cylinder does, as
+# fdisk ends one.  A BIOS, or QEMU, that is not told the geometry
+# guesses it from the partition table's last CHS address: with the
+# disk in whole megabytes the partition ended in the middle of a
+# cylinder, QEMU took the disk to have 4 heads and 51 sectors, and the
+# drive answered IDENTIFY with that.  OSF's driver reads the
+# alternates table under the vtoc's geometry before it gives the drive
+# that geometry with SETPARAMETERS, so the read went to sector 81, not
+# 93: "dev 0: alternate sectors corrupt" (docs/deferred.md, S-15).
+TOTAL=$(( (END + 1007) / 1008 * 1008 ))
 U_SIZE=$((TOTAL - BASE))
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT INT TERM

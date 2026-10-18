@@ -1228,8 +1228,23 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   `alt_ptr` says, 15360 bytes into the partition, sector 93, with
   `ALT_SANITY` (0xdeadbeef) first, and the image holds it there; the
   kernel reads something else. Found 17 October 2026 while checking
-  S-6's screens, on kernels before and after 0098. Harmless so far --
-  the table is empty -- and not yet looked into.
+  S-6's screens, on kernels before and after 0098. **Fixed in 0100**,
+  in `mkbootdisk.sh`. Traced with QEMU's IDE events: the read went to
+  sectors 81 to 84, not 93. The first SETPARAMETERS gave the drive 4
+  heads and 51 sectors -- the label's geometry then, from IDENTIFY,
+  which QEMU had guessed from the partition table: the disk was made in
+  whole megabytes, so the UNIX partition ended mid-cylinder, at head 3,
+  sector 51, of the nominal 16 by 63. `read_vtoc()` then set the label
+  to the vtoc's 16 by 63 and read the alternates through it, and the
+  drive, told 16 by 63 only at the next `hdstart()`, took the address
+  for sector 81. DR3's order -- the label first, SETPARAMETERS later --
+  is harmless where the drive's geometry and the vtoc's agree, as they
+  did on a disk OSF's own tools partitioned; the disk is made that way
+  now, in whole cylinders, so that the partition ends on one as fdisk
+  ends it. Measured: IDENTIFY answers 16 by 63, the read is of sectors
+  93 to 96, and the message is gone. Disks made before 0100 keep the
+  message under multiboot; `boot.sh BIOS=1` gives QEMU the geometry and
+  never had it.
 
 ### The `ne` driver, measured on 14 October 2026
 
