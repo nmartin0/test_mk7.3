@@ -24,6 +24,12 @@
 # assumes, 16 heads and 63 sectors: the primary reads the partition by
 # its CHS address, and left to guess, QEMU's BIOS reads it elsewhere.
 #
+# A multiprocessor kernel (FAST+MP) needs each CPU in a socket of its
+# own: "-smp 2,sockets=2,cores=1,threads=1" after the disk.  The kernel
+# finds its CPUs in the Intel MP table (i386/AT386/mp/mp_v1_1.c), and
+# SeaBIOS lists one CPU per package there; plain "-smp 2" makes one
+# package of two cores, and the second CPU is never started.
+#
 # The console is the VGA screen.  HEADLESS=1 runs without a window and
 # with QEMU's monitor on stdio, where "screendump shot.ppm" saves the
 # screen and "quit" ends the run.

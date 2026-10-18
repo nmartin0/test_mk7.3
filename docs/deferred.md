@@ -681,6 +681,40 @@ on the host -- kernel, bootstrap task, `name_server`, `default_pager`,
 Lites -- boots multi-user from OSF's primary (`BIOS=1`) and by
 multiboot, and passes the compile-and-install loop both ways.
 
+### The multiprocessor kernel on the host
+
+OSF's compiler builds FAST and FAST+MP from this tree unchanged, and
+the running system's FAST+MP boots under QEMU with two CPUs, both
+running user code (17 October 2026). GCC 13 needed three things,
+none in OSF's design:
+
+- Two lines that stopped the build (0095): `ipc_port.c`'s debugger
+  code compares a pointer with `MACH_PORT_NULL`, and `mp_desc.c`
+  declares `intstack` without `extern`.
+- The I/O APIC (0096). `mp_v1_1_take_irq()` writes a redirection
+  entry through two plain pointers, select and window: select the high
+  word, write the destination, select the low word, write the vector.
+  GCC 13 dropped the first select as a dead store; with `-fno-dse` it
+  kept it but scheduled the second select ahead of the first window
+  write. Either way the destination word was never written, QEMU's I/O
+  APIC showed every entry with destination 0, no interrupt reached a
+  CPU -- the clock never ticked -- and the kernel stopped after "I've
+  found: 2 sections", on one CPU or two. gcc 2.7.2.1 emits the four
+  stores in order. `select` and `window` are `volatile` now, as the
+  file's own `LF()` macros make the local APIC's registers.
+- QEMU's topology. With `-smp 2`, SeaBIOS's MP table listed one CPU:
+  it lists one per package, and QEMU makes two cores of one package.
+  `-smp 2,sockets=2,cores=1,threads=1` lists both, and OSF's code
+  starts the second ("Starting CPU 01", "cpu 1 active";
+  `docs/tools/boot.sh`).
+
+Measured, host build: FAST+MP on two CPUs boots multi-user, both CPUs'
+`machine_slot` running with ticks counting, and passes the
+compile-and-install loop; on one CPU it boots multi-user; FAST boots
+multi-user. Not yet built on the running system with these changes,
+nor booted from OSF's primary, whose boot passes the CPU count
+(`asm_startup.h`, `wncpu`).
+
 ### `hd.c`: a race, not the disk's size
 
 0079 found DR3's `hd.c` hanging on a 465 MB disk and booting a 165 MB

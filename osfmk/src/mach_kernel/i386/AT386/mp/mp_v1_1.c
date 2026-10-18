@@ -275,8 +275,23 @@ mp_v1_1_take_irq(int pic, int unit, int spl, intr_t intr)
 	int ind;
 	unsigned int vec;
 
-	unsigned int *select =(unsigned int *)(ioapic_start[0]+IOAPIC_RSELECT);
-	unsigned int *window =(unsigned int *)(ioapic_start[0]+IOAPIC_RWINDOW);
+	/*
+	 * AI-ONLY NOTE: volatile, here, in mp_v1_1_reset_irq() and in
+	 * db_ioapic(), as the file's own LF() and LFO() macros have it
+	 * for the local APIC.  select and window are the I/O APIC's
+	 * index and data registers, and a redirection entry is written
+	 * as select, window, select, window.  Through plain pointers
+	 * GCC 13 may drop the first select as a dead store, or move the
+	 * second ahead of the first window: either way the destination
+	 * word is never written, every entry's destination is 0, no
+	 * interrupt reaches a CPU, and FAST+MP stops after loading the
+	 * bootstrap task.  gcc 2.7.2.1, OSF's compiler, keeps the four
+	 * stores in order (measured on the running system).
+	 */
+	volatile unsigned int *select =
+	    (volatile unsigned int *)(ioapic_start[0]+IOAPIC_RSELECT);
+	volatile unsigned int *window =
+	    (volatile unsigned int *)(ioapic_start[0]+IOAPIC_RWINDOW);
 
 	if (!mp_v1_1_initialized) {
 #if	MP_DEBUG
@@ -328,8 +343,10 @@ mp_v1_1_reset_irq(
 {
 	int ind;
 
-	unsigned int *select =(unsigned int *)(ioapic_start[0]+IOAPIC_RSELECT);
-	unsigned int *window =(unsigned int *)(ioapic_start[0]+IOAPIC_RWINDOW);
+	volatile unsigned int *select =		/* AI-ONLY NOTE: */
+	    (volatile unsigned int *)(ioapic_start[0]+IOAPIC_RSELECT);
+	volatile unsigned int *window =		/* mp_v1_1_take_irq() */
+	    (volatile unsigned int *)(ioapic_start[0]+IOAPIC_RWINDOW);
 
 	if (!mp_v1_1_initialized) {
 		return (FALSE);
@@ -1178,8 +1195,8 @@ db_lapic(int cpu)
 void
 db_ioapic(unsigned int ind)
 {
-	unsigned int *select;
-	unsigned int *window;
+	volatile unsigned int *select;	/* AI-ONLY NOTE: */
+	volatile unsigned int *window;	/* mp_v1_1_take_irq() */
 	unsigned int id, v;
 	unsigned int max_ent;
 	int i;
@@ -1191,8 +1208,8 @@ db_ioapic(unsigned int ind)
 	start = ioapic_start[ind];
 	p_start = pioapic[ind];
 
-	select = (unsigned int *)(start + IOAPIC_RSELECT);
-	window = (unsigned int *)(start + IOAPIC_RWINDOW);
+	select = (volatile unsigned int *)(start + IOAPIC_RSELECT);
+	window = (volatile unsigned int *)(start + IOAPIC_RWINDOW);
 
 	*select = IOA_R_ID;
 	id = (*window)>>IOA_R_ID_SHIFT;
