@@ -1291,22 +1291,36 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   CMU history, which MK83 does not have).
   `bbc_settime()` counts whole years from 1970, which the rule suits,
   but writes the year as `dectohexdec(j - 1900)`, which after 1999 is
-  no two-digit BCD year. OSFMK 6.1, DR3, MkLinux's CVS tree and `dev`
-  all have both. Rhapsody's `bsd/dev/i386/rtc.c` (CMU's and Intel's
-  file, as Apple carried it) has neither: `yeartoday()` is CMU's
-  "(year%4) ? 365 : 366", right from 1901 to 2099, which covers every
-  year the RTC's two digits and `bbc_gettime()`'s "< 70" give, and its
-  `writetodc()` writes `dectohexdec(j % 100)`. XNU, the same file's
-  later descendant, did it in three steps instead: xnu-123.5 already
-  writes `j % 100`; xnu-201 gave `yeartoday()` "year += 1900;"; and
-  xnu-517 started `bbc_settime()`'s loop at 70, which that requires.
+  no two-digit BCD year. OSFMK 6.1, DR3, MkLinux 1.0b2, MkLinux's CVS
+  tree and `dev` have both. **Fixed in 0113**, in that file, from the
+  Mach line itself, with no Rhapsody or XNU code. `yeartoday()` has
+  CMU's rule again, as MK83 has it, as Utah's Mach4 UK22 kernel has it
+  (`Mach.UK22` in the MachUK22 disk image, disassembled: "testb $3",
+  365 or 366), and as this tree's `sqt/clock.h` has it ("LEAPYEAR",
+  "(year)%4==0", "good till time becomes negative"). The year written
+  is this tree's own line for the same MC146818 chip,
+  `chips/mc_clock.c`'s `mc_write()`, "Trim years into 0-99 range":
+  `if ((years -= 1900) > 99) years -= 100;`. MK83 and Mach4 UK22 write
+  `j - 1900` too. That line brings `mc_clock.c`'s CMU notice into
+  `bbclock.c`, after OSF's, as `docs/provenance/conventions.md`
+  requires; no notice is removed or moved. Rhapsody's
+  `bsd/dev/i386/rtc.c` and XNU (xnu-123.5 to xnu-517) fixed the same
+  two places, and were the precedent until the Mach line was searched;
   `nmartin0/4.4BSD-Lite2` `dev3`'s `i386/isa/clock.c` is Berkeley's
-  own, not this file, and has the same "% 4" rule, on whole years, and
-  no setter (`resettodr()` is empty). **Open**, a kernel source change,
-  for the maintainer: two lines, `yeartoday()` and the year written,
-  following Rhapsody, third in `docs/provenance/precedent.md`'s "Where
-  to look" and the first with both; XNU is fourth. Setting the clock
-  was not tried.
+  own, not this file, with the same "% 4" rule and no setter.
+  Measured: the two functions, compiled on the host around a model of
+  the chip, set and read back every day from 1 January 1970 to 18
+  January 2038, where the kernel's 32-bit `time_t` ends: 24,854 days,
+  none wrong (`docs/tools/bbclockcheck.py`); the unfixed file, the
+  same way, fails 27,734 checks: the chip's year written as "100" from
+  1 January 2000, and every date read back a day early from 1 March
+  2000. Booted
+  from OSF's boot loader, the server's `/etc/rc` prints "Mon Oct 19
+  14:04:40 PDT 2026" for 21:04 UTC that day, and a program's
+  `gettimeofday` reads Mon Oct 19 21:08:27 UTC with the host at
+  21:09:01, half a minute later. Lites does not set the chip
+  (`host_set_time()` leaves `bbc_settime()` under `#if 0`,
+  `kern/posixtime.c`), so the setter is measured on the host only.
 - **S-17. A child server leaves its parent's terminal raw.** Found 19
   October 2026 (`docs/status.md`, "A child server"). Lites'
   `second_tty_open()` (`serv/second_cons.c`, its block marked "From

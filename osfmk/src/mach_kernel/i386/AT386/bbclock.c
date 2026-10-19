@@ -21,6 +21,38 @@
 /*
  * MkLinux
  */
+/*
+ * AI-ONLY NOTE: the notice below is chips/mc_clock.c's, carried here
+ * with the line bbc_settime() takes from that file to write the year
+ * ("Trim years into 0-99 range"), as CMU's grant asks for "any
+ * portions thereof" and docs/provenance/conventions.md, "File
+ * headers", requires.  The notices above and below are unchanged.
+ */
+/* 
+ * Mach Operating System
+ * Copyright (c) 1991,1990 Carnegie Mellon University
+ * All Rights Reserved.
+ * 
+ * Permission to use, copy, modify and distribute this software and its
+ * documentation is hereby granted, provided that both the copyright
+ * notice and this permission notice appear in all copies of the
+ * software, derivative works or modified versions, and any portions
+ * thereof, and that both notices appear in supporting documentation.
+ * 
+ * CARNEGIE MELLON ALLOWS FREE USE OF THIS SOFTWARE IN ITS "AS IS"
+ * CONDITION.  CARNEGIE MELLON DISCLAIMS ANY LIABILITY OF ANY KIND FOR
+ * ANY DAMAGES WHATSOEVER RESULTING FROM THE USE OF THIS SOFTWARE.
+ * 
+ * Carnegie Mellon requests users of this software to return to
+ * 
+ *  Software Distribution Coordinator  or  Software.Distribution@CS.CMU.EDU
+ *  School of Computer Science
+ *  Carnegie Mellon University
+ *  Pittsburgh PA 15213-3890
+ * 
+ * any improvements or extensions that they make and grant Carnegie Mellon
+ * the rights to redistribute these changes.
+ */
 /* CMU_HIST (from rtc.c) */
 /*
  * Revision 2.6.1.2  92/03/28  10:06:48  jeffreyh
@@ -269,7 +301,19 @@ bbc_settime(
 	rtclk.rtc_dow = (n + 4) % 7;  /* 1/1/70 is Thursday */
 	for (j = 1970; n >= (i = yeartoday(j)); j++)
 		n -= i;
-	rtclk.rtc_yr = dectohexdec(j - 1900);
+	/*
+	 * AI-ONLY NOTE: was "rtclk.rtc_yr = dectohexdec(j - 1900);", which
+	 * after 1999 is no two-digit BCD year.  The two lines are
+	 * chips/mc_clock.c's, mc_write(), for the same MC146818 chip:
+	 * "Trim years into 0-99 range"; its mc_new_century flag is not
+	 * taken, as bbc_gettime() puts years below 70 in the 2000s.  The
+	 * yeartoday(j) below is unchanged by it: 1900 and 2000 are both
+	 * multiples of 4, and the rule is CMU's "% 4" (see yeartoday()).
+	 * docs/deferred.md, S-16.
+	 */
+	if ((j -= 1900) > 99)
+		j -= 100;
+	rtclk.rtc_yr = dectohexdec(j);
 	if (yeartoday(j) == 366)
 		month[1] = 29;
 	for (i = 0; n >= month[i]; i++)
@@ -365,8 +409,18 @@ int
 yeartoday(
 	int	year)
 {
-	return((year % 4) ? 365 :
-	       ((year % 100) ? 366 : ((year % 400) ? 365: 366)));
+	/*
+	 * AI-ONLY NOTE: CMU's rule again, as Mach 3.0 MK83's i386at/rtc.c,
+	 * Utah's Mach4 UK22 kernel and this tree's sqt/clock.h ("LEAPYEAR",
+	 * "(year)%4==0") have it.  The century test, from "Changes from
+	 * lance@mtxinu.com to correct more leap year problems" (above,
+	 * 2.6.1.2), was applied to bbc_gettime()'s years, which count from
+	 * 1900, so 100, the year 2000, had 365 days and every date since
+	 * read a day early.  bbc_gettime() reads 1970 to 2069, and "% 4"
+	 * is right from 1901 to 2099, counted either way.  docs/deferred.md,
+	 * S-16.
+	 */
+	return((year % 4) ? 365 : 366);
 }
 
 int
