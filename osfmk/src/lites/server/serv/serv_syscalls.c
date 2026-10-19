@@ -194,6 +194,166 @@ bsd_task_by_pid(
 	return (end_server_op(p, error, (boolean_t *)0));
 }
 
+#if OSFMACH3
+/*
+ * AI-ONLY NOTE: added.  The bootstrap service for the server's tasks.
+ * "The OSF/1 server implements the bootstrap service for its child
+ * tasks and is responsible for controlling the bootstrap ports of
+ * those children ... How an OSF/1 server responds is its own policy
+ * decision" (OSF RI, server co-location paper, 1993, section 5.1).
+ * A task's bootstrap port here is its process port (serv_fork.c,
+ * server_exec.c), so OSF's programs, which start through libsa_mach's
+ * crt0 and print through bootstrap_ports(), ask it for
+ * mach/bootstrap.defs.  The stubs are OSF libmach's, bootstrap_server(),
+ * as the bootstrap task uses them.  Message
+ * 999999, which bootstrap.defs keeps only as a skipped "old
+ * bootstrap_privileged_ports", is not served.
+ *
+ * Policy, docs/deferred.md, O-6:
+ * - the privileged ports go only to privileged processes, as OSF's
+ *   Server Library Interfaces say of mach_privileged_host_port() and
+ *   mach_device_server_port(), whose other route is task_by_pid(-1)
+ *   and (-2): so by bsd_task_by_pid()'s test above, the superuser or
+ *   group 2.
+ * - arguments and environment are empty, below.
+ * - bootstrap_completed is accepted; only the bootstrap task acts on
+ *   it.
+ *
+ * Every message on a process port takes its turn by sequence number
+ * (port_object.c), so the turn is taken here, before the stub runs,
+ * as bad_request_server() takes it for a message no one serves.
+ */
+#include <mach/bootstrap_server.h>
+
+/*
+ * Release a request's rights but for its reply port, for a request
+ * that is answered without its routine having run.
+ */
+static void
+bootstrap_discard_request(
+	mach_msg_header_t	*InHeadP)
+{
+	mach_port_t reply_port = InHeadP->msgh_remote_port;
+
+	InHeadP->msgh_remote_port = MACH_PORT_NULL;
+	mach_msg_destroy(InHeadP);
+	InHeadP->msgh_remote_port = reply_port;
+}
+
+boolean_t
+bsd_bootstrap_server(
+	mach_msg_header_t	*InHeadP,
+	mach_msg_header_t	*OutHeadP)
+{
+	proc_invocation_t pk = get_proc_invocation();
+	mach_msg_format_0_trailer_t *trailer;
+	mig_reply_error_t *out = (mig_reply_error_t *) OutHeadP;
+	struct proc *p;
+	int error;
+
+	if (bootstrap_server_routine(InHeadP) == 0)
+		return FALSE;
+
+	trailer = (mach_msg_format_0_trailer_t *)
+		((vm_offset_t)InHeadP + round_msg(InHeadP->msgh_size));
+	p = proc_receive_lookup(InHeadP->msgh_local_port,
+				trailer->msgh_seqno);
+	if (error = start_server_op(p, 1020)) {
+		mig_reply_setup(InHeadP, OutHeadP);
+		out->RetCode = (error == MIG_NO_REPLY) ? MIG_NO_REPLY
+						       : KERN_INVALID_ARGUMENT;
+		bootstrap_discard_request(InHeadP);
+		return TRUE;
+	}
+	pk->k_p = p;
+
+	unix_master();
+	(void) bootstrap_server(InHeadP, OutHeadP);
+	unix_release();
+
+	/*
+	 * The turn is taken: a stub's type check failure must not make
+	 * ux_server_loop() take another (its MIG_BAD_ARGUMENTS case).
+	 */
+	if (out->RetCode == MIG_BAD_ARGUMENTS) {
+		out->RetCode = KERN_INVALID_ARGUMENT;
+		bootstrap_discard_request(InHeadP);
+	}
+
+	(void) end_server_op(p, 0, (boolean_t *)0);
+	pk->k_p = NULL;
+	return TRUE;
+}
+
+kern_return_t
+do_bootstrap_ports(
+	mach_port_t	bootstrap,
+	mach_port_t	*priv_host,
+	mach_port_t	*priv_device,
+	mach_port_t	*wired_ledger,
+	mach_port_t	*paged_ledger,
+	mach_port_t	*host_security)
+{
+	proc_invocation_t pk = get_proc_invocation();
+	struct proc *p = pk->k_p;
+	extern mach_port_t root_ledger_wired;
+	extern mach_port_t root_ledger_paged;
+	extern mach_port_t security_port;
+
+	if (!groupmember(2, p->p_ucred) && suser(p->p_ucred, &p->p_acflag))
+		return KERN_NO_ACCESS;
+	*priv_host = privileged_host_port;
+	*priv_device = device_server_port;
+	*wired_ledger = root_ledger_wired;
+	*paged_ledger = root_ledger_paged;
+	*host_security = security_port;
+	return KERN_SUCCESS;
+}
+
+/*
+ * No arguments and no environment: a process gets its own on its exec
+ * stack, where OSF's i386 runtime looks first (libsa_mach crt0, built
+ * OLD_COMPAT by libsa_mach/AT386/machdep.mk), so only a task made with
+ * task_create, which has no stack of the kind, asks; it gets what
+ * mach_perf's own bootstrap server gives the tasks it makes
+ * (mach_perf/lib/server.c).
+ */
+kern_return_t
+do_bootstrap_arguments(
+	mach_port_t		bootstrap,
+	mach_port_t		task,
+	vm_offset_t		*arguments,
+	mach_msg_type_number_t	*argumentsCnt)
+{
+	(void) mach_port_deallocate(mach_task_self(), task);
+	*arguments = 0;
+	*argumentsCnt = 0;
+	return KERN_SUCCESS;
+}
+
+kern_return_t
+do_bootstrap_environment(
+	mach_port_t		bootstrap,
+	mach_port_t		task,
+	vm_offset_t		*environment,
+	mach_msg_type_number_t	*environmentCnt)
+{
+	(void) mach_port_deallocate(mach_task_self(), task);
+	*environment = 0;
+	*environmentCnt = 0;
+	return KERN_SUCCESS;
+}
+
+kern_return_t
+do_bootstrap_completed(
+	mach_port_t		bootstrap,
+	mach_port_t		task)
+{
+	(void) mach_port_deallocate(mach_task_self(), task);
+	return KERN_SUCCESS;
+}
+#endif	/* OSFMACH3 */
+
 int
 bsd_pid_by_task(
 	mach_port_t		proc_port,

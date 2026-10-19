@@ -44,6 +44,12 @@
 #include <sys/proc.h>
 
 #if OSFMACH3
+/* AI-ONLY NOTE: the bootstrap service, serv_syscalls.c; O-6 */
+extern boolean_t bsd_bootstrap_server(mach_msg_header_t *,
+				      mach_msg_header_t *);
+#endif
+
+#if OSFMACH3
 
 /*
  * AI-ONLY NOTE: OSFMK 7.3's cthreads is no longer missing this one.
@@ -301,6 +307,10 @@ void ux_server_loop()
 		if (!ux_generic_server(request_ptr, &reply_ptr->Head))
 		if (!exc_server(request_ptr, &reply_ptr->Head))
 		if (!seqnos_notify_server(request_ptr, &reply_ptr->Head))
+#if OSFMACH3
+		/* AI-ONLY NOTE: the bootstrap service; serv_syscalls.c, O-6 */
+		if (!bsd_bootstrap_server(request_ptr, &reply_ptr->Head))
+#endif
 		    bad_request_server(request_ptr, &reply_ptr->Head);
 
 		/* Don't lose a sequence number if a type check failed */
@@ -426,7 +436,12 @@ ux_act_entry(request_ptr)
 	if (!bsd_1_server(request_ptr, &reply_ptr->Head))
 	if (!ux_generic_server(request_ptr, &reply_ptr->Head))
 	if (!exc_server(request_ptr, &reply_ptr->Head))
-	if (!seqnos_notify_server(request_ptr, &reply_ptr->Head)) {
+	if (!seqnos_notify_server(request_ptr, &reply_ptr->Head))
+#if OSFMACH3
+	/* AI-ONLY NOTE: the bootstrap service; serv_syscalls.c, O-6 */
+	if (!bsd_bootstrap_server(request_ptr, &reply_ptr->Head))
+#endif
+	{
 	    printf("Bad MiG request: req id %d port=x%x\n",
 		   request_ptr->msgh_id,
 		   request_ptr->msgh_local_port);

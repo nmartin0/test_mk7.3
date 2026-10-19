@@ -169,7 +169,8 @@ start_server_op(
 		    "1017",
 		    "1018signal_port_register",
 		    "1019exec_done",
-		    "1020", "1021", "1022"
+		    "1020bootstrap",	/* AI-ONLY NOTE: O-6 */
+		    "1021", "1022"
 	    };
 	    static int extra_nsysent = sizeof(extra_syscallnames) / 
 		    sizeof(extra_syscallnames[0]);

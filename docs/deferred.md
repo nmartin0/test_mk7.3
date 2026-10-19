@@ -1397,14 +1397,44 @@ Lites gets its arguments from OSF's bootstrap").
   parses, in OSF's words, with the root so far as the default; Return
   keeps it. Measured: `startup startup -a` prints `root device:
   [hd0a]`, and Return boots multi-user on hd0a.
-- **O-6. Lites serves no bootstrap service to its tasks.** The OSF/1
-  server "implements the bootstrap service for its child tasks"
-  (co-location paper §5.1); OSFMK's `get_privileged_ports()` sends
-  `msgh_id` 999999 to the task's bootstrap port, and `mach_perf`, which
-  the Release Notes use, asks for `bootstrap_ports()`. Lites makes each
-  task's bootstrap port its BSD request port and offers CMU's
-  `task_by_pid(-1)` and `(-2)` instead, so OSFMK's own tools fail
-  under it. **Work**: answer `bootstrap.defs` on that port.
+- **O-6. Lites served no bootstrap service to its tasks. Fixed, 19
+  October 2026.** The OSF/1 server "implements the bootstrap service
+  for its child tasks and is responsible for controlling the
+  bootstrap ports of those children ... How an OSF/1 server responds
+  is its own policy decision" (co-location paper §5.1). A Lites task's
+  bootstrap port is its process port, and OSFMK's programs, which
+  start through `libsa_mach` and print through `bootstrap_ports()`,
+  got "warning_panic: bad_request_server" and a segmentation fault:
+  measured with `host_perf` and `mach_perf`, built from this tree
+  (`build -here mach_services/cmds/mach_perf`, which builds clean).
+  Now, under `OSFMACH3`, `serv/serv_syscalls.c` answers
+  `mach/bootstrap.defs` on that port through OSF libmach's own
+  `bootstrap_server()`, as OSF's bootstrap task does, after taking the port's turn by sequence number as every
+  request there must (`imports.md`, E). The policy, from the sources:
+  `bootstrap_ports()` gives the privileged ports only to privileged
+  processes, as OSF's Server Library Interfaces say of
+  `mach_privileged_host_port()` and `mach_device_server_port()`, whose
+  other route is `task_by_pid(-1)` and `(-2)`: so by that call's test,
+  the superuser or group 2 (kmem), and `KERN_NO_ACCESS` otherwise.
+  `bootstrap_arguments()` and `bootstrap_environment()` answer empty,
+  as `mach_perf`'s own server answers the tasks it makes: OSF's i386
+  runtime is built `OLD_COMPAT` (`libsa_mach/AT386/machdep.mk`), so a
+  program a Unix server execs takes `argc` and `argv` from its stack
+  and never asks, as measured; only a task made with `task_create`
+  would. (Proposed first: the exec's own strings, on the reading that
+  a second server needs them; the measurement showed it does not.)
+  `bootstrap_completed()` is accepted. Message 999999, which
+  `bootstrap.defs` keeps only as a skipped "old
+  bootstrap_privileged_ports", is not served; OSF's bootstrap task
+  does not serve it either. Measured
+  from OSF's primary: a `libsa_mach` test program sees its shell
+  arguments; as root, 50 rounds of all four calls answer as above, and
+  the process exits normally after them, so the port's turns stay in
+  step; so they do for `daemon`, not root but put in group 2 on a test
+  disk; for `nobody` the program prints nothing, as a refused
+  `bootstrap_ports()` leaves `libsa_mach`'s `printf()` without a
+  console, and the shell carries on; `host_perf` runs its tests; the
+  compile-and-install loop passes.
 - **O-7. `-s` at the boot prompt did not reach the server. Fixed,
   18 October 2026.** "-s -- single-user mode (passed to server)", the
   Release Notes say (Boot Options). Measured with OSF's loader:
@@ -1484,9 +1514,9 @@ directory; 0107 supersedes it.
 **What happened, 17 October 2026.** Self-hosting came first after all:
 the maintainer took the roadmap's milestones in order, and milestone 5
 is reached (`docs/status.md`, "Hosting itself"). The O-items in step 2
-still open is O-6 (O-3 closes with Tier 1); O-7, checked once OSF's
-boot loader ran (milestone 1, 0079), is fixed, and O-1, O-2, O-4 and
-O-5 with it. They belong to the boundary
+none is still open but O-3, which closes with Tier 1; O-7, checked
+once OSF's boot loader ran (milestone 1, 0079), is fixed, and O-1,
+O-2, O-4, O-5 and O-6 with it. They belong to the boundary
 between the intermediate goal and Tier 1, and are taken there.
 
 ## 2a. Tooling defects, to fix in a later patch
