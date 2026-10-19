@@ -342,6 +342,59 @@ rate and neither won clearly.
 Fifteen files reference the emulator and need rework; they are listed
 in `docs/deferred.md`.
 
+*Corrected 19 October 2026: not one class at a time within a task.*
+`i386/locore.s` sends a system call to the emulation vector when the
+task has one and the vector's entry is set; any other positive call
+number goes to `mach_call_range`, which, when the task has a vector
+at all, jumps to `syscall_failed`, an illegal instruction, and only
+when it has none raises `EXC_SYSCALL`. A task with the emulator
+cannot send some calls by exception. So the cut-over is whole, in
+the `noemulator` server of item 1, while the emulator's server keeps
+running beside it; classes can still be brought up one at a time
+inside the new server, each one measured against the old.
+
+**The plan, 19 October 2026**, every piece under `NO_EMULATOR`, each
+from the sources above:
+
+1. *Exec without the emulator.* The server builds the process image
+   a BSD kernel builds -- arguments, environment and `ps_strings` on
+   the user stack, the entry registers -- which the emulator's
+   `emul_init.c` builds today. Patience §7: the no-emulator server
+   reused "mature OSF/1 Integrated Kernel code" so that "the internal
+   environment became indistinguishable from the integrated OSF/1
+   system". The integrated kernel's code for this is 4.4BSD's
+   `execve()` and i386 `setregs()`, but 4.4BSD-Lite2's
+   `kern/kern_exec.c` has no body ("Body deleted.", `return
+   (ENOSYS)`), and its i386 `setregs()` alone does not build a stack.
+   The donor for the stack is therefore Lites' own: the layout
+   `emul_init.c` builds now, which NetBSD 1.0's programs already run
+   on, moved into the server; Lite2's `setregs()` for the registers.
+   The maintainer is to provide a better donor than Lite2.
+2. *Entry and return.* Each process's thread gets an `EXC_SYSCALL`
+   port of its own, set with `thread_set_exception_ports`, behaviour
+   `EXCEPTION_STATE` and flavour `i386_THREAD_STATE`; the server finds
+   the process by the port the message arrives on and answers in
+   `catch_exception_raise_state`, as recorded in `docs/deferred.md`
+   ("The syscall path is exception-driven"). Not the port Lites now
+   gives every exception, with `EXCEPTION_STATE_IDENTITY`: debuggers
+   interpose that one, and its messages carry port rights (Patience
+   §3). The dispatch is the integrated kernel's `syscall()`, "with 15
+   extra lines of preamble, 2 postamble and a name change" (§7):
+   Lite2's i386 `trap.c` `syscall()` against Lites' own `sysent`.
+3. *`copyin` and `copyout`.* `copyin` by `vm_read_overwrite`, which
+   7.3 has as trap -30 (`kern/ipc_mig.c`); `copyout` by `vm_write`,
+   which 7.3 takes unaligned (`vm_map_copy_overwrite_unaligned`), so
+   the reply-message staging the emulator needs goes (§5.1).
+4. *What the emulator does itself* -- mapped time, cached values, the
+   per-binary-type tables (`emulator/i386/e_trampoline.c`) -- moves
+   into the server.
+5. *Fork's return in the child, signals and exit.* Signal frames on
+   the user stack and `sigreturn`: Lite2's i386 `sendsig()` and
+   `sigreturn()`.
+
+Items 1 to 3 are the first that can be tested, together: the
+`noemulator` server running one program, then `init`, then a shell.
+
 ### 3. The locking
 
 Lites has 603 `spl*()` calls resolving to its own `spl_n()` in
