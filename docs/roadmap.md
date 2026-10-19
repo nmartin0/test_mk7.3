@@ -159,7 +159,12 @@ Lite2 only file by file and only where the running system needs it,
 each such change taking Berkeley's own delta from CSRG's history.
 The real Lites update, to Lite2 proper, is its own work order after
 this goal: built on, and run as a child server under, this one as its
-parent.
+parent. *Measured possible, 19 October 2026:* Helander's second-server
+procedure (`lites/doc/README`) runs a second Lites from the running
+one's shell, on a disk of its own, multi-user, with nothing changed in
+the tree (`docs/status.md`, "A child server"; S-16 and S-17 in
+`docs/deferred.md`). The BSD donor for the update is
+`nmartin0/4.4BSD-Lite2`, branch `dev3`, the maintained Lite2.
 
 **State on 17 October 2026**, milestone by milestone: 0 done; 1 done,
 OSF's boot loader booting what the running system builds; 2 done; 3

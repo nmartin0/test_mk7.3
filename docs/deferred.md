@@ -1276,6 +1276,52 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   message under multiboot; `boot.sh BIOS=1` gives QEMU the geometry and
   never had it.
 
+- **S-16. The clock is a day behind, on every boot since 1 March
+  2000.** Found 19 October 2026: the server prints "Time is set to Sun
+  Oct 18" on the 19th, and a program's `gettimeofday` agrees, 86,400
+  seconds behind the host, the parent server's and a child's alike.
+  The kernel's `bbc_gettime()` (`i386/AT386/bbclock.c`) counts years
+  from 1900 -- `yr = (yr < 70) ? yr+100 : yr` -- and its
+  `yeartoday()` applies the Gregorian century rule to that count, so
+  100, the year 2000, is given 365 days. CMU's rule was "(year%4) ?
+  365 : 366" (Mach 3.0 MK83's `kernel/i386at/rtc.c`, and Rhapsody's
+  `bsd/dev/i386/rtc.c`), right for 1901 to 2099; the century rule came
+  with "Changes from lance@mtxinu.com to correct more leap year
+  problems" (92/03/28, a branch revision, 2.6.1.2, in the file's own
+  CMU history, which MK83 does not have).
+  `bbc_settime()` counts whole years from 1970, which the rule suits,
+  but writes the year as `dectohexdec(j - 1900)`, which after 1999 is
+  no two-digit BCD year. OSFMK 6.1, DR3, MkLinux's CVS tree and `dev`
+  all have both. Rhapsody's `bsd/dev/i386/rtc.c` (CMU's and Intel's
+  file, as Apple carried it) has neither: `yeartoday()` is CMU's
+  "(year%4) ? 365 : 366", right from 1901 to 2099, which covers every
+  year the RTC's two digits and `bbc_gettime()`'s "< 70" give, and its
+  `writetodc()` writes `dectohexdec(j % 100)`. XNU, the same file's
+  later descendant, did it in three steps instead: xnu-123.5 already
+  writes `j % 100`; xnu-201 gave `yeartoday()` "year += 1900;"; and
+  xnu-517 started `bbc_settime()`'s loop at 70, which that requires.
+  `nmartin0/4.4BSD-Lite2` `dev3`'s `i386/isa/clock.c` is Berkeley's
+  own, not this file, and has the same "% 4" rule, on whole years, and
+  no setter (`resettodr()` is empty). **Open**, a kernel source change,
+  for the maintainer: two lines, `yeartoday()` and the year written,
+  following Rhapsody, third in `docs/provenance/precedent.md`'s "Where
+  to look" and the first with both; XNU is fourth. Setting the clock
+  was not tried.
+- **S-17. A child server leaves its parent's terminal raw.** Found 19
+  October 2026 (`docs/status.md`, "A child server"). Lites'
+  `second_tty_open()` (`serv/second_cons.c`, its block marked "From
+  OSF/1:") reads the terminal's modes with `TIOCGETP`, sets `RAW` and
+  clears `ECHO` with `TIOCSETP`, and nothing sets them back; after the
+  child ends, the parent's shell sees no end of line and takes no
+  command. Lites' file is "Copyright (c) 1992 Carnegie Mellon
+  University", "Author: Randall W. Dean, 1992" (CMU's single server,
+  which Lites grew from; `doc/FILES` gives it as CMU's), with that one
+  block labelled as OSF/1's. Until a fix, the procedure keeps and
+  restores the modes in the parent's shell, `t=`stty -g`; ...; stty
+  $t`, NetBSD 1.0's `stty -g`, which is the same restore done from
+  outside. **Open**: a server source change, or the procedure as it
+  is, for the maintainer to choose.
+
 ### The `ne` driver, measured on 14 October 2026
 
 For roadmap milestone 4. With QEMU's `-device

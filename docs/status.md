@@ -1023,3 +1023,95 @@ Every Lites process maps the emulator from `/mach_servers/emulator`;
 `cp` truncated it while they ran, and the first attempt ended at once
 with Lites' "panic: init died". `install`(1), or `cp` to a new name
 and `mv`, leaves the old file to the processes that map it.
+
+## A child server
+
+**Measured 19 October 2026**, for the roadmap's next work order: Lites
+moved to Lite2, "built on, and run as a child server under, this one
+as its parent" (the intermediate goal, decided 15 October). A second
+Lites runs as a process of the running one, on a disk of its own,
+and is stopped and started without a reboot. Nothing in the tree was
+changed for it.
+
+**Whose procedure.** Helander's, in `lites/doc/README`, "RUNNING
+IT": "I've run the server as second server all the time with gdb
+attached to it ... Run it like this from your other server (could be
+LITES as well): `./vmunix.LITES1.STD+WS+DEBUG -2h sd1a
+/dev/sd1a/mach_servers` ... Instead of 2 you can use 3 ... -h is going
+to suspend the server right away". The server-directory word is gone
+since 0107 (O-1, O-4); the rest is unchanged. OSF's servers worked
+the same way: the MK6.1 Release Notes name "second server debugging
+with gdb" ([618]) and second-server boots ([591]), MK7.3's the `-2`
+option ([105]), and the collocation paper, §5.1, says of the
+no-emulator design: "In the case of a second OSF/1 server, the
+behavior is the same. The first server can (and probably will)
+interpose on the master host and device ports. A second server should
+not be able to tell that it is not the first server." Lites under
+`OSFMACH3` already asks for its ports that way (`server_init.c`,
+`init_ports()`, `bootstrap_ports()` on its bootstrap port), and the
+first server answers for its processes since O-6 (0108).
+
+**The procedure.**
+
+1. A second disk with a root of its own: `mklitesroot.sh`'s tree, its
+   `/mach_servers/emulator` in place (the child's processes find the
+   emulator in the child's root), and two files changed as an
+   installation on the second disk would have them: `/etc/fstab`
+   names the child's own root, `/dev/wd1a`; and `/etc/hostname.ne0`
+   and `/etc/mygate` are left out, so that the child's `/etc/netstart`
+   does not configure the interface the parent holds. Made with
+   `mkbootdisk.sh`, which needs no boot loader for it, and attached to
+   QEMU as the second IDE disk, unit 1: hd1 to the kernel, `wd1` to
+   NetBSD. The test gave QEMU 128 MB; 64 was not tried.
+2. The server binary anywhere in the parent, here `/root/startup.em`.
+3. As root -- the bootstrap service hands the privileged ports to root
+   and group kmem only (O-6) -- with the parent's terminal modes kept
+   and put back, as an application that changes them should:
+
+	t=`stty -g`; /root/startup.em -2 hd1a; stty $t
+
+   `-2` must be the first word (`server_init.c`, "must be the first
+   argument"); `s` after it, `-2s`, boots the child single-user. The
+   root, `hd1a`, is Lites' name for it. `-h`, Helander's, suspends the
+   child at once for a debugger; there is no Mach-aware gdb here.
+4. The child is ended from inside, by `halt` or `reboot`, which sync
+   its disk and leave by `second__exit()` (`serv/misc.c`); the
+   parent's shell resumes.
+
+**Measured.** From OSF's boot loader, the parent multi-user from hd0.
+The child, multi-user: its `/etc/rc` ran -- `fstab`'s root mounted
+read-write, the daemons started, `timed` finding "no network usable"
+as it should -- and gave a login on its console, which is the
+parent's terminal (`serv/second_cons.c`); `mount` shows `/dev/wd1a
+on /`, `uname -a` "Lites ... STD+WS+osfmach3 i386", `who` root on
+`console`. Single-user, with `mount -uw /dev/wd1a /`: NetBSD 1.0's
+`cc` compiled a program in the child, which ran. `halt` and `reboot`
+synced and returned to the parent, whose shell, terminal restored,
+took the next command and started another child. A child that panics
+is stopped and killed without harm to the parent: "panic: init died",
+"Debugger", then the parent's "Trace/BPT trap - core dumped".
+
+**What it showed.**
+
+- *The console is left raw* when the terminal modes are not saved
+  around the child: S-17.
+- *A panicking child is killed by SIGTRAP.* Lites' `boothowto`
+  starts as `RB_KDB` (`kern/init_main.c`, "XXX should be ifdeffed"),
+  so a second server's `panic()` calls `Debugger()`, which on the i386
+  executes `int3` for the gdb Helander kept attached
+  (`serv/misc.c`). With none attached, the parent gives the trap's
+  default action. That is Lites' design, not a fault.
+- *The child's clock is a day behind*, and so is the parent's, and
+  so was every boot: S-16, in the kernel.
+- *One character* typed after a child's `halt` was lost once, the
+  first of the parent's next line. Not reproduced or traced.
+- *A child without the emulator* (Tier 1 item 2's `noemulator`
+  server, parked, not delivered) ran its first program only once that
+  program's task had dropped the emulation vector it inherits from the
+  child server's own task (`kern/task.c`, `eml_task_reference()`): the
+  child server is a process of the parent and runs with the parent's
+  emulator. OSFMK provides for exactly this: `task_set_emulation_vector`
+  with a count of 0 discards the vector, added, its comment says, for
+  "emulator-less servers started from a classic server"
+  (barbou@gr.osf.org, `kern/syscall_emulation.c`). Recorded for when
+  item 2 resumes.
