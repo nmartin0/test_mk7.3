@@ -79,6 +79,18 @@ options		compat_43	COMPAT_43	1	compat_43.h
 options		compat_oldsock	COMPAT_OLDSOCK	1	compat_oldsock.h
 options		mach4		MACH4_INCLUDES	1	mach4_includes.h
 options		osfmach3	OSFMACH3	1	osfmach3.h
+	/*
+	 * AI-ONLY NOTE: added.  The server without the emulator: system
+	 * calls taken as EXC_SYSCALL exceptions, Patience, "Redirecting
+	 * System Calls in Mach 3.0" (1993).  A second configuration of
+	 * the one tree, STD+WS+osfmach3+noemulator, built beside the
+	 * emulator's, so the two can be booted and measured side by
+	 * side, as Patience measured his no-emulator server against the
+	 * emulator-based one; OSF builds its own server in two flavours
+	 * from one tree too (MK7.3 Release Notes, step 8, the .INK).
+	 * Nothing tests it yet.  docs/roadmap.md, Tier 1 item 1.
+	 */
+options		noemulator	NO_EMULATOR	1	no_emulator.h
 makeoptions	osfmach3	TARGET_CFLAGS+=-D_ANSI_C_SOURCE -DOSF_LEDGERS=1 -DUNTYPED_IPC=1 -D__STDC__=1
 
 /* Networking */

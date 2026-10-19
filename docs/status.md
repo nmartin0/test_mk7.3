@@ -64,6 +64,13 @@ step 8 built its server; on its own,
 `obj/at386/lites/STD+WS+osfmach3/`, with the sandbox's compiler, MIG
 and export area; `docs/provenance/precedent.md`, "How Lites meets
 ODE". The line went into `build_world` once the build completed.
+Since 0109 `build_world` builds a second configuration beside it,
+
+	build -here lites LITES_CONFIG=STD+WS+osfmach3+noemulator
+
+into `obj/at386/lites/STD+WS+osfmach3+noemulator/`: the server
+without the emulator, Tier 1 item 1 (`docs/roadmap.md`), which for
+now differs from the first only in its name.
 
 | | |
 | --- | --- |

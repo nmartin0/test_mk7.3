@@ -17,8 +17,12 @@ would settle it.
 alternative to the emulator*, USENIX Mach III Symposium 1993, pp.
 57–74, §2.
 
-OSF kept the emulator through MK 4.1 and removed it for MK 5.0. Their
-reasons, in their categories:
+OSF kept the emulator through MK 4.1 and removed it for MK 5.0.
+(*Checked 19 October 2026:* neither version number is in Patience's
+paper or in the Release Notes held here; the paper says only that the
+no-emulator server is the basis of the OSF/1 1.2-based server and of
+all OSF RI operating-system work, §9. The dates stand unsourced.)
+Their reasons, in their categories:
 
 - **Security.** The emulator is untrusted code in the application's own
   address space. A program can modify its emulator so an innocuous
@@ -335,8 +339,10 @@ B on 11 October 2026: "we might revisit A in the future".
 
 **What would make it worth revisiting:** wanting the server to build
 the way OSF's did down to the configuration file — for instance when
-Tier 1 item 1 builds two flavours, user and collocated, from one
-`conf/`, as OSF's `SERVER_CONFIG` did.
+Tier 1 item 4 builds two flavours, user and collocated, from one
+`conf/`, as OSF's `SERVER_CONFIG` build did (corrected 19 October
+2026: item 1, done in 0109, builds the emulator and no-emulator
+servers, as two configurations of Lites' configure build).
 
 ### The toolchain: era compilers, and GCC with Mach patches
 

@@ -41,6 +41,10 @@ build -here default_pager
 # and the header above invites the edit.  osfmk/src/lites/makefile runs
 # Lites' own configure build; docs/status.md, "Lites".
 build -here lites
+# AI-ONLY NOTE: and its second configuration, the server without the
+# emulator, built beside it from the same tree (conf/MASTER,
+# noemulator; docs/roadmap.md, Tier 1 item 1).
+build -here lites LITES_CONFIG=STD+WS+osfmach3+noemulator
 
 # Build	the name_server and its libraries
 # AI-ONLY NOTE: uncommented.  OSF's bootstrap.template and the MK7.3

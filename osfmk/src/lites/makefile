@@ -42,6 +42,9 @@
 #                 is the option for this kernel (conf/MASTER line 85).
 #                 Lites' CMU Makeconf, removed, defaulted to
 #                 STD+WS+DEBUG; add +DEBUG on the build line for that.
+#                 build_world builds a second, STD+WS+osfmach3+noemulator,
+#                 the server without the emulator (conf/MASTER), into
+#                 its own subdirectory beside the first.
 #   LITES_TARGET  i386-mach, the name Lites' documentation gives its
 #                 cross tools (doc/README.lites-1.1.u1, "the i386-mach
 #                 cross-build tools").  configure derives
@@ -202,7 +205,10 @@ ${_LITES_CROSS_}: ${ALWAYS}
 	chmod +x ${.TARGET}.X
 	${MV} ${.TARGET}.X ${.TARGET}
 
-${LITES_CONFIG}/config.status: ${_LITES_CROSS_} configure Makefile.in
+# AI-ONLY NOTE: conf/MASTER as well: configure reads it for the
+# options a configuration name selects, so a changed MASTER (a new
+# option, as noemulator) must make each configuration again.
+${LITES_CONFIG}/config.status: ${_LITES_CROSS_} configure Makefile.in conf/MASTER
 	${MAKEPATH} ${.TARGET}
 	_s_=`cd ${configure:P:H} && pwd` && \
 	${_LITES_CD_} ${.TARGET:H} && ${_LITES_PATH_} AWK=${LITES_AWK} \

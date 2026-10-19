@@ -288,10 +288,29 @@ dependency, not chosen.
 ### 1. One build, two servers
 
 Build the server twice from one source: the emulator-based one that
-works today and the exception-based one being written. OSF shipped
-`startup` and `startup.compute` from one tree and that is the
-precedent. Without it, removing the emulator is a flag day and a
-failure anywhere is indistinguishable from a failure everywhere.
+works today and the exception-based one being written. Without it,
+removing the emulator is a flag day and a failure anywhere is
+indistinguishable from a failure everywhere.
+
+*Corrected 19 October 2026.* This said OSF shipped "`startup` and
+`startup.compute` from one tree"; no source has `startup.compute`,
+and the line, from the roadmap's first draft, was never sourced. The
+precedent is two other things. Patience built the no-emulator server
+and measured it against the mature emulator-based one, both running,
+before it became the basis of OSF's servers ("Redirecting System Calls
+in Mach 3.0", §7 and §9). And OSF's own server is "built in two flavors"
+from one tree, "collocated, as osf1_server.<config>.INK ... and as
+osf1_server.<config> built to run in user space" (MK7.3 Release
+Notes, step 8) -- that pair is collocation's, item 4.
+
+*Done, 19 October 2026 (0109).* A Lites configuration option,
+`noemulator` (`NO_EMULATOR`, `conf/MASTER`), and a second
+configuration of the one tree, `STD+WS+osfmach3+noemulator`, which
+`build_world` builds beside `STD+WS+osfmach3` into its own object
+directory; Lites' configuration names are OSF's `SERVER_CONFIG`'s
+counterpart. Nothing reads the option yet, so the two servers differ
+only in their names; each boots and passes the compile-and-install
+loop. Item 2 fills the second in.
 
 ### 2. The syscall path
 
@@ -351,7 +370,11 @@ the engineering detail — KMIG, the trap-number scheme, the fallbacks —
 but the code to call is OSF's.
 
 Preserve the invariant: **the same binary runs collocated or as a user
-task.**
+task.** That is Utah's INKS design; OSF's build instead links the same
+objects twice, a user server and `osf1_server.<config>.INK`, the
+collocated one (MK7.3 Release Notes, step 8), as `mach_perf`'s
+programs are linked here today, the `.INK` at `0xd0000000`. Which of
+the two to follow is settled when this item starts.
 
 Expect about 13% on a realistic workload. Utah measured a full kernel
 build at 1,682s against 1,463s, Andrew at 4%, SPEC SDM SDET about 8% at
