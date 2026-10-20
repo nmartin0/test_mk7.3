@@ -1330,11 +1330,14 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   command. Lites' file is "Copyright (c) 1992 Carnegie Mellon
   University", "Author: Randall W. Dean, 1992" (CMU's single server,
   which Lites grew from; `doc/FILES` gives it as CMU's), with that one
-  block labelled as OSF/1's. Until a fix, the procedure keeps and
-  restores the modes in the parent's shell, `t=`stty -g`; ...; stty
-  $t`, NetBSD 1.0's `stty -g`, which is the same restore done from
-  outside. **Open**: a server source change, or the procedure as it
-  is, for the maintainer to choose.
+  block labelled as OSF/1's. **Open.** No public document of OSF's
+  says what a second server does with its parent's terminal when it
+  halts, and no permitted tree has a fix. Until there is one, the
+  procedure in `docs/status.md` saves the modes with `stty -g` before
+  a child and puts them back after it. A fix is the maintainer's to
+  rule on; one permitted pattern is 4.4BSD-Lite2's curses, which saves
+  the terminal's settings when it takes the terminal and restores them
+  when it gives it up.
 
 ### The `ne` driver, measured on 14 October 2026
 

@@ -1094,7 +1094,7 @@ is stopped and killed without harm to the parent: "panic: init died",
 **What it showed.**
 
 - *The console is left raw* when the terminal modes are not saved
-  around the child: S-17.
+  around the child: S-17, open.
 - *A panicking child is killed by SIGTRAP.* Lites' `boothowto`
   starts as `RB_KDB` (`kern/init_main.c`, "XXX should be ifdeffed"),
   so a second server's `panic()` calls `Debugger()`, which on the i386
