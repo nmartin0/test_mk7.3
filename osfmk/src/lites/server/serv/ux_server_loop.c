@@ -47,6 +47,20 @@
 /* AI-ONLY NOTE: the bootstrap service, serv_syscalls.c; O-6 */
 extern boolean_t bsd_bootstrap_server(mach_msg_header_t *,
 				      mach_msg_header_t *);
+
+/*
+ * AI-ONLY NOTE: the size of each server thread's stack.  Unset,
+ * cthreads sizes stacks by the stack it starts on
+ * (libcthreads/stack.c, stack_init()): 64K from the bootstrap
+ * (bootstrap/i386/set_regs.c, STACK_SIZE), but 16M from a parent
+ * Lites's exec (serv/server_exec.c, MIN_STACK_SIZE).  At 16M, in
+ * chunks of eight, a child server has room below
+ * VM_MAX_KERNEL_LOADED_ADDRESS for about thirty threads, and then
+ * "cthreads: alloc_stack fails".  This tree's default_pager.c fixes
+ * its own size, 16K.  64K is what the first server has always had,
+ * from the bootstrap.  docs/deferred.md, S-19.
+ */
+vm_size_t cthread_stack_size = 64 * 1024;
 #endif
 
 #if OSFMACH3

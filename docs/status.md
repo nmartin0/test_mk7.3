@@ -1105,6 +1105,9 @@ is stopped and killed without harm to the parent: "panic: init died",
   so was every boot: S-16, in the kernel.
 - *One character* typed after a child's `halt` was lost, the first
   of the parent's next line: S-18, fixed in 0115.
+- *A child died with "cthreads: alloc_stack fails"* in one run in
+  three, its server threads' stacks sized at 16 MB by the stack a
+  parent's exec gives: S-19, fixed in 0116.
 - *A child without the emulator* (Tier 1 item 2's `noemulator`
   server, parked, not delivered) ran its first program only once that
   program's task had dropped the emulation vector it inherits from the

@@ -1364,6 +1364,25 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   4.4BSD-Lite2 has no precedent: its exiting process is one thread,
   which cannot be asleep elsewhere. Measured, on a build that also restored the parent's terminal at a child's halt, since withdrawn (S-17): the parent's prompt comes back as the child halts, with no key pressed, and the next line
   arrives whole; the same after a single-user child's `reboot`.
+- **S-19. A child server dies with "cthreads: alloc_stack fails".**
+  Found 19 October 2026, in one child run in three, at the child's
+  login prompt; traced 20 October. cthreads sizes every thread's stack
+  by the stack the program starts on when `cthread_stack_size` is
+  unset (`libcthreads/stack.c`, `stack_init()`, `probe_stack()`), and
+  Lites leaves it unset. The bootstrap starts the first server on 64K
+  (`bootstrap/i386/set_regs.c`, `STACK_SIZE`); a parent Lites starts
+  every program on 16 MB (`serv/server_exec.c`, `MIN_STACK_SIZE`).
+  Measured with a print, since removed: 0x10000 for the first server,
+  0x1000000 for a child. `alloc_stack()` takes stacks eight at a time
+  from low addresses up to `VM_MAX_KERNEL_LOADED_ADDRESS`, 512 MB, so
+  a child had room for about thirty server threads. 48 `sleep`s
+  started in a child's shell, each holding a server thread, killed it
+  every time. **Fixed in 0116**: `serv/ux_server_loop.c` sets
+  `cthread_stack_size` to 64K under `OSFMACH3`, what the first server
+  always had. This tree's own `default_pager.c` sets the size itself,
+  16K. Measured: the first server's stacks are still 64K;
+  a child's are 64K, and it runs with all 48 `sleep`s alive, halts
+  and returns to the parent.
 
 ### The `ne` driver, measured on 14 October 2026
 
