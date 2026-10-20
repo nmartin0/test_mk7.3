@@ -43,9 +43,15 @@ the Linux server, `mklinux/`, left out. Verdict 1 called slp's
 repository "an independent repository" that confirmed the import. It
 is the import's source, so it confirms nothing about DR3.
 
+*Settled 20 October 2026:* Apple's own `DR3.osfmk.src.tgz`, from the
+MkLinux DR3 CD, is in hand (`docs/provenance/sources.md`), and
+`0f6f7e6` with `start.s~` as `start.s` is it, byte for byte, but for
+empty directories and the separately shipped `export`, `tools` and
+`link`. The CD's tarballs are the kernel's reference release.
+
 slp's repository has nineteen commits. The first, `0f6f7e6`
-(4 January 2011, "Initial commit"), is the nearest to MkLinux DR3 that
-can be read: no "multiboot", "GRUB" or "boot_script" anywhere in its
+(4 January 2011, "Initial commit"), was the nearest to MkLinux DR3
+that could be read: no "multiboot", "GRUB" or "boot_script" anywhere in its
 `osfmk/`. It is not untouched either. Its `i386/start.s` puts the
 `#include <i386/AT386/asm_startup.h>` block -- the code that takes
 `mach_boot`'s arguments off the stack and moves the bootstrap image

@@ -186,8 +186,10 @@ release (`docs/provenance/precedent.md`, "Where the two imports came
 from"). Lites is restored from Utah's `lites-1.1.u3.tar.gz` (done, 13
 October 2026: the tarball unpacked at `osfmk/src/lites`, where OSF's
 `src/osf1_server` stood). For the
-kernel the nearest readable copy of MkLinux DR3 is `slp/osfmk-mklinux`'s
-first commit, `0f6f7e6`, with its `start.s~`; each of slp's eighteen
+kernel, Apple's `DR3.osfmk.src.tgz` from the MkLinux DR3 CD, which
+`slp/osfmk-mklinux`'s first commit, `0f6f7e6`, with its `start.s~`,
+matches byte for byte (20 October 2026, `docs/provenance/sources.md`);
+each of slp's eighteen
 later commits gets a verdict, as `dev`'s do. The deviation record keeps
 one command per tree, against reference copies of the two releases
 kept in the repository. The maintainer's copies of the MkLinux CVS
