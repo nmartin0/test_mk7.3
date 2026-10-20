@@ -1437,8 +1437,9 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   no argument, and Lites' trap takes one (`i386/second_syscalls.s`,
   `kernel_trap(second__exit, SYS_exit, 1)`, Helander's, 1994), so the
   status is whatever is on the stack. No public document of OSF's says
-  what status a halted second server exits with. **Open**, for the
-  maintainer: pass a status, or keep Lites' line.
+  what status a halted second server exits with. **Kept as Lites has
+  it**, by the maintainer's choice (0124): the line stays as Utah
+  wrote it.
 
 ### The `ne` driver, measured on 14 October 2026
 
