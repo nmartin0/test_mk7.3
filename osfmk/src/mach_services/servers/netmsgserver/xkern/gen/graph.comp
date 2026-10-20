@@ -1,0 +1,267 @@
+# Copyright 1991-1998 by Open Software Foundation, Inc. 
+#              All Rights Reserved 
+#  
+# Permission to use, copy, modify, and distribute this software and 
+# its documentation for any purpose and without fee is hereby granted, 
+# provided that the above copyright notice appears in all copies and 
+# that both the copyright notice and this permission notice appear in 
+# supporting documentation. 
+#  
+# OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
+# INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
+# FOR A PARTICULAR PURPOSE. 
+#  
+# IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+# CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+# LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+# NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+# WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
+# 
+# 
+# cmk1.1
+#
+# graph.comp.example2
+#
+# x-kernel v3.2
+#
+# Copyright (c) 1993,1991,1990  Arizona Board of Regents
+#
+#
+# Revision: 1.8
+# Date: 1993/02/02 22:21:47
+# 
+# This is an example graph.comp file.  graph.comp is divided into
+# three sections, delimited by the character '@'.  Protocols listed in
+# the first section are 'driver' protocols.  
+
+
+#name=simeth
+#	trace=TR_FULL_TRACE
+#	trace=TR_MAJOR_EVENTS
+#	trace=TR_ERRORS
+#	trace=0
+#;
+
+@;
+
+#name=ethdrv/el0
+name=ethdrv/wd0
+#	trace=TR_FULL_TRACE
+#	trace=TR_DETAILED
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+#name=eth	protocols=ethdrv/el0
+name=eth	protocols=ethdrv/wd0
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=arp	protocols=eth
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=vnet	protocols=eth,arp
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=ip 	protocols=vnet
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=icmp 	protocols=ip			
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=vmux	protocols=vnet,ip
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=blast 	protocols=vmux
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=vsize	protocols=vmux,blast
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=udp	protocols=ip			
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+ 	trace=TR_ERRORS
+#	trace=0
+;
+
+
+#name=tcp 	protocols=ip			
+#	trace=TR_FULL_TRACE
+# 	trace=TR_SOFT_ERRORS
+# 	trace=TR_ERRORS
+#;
+
+
+name=chan	protocols=bid,bidctl
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=bidctl	protocols=vmux
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=bid	protocols=vsize,bidctl
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+#name=vcache	protocols=chan
+#	trace=TR_FULL_TRACE
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+#	trace=TR_ERRORS
+#	trace=0
+#;
+
+
+name=srx	protocols=chan,bidctl
+#	trace=TR_FULL_TRACE
+#	trace=TR_DETAILED
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=rrx	protocols=chan,bidctl
+#	trace=TR_FULL_TRACE
+#	trace=TR_DETAILED
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=machripc	protocols=chan,udp,bidctl
+#	trace=TR_FULL_TRACE
+#	trace=TR_DETAILED
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=ssr	protocols=machripc
+#	trace=TR_FULL_TRACE
+#	trace=TR_DETAILED
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+name=nns	protocols=udp,bidctl
+#	trace=TR_FULL_TRACE
+#	trace=TR_DETAILED
+#	trace=TR_EVENTS
+#	trace=TR_MAJOR_EVENTS
+	trace=TR_ERRORS
+#	trace=0
+;
+
+
+#name=blasttest		protocols=vsize;
+
+#name=chantest		protocols=vcache;
+
+#name=ethtest		protocols=eth;
+
+#name=icmptest 		protocols=icmp;
+
+#name=iptest		protocols=vsize;
+
+#name=tcptest		protocols=tcp;
+
+#name=udptest		protocols=udp;
+
+@;
+
+#
+# Non-protocol trace variables
+#
+
+# name=event	trace=TR_ERRORS;
+name=portmaint	trace=TR_ERRORS;
+name=protocol	trace=TR_ERRORS;
+name=prottest	trace=TR_ERRORS;
+name=ptbl	trace=TR_ERRORS;
+name=netmask	trace=TR_ERRORS;
+#name=xklock	trace=TR_ERRORS;
+name=clockprof	trace=TR_ERRORS;
+#name=sessngc	trace=TR_ERRORS;
+#name=idmap	trace=TR_ERRORS;
+#name=xferp	trace=TR_ERRORS;
+
+prottbl = prottbl;
+
+

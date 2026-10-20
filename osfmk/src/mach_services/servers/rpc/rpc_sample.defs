@@ -1,0 +1,191 @@
+/*
+ * Copyright 1991-1998 by Open Software Foundation, Inc. 
+ *              All Rights Reserved 
+ *  
+ * Permission to use, copy, modify, and distribute this software and 
+ * its documentation for any purpose and without fee is hereby granted, 
+ * provided that the above copyright notice appears in all copies and 
+ * that both the copyright notice and this permission notice appear in 
+ * supporting documentation. 
+ *  
+ * OSF DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE 
+ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
+ * FOR A PARTICULAR PURPOSE. 
+ *  
+ * IN NO EVENT SHALL OSF BE LIABLE FOR ANY SPECIAL, INDIRECT, OR 
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM 
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN ACTION OF CONTRACT, 
+ * NEGLIGENCE, OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION 
+ * WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. 
+ * 
+ */
+/*
+ * cmk1.1
+ */
+
+/*
+ * Abstract:
+ *	MiG definitions file for sample Mach RPC interface.
+ */
+
+subsystem rpc_sample 600;
+
+#include <mach/std_types.defs>
+#include <mach/mach_types.defs>
+
+
+import "rpc_defs.h";
+
+
+type fixed_array_small_t        = array[8] of int;
+type fixed_array_medium_t      	= array[128] of int;
+type fixed_array_large_t       	= array[1024] of int;
+type fixed_array_pointer_t	= ^array[128] of int;
+
+type bva_small_t		= array[*:8] of int;
+type bva_medium_t		= array[*:128] of int;
+type bva_large_t		= array[*:1024] of int;
+type bva_pointer_t		= ^array[*:128] of int;
+
+type uva_t			= array[*] of int;
+type uva_pointer_t		= ^array[*] of int;
+type uva_char_pointer_t		= ^array[*] of char;
+
+type string_t			= c_string[*:80];
+
+type port_array_t		= ^array[*] of mach_port_move_send_t;
+type uvpap_t			= ^array[*] of mach_port_move_send_t;
+type uvpa_t			= ^array[*] of mach_port_move_send_t;
+type bvpa_t			=  array[*:32] of mach_port_move_send_t;
+
+
+routine		test_null(
+			object		: mach_port_t
+			);
+
+
+routine		test_simple(
+			object		: mach_port_t;
+			arg_one		: int;
+			arg_two		: int
+			);
+
+routine		test_simple_inout(
+			object		: mach_port_t;
+		inout	arg_one		: int;
+		inout	arg_two		: short
+			);
+
+routine		test_plain_send_port(
+			object		: mach_port_t;
+			arg_port	: mach_port_t
+			);
+
+routine		test_plain_recv_port(
+			object		: mach_port_t;
+			arg_port	: mach_port_t = 
+					  MACH_MSG_TYPE_MOVE_RECEIVE
+					  ctype: mach_port_t
+			);
+
+routine		test_plain_send_port_out(
+			object		: mach_port_t;
+		out	arg_int		: int;		
+		out	arg_port	: mach_port_t =
+					  MACH_MSG_TYPE_MOVE_SEND
+					  ctype: mach_port_t
+			);
+
+routine		test_plain_port_inout(
+			object		: mach_port_t;
+		inout	arg_port	: mach_port_t
+			);
+
+routine		test_fixed_array_small(
+			object		: mach_port_t;
+			arg_array	: fixed_array_small_t
+			);
+
+routine		test_fixed_array_medium(
+			object		: mach_port_t;
+			arg_array	: fixed_array_medium_t
+			);
+
+routine		test_fixed_array_large(
+			object		: mach_port_t;
+			arg_array	: fixed_array_large_t
+			);
+
+routine		test_fixed_array_out_small(
+			object		: mach_port_t;
+		out	arg_array	: fixed_array_small_t
+			);
+
+routine		test_fixed_array_out_medium(
+			object		: mach_port_t;
+		out	arg_array	: fixed_array_medium_t
+			);
+
+routine		test_fixed_array_out_large(
+			object		: mach_port_t;
+		out	arg_array	: fixed_array_large_t
+			);
+
+routine		test_bva_small(
+			object		: mach_port_t;
+			arg_array	: bva_small_t;
+		out	out_array	: bva_small_t
+			);
+
+routine		test_uva(
+			object		: mach_port_t;
+			arg_array	: uva_t
+			);
+
+routine		test_uva_pointer(
+			object		: mach_port_t;
+			arg_array	: uva_pointer_t;
+			char_array	: uva_char_pointer_t
+			);
+
+routine		test_uva_pointer_out(
+			object		: mach_port_t;
+		out	arg_array	: uva_pointer_t;
+		out	char_array	: uva_char_pointer_t
+			);
+
+routine		test_uva_pointer_out_dealloc(
+			object		: mach_port_t;
+		out	arg_array	: uva_pointer_t , dealloc
+			);
+
+routine		test_string(
+			object		: mach_port_t;
+			in_str		: string_t;
+		out	out_str		: string_t
+			);
+
+routine         test_port_array_out(
+                        object          : mach_port_t;
+                out     port_array	: port_array_t;
+		out 	uvpa		: uvpa_t;	
+		out	bvpa		: bvpa_t
+                        );
+
+routine         test_port_array_in(
+                        object          : mach_port_t;
+                	uvpap		: uvpap_t;
+			uvpa		: uvpa_t;	
+			bvpa		: bvpa_t
+                        );
+
+routine		test_pointer_arrays(
+			object		: mach_port_t;
+			fix_array_ptr	: fixed_array_pointer_t;
+			bva_ptr		: bva_pointer_t;
+		out	bva_ptr_out	: bva_pointer_t;
+		out	uva_out		: uva_t
+			);
+
+
+
