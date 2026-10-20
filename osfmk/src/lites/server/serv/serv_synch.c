@@ -265,8 +265,20 @@ rewait:
 	if (catch) {
 	    p->p_flag |= P_SINTR;
 	    /* must ttysleep but not sigpause on exit */
-	    if (((p->p_flag&P_WEXIT) && ((pri & PRIMASK) == PPAUSE))
-		|| HAVE_SIGNALS(p)) {
+	    /*
+	     * AI-ONLY NOTE: any interruptible sleep ends on exit now, not
+	     * sigpause's alone, and with EINTR: its reply has no taker.
+	     * This is the rule of this tree's own data_synch sleeps,
+	     * serv/synch_prim.c, tsleep_abs(): PKW_EXIT wakes every
+	     * PCATCH sleep.  The ttysleep kept here was for draining a
+	     * dying process's terminal, and proc_died() does that as
+	     * proc0 ("We don't want to sleep on the died proc",
+	     * serv/proc_to_task.c, proc_deref()), never as the dying
+	     * process.  A child server's console reader, asleep in
+	     * ttread() when the child ended, stayed and took the next
+	     * key typed to the parent; docs/deferred.md, S-18.
+	     */
+	    if ((p->p_flag & P_WEXIT) || HAVE_SIGNALS(p)) {
 		    int ret = 0;
 		    thread_unsleep_internal(pk);
 		    mutex_unlock(&sleep_lock);
@@ -279,7 +291,8 @@ rewait:
 				ret = EINTR;
 			    else
 				ret = ERESTART;
-		    }
+		    } else if (p->p_flag & P_WEXIT)
+			ret = EINTR;	/* AI-ONLY NOTE: above */
 		    return ret;
 	    }
 	}

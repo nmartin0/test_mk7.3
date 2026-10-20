@@ -1103,8 +1103,8 @@ is stopped and killed without harm to the parent: "panic: init died",
   default action. That is Lites' design, not a fault.
 - *The child's clock is a day behind*, and so is the parent's, and
   so was every boot: S-16, in the kernel.
-- *One character* typed after a child's `halt` was lost once, the
-  first of the parent's next line. Not reproduced or traced.
+- *One character* typed after a child's `halt` was lost, the first
+  of the parent's next line: S-18, fixed in 0115.
 - *A child without the emulator* (Tier 1 item 2's `noemulator`
   server, parked, not delivered) ran its first program only once that
   program's task had dropped the emulation vector it inherits from the

@@ -1338,6 +1338,32 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   rule on; one permitted pattern is 4.4BSD-Lite2's curses, which saves
   the terminal's settings when it takes the terminal and restores them
   when it gives it up.
+- **S-18. The first key typed after a child server ends is lost.**
+  Found 19 October 2026 (`docs/status.md`, "A child server"); traced
+  20 October. After a child's `halt` the parent's shell printed no
+  prompt until a key was pressed, and that key was gone: "echo"
+  arrived as "cho". The child's console reader, a thread of the child
+  server (`serv/second_cons.c`, `second_cons_intr()`), was in a
+  `read` of the parent's terminal, asleep in the parent's `ttread()`
+  (`ttysleep(..., TTIPRI | PCATCH, ...)`), when the child's task died.
+  `task_remove_reverse()` (`serv/proc_to_task.c`) sets `P_WEXIT` and
+  wakes the process's server threads, but `tsleep_main()`
+  (`serv/serv_synch.c`) went back to sleep unless the sleep was
+  `sigpause`'s: "must ttysleep but not sigpause on exit". The read
+  stayed, held the dead process until a key came, and took that key.
+  **Fixed in 0115**, by Lites' own rule: this tree's newer sleeps,
+  `serv/synch_prim.c` (the `data_synch` option, marked experimental
+  and not built), end every `PCATCH` sleep when the process exits
+  (`tsleep_abs()`, `PKW_EXIT`) and keep only the uncatchable ones,
+  "analogous to what used to be called uninterruptible waits". The
+  `ttysleep` the old exception kept was for draining a dying process's
+  terminal, and `proc_died()` does that as `proc0`, "We don't want to
+  sleep on the died proc" (`proc_deref()`), never as the dying
+  process. `tsleep_main()` now ends a `PCATCH` sleep on `P_WEXIT` and
+  returns `EINTR`; a 0 would send `ttread()` round to sleep again.
+  4.4BSD-Lite2 has no precedent: its exiting process is one thread,
+  which cannot be asleep elsewhere. Measured, on a build that also restored the parent's terminal at a child's halt, since withdrawn (S-17): the parent's prompt comes back as the child halts, with no key pressed, and the next line
+  arrives whole; the same after a single-user child's `reboot`.
 
 ### The `ne` driver, measured on 14 October 2026
 
