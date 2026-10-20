@@ -1387,6 +1387,15 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   16K. Measured: the first server's stacks are still 64K;
   a child's are 64K, and it runs with all 48 `sleep`s alive, halts
   and returns to the parent.
+- **S-20. No named pipes.** Found 20 October 2026: `mkfifo /tmp/f`
+  fails, "Operation not supported". Lites has `miscfs/fifofs` and an
+  option for it (`conf/MASTER`, `fifo`, `FIFO`), but `conf/MASTER.h`
+  puts `fifo` in none of its sets -- not `STD`, not `LARGE` ("Everything
+  that is known to work"), not `UNTESTED` -- so `STD+WS+osfmach3`
+  builds without it. NetBSD 1.0's programs that make a FIFO fail the
+  same way. **Open, for the maintainer**: adding `fifo` to the
+  configuration, untested by Lites' own lists, or leaving it out as
+  Lites shipped.
 
 ### The `ne` driver, measured on 14 October 2026
 

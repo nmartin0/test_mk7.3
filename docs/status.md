@@ -1091,6 +1091,35 @@ took the next command and started another child. A child that panics
 is stopped and killed without harm to the parent: "panic: init died",
 "Debugger", then the parent's "Trace/BPT trap - core dumped".
 
+**Nested, and side by side.** Measured 20 October 2026, with 0115 and 0116 and a terminal restore at halt since withdrawn (S-17), three disks (hd0 the parent's, hd1 and hd2 on the second IDE
+channel's first unit, each a root of its own with its own `fstab`)
+and QEMU at 256 MB. The `-2` to `-9` digit picks a band of MachID
+process numbers (`MAP_PID_FOR_MIDSRVR`), so each server running at
+once takes its own.
+
+- *A child's child.* From the child's shell, `/root/startup.em -3
+  hd2a` (the server binary on the child's disk) booted a third server
+  multi-user, which gave a login on the same terminal, through the
+  child's console to the parent's; `mount` in it shows `/dev/wd2a on
+  /`. Its `halt` returned to the child's shell, and the child's `halt`
+  to the parent's. No key was lost at either step. Nothing
+  in the child knows it is a parent: it answers the grandchild's
+  bootstrap requests with the ports it was itself given (O-6), as the
+  collocation paper's "A second server should not be able to tell
+  that it is not the first server" would have it.
+- *Two children at once.* `tail -f /tmp/in | /root/startup.em -3
+  hd2a > /tmp/c3.log 2>&1 &` in the parent's shell, then `-2 hd1a`
+  in the foreground. The background child booted multi-user and took
+  a login and commands written to `/tmp/in`; the foreground child ran
+  and halted meanwhile, giving the parent its terminal back; then the
+  background child, told to, printed and halted. Lites
+  here has no FIFOs (S-20), so `mkfifo` could not be the feed.
+- A halted child's exit status is not 0: the shell reported "Exit 4".
+  `boot()` calls `second__exit()` with no argument, and the trap
+  (`i386/second_syscalls.s`, `kernel_trap(second__exit, SYS_exit,
+  1)`) takes one, so the status is whatever is on the stack. Lites'
+  own; not changed.
+
 **What it showed.**
 
 - *The console is left raw* when the terminal modes are not saved
