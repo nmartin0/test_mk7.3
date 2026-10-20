@@ -1,6 +1,7 @@
 #!/bin/sh
 #
-# mkhostbin.sh -- build the host tools, config and migcom, from this tree.
+# mkhostbin.sh -- build the host tools, config, migcom, compose and
+# ptbldump, from this tree.
 #
 #   cd osfmk/src && sh ../../docs/tools/mkhostbin.sh
 #
@@ -16,6 +17,15 @@
 #                   PowerPC's.  DR3 ships them mode 644.
 #   migcom          mach_services/lib/migcom
 #   config          mach_services/cmds/config
+#
+# and two more that the NORMA+net and +flipc kernels' uk_xkern/ runs
+# (makedefs/osf.osc.mk, COMPOSE and PTBLDUMP), from OSF's cmk1.1, the
+# commands package DR3 shipped beside the kernel (imports.md, kind F):
+#
+#   compose         mach_services/cmds/compose
+#   ptbldump        mach_services/cmds/ptbldump, with
+#                   xkern/framework's idmap.c, prottbl.c, xk_debug.c
+#                   and s_xkern/framework/prottbl_parse.c
 #
 # DR3 shipped migcom and config only as PowerPC Linux binaries, without
 # their sources; the sources here are OSF's, from the MkLinux CVS
@@ -43,6 +53,20 @@
 # Host needs: gcc with -m32, flex and its 32-bit library, and byacc --
 # config's grammar is older than bison accepts.  On Debian and Ubuntu,
 # with i386 as a foreign architecture: flex libfl-dev:i386 byacc.
+#
+# compose and ptbldump are built here with the host compiler, as
+# their Makefiles' SETUP_PROGRAMS would build them, with three
+# stand-ins for the OSF/1 or MkLinux host OSF built them on:
+#   - their CFLAGS' -fwritable-strings, which GCC dropped in 4.0: both
+#     write into string literals (mktemp() on a literal template).
+#     Each object's read-only data is moved into writable data with
+#     objcopy, the same effect.
+#   - compose's <standards.h> and <sys/dir.h>, OSF/1 headers: an empty
+#     one, and one that includes <dirent.h>.
+#   - xkern's <types.h>, which on OSF's hosts was sa_mach's, for
+#     bit32_t and its kin: those six typedefs over the host's
+#     <sys/types.h>; sa_mach's own clashes with the host's.
+# objcopy is binutils'.
 #
 set -eu
 
@@ -72,7 +96,48 @@ build -k MAKEFILE_PASS=FIRST > "${OSFMK}/obj/hostbin-first.log" 2>&1 || :
 build setup_all
 (cd mach_services/cmds/config && build setup_all)
 
-for f in mig makeboot migcom config; do
+# 2b.  compose and ptbldump, while the exported headers are still there.
+XK=$(mktemp -d)
+mkdir "${XK}/shim" "${XK}/shim/sys" "${XK}/compose" "${XK}/ptbldump"
+: > "${XK}/shim/standards.h"
+echo '#include <dirent.h>' > "${XK}/shim/sys/dir.h"
+cat > "${XK}/shim/types.h" <<'TYPES'
+#include <sys/types.h>
+typedef signed char	bit8_t;
+typedef unsigned char	u_bit8_t;
+typedef short		bit16_t;
+typedef unsigned short	u_bit16_t;
+typedef int		bit32_t;
+typedef unsigned int	u_bit32_t;
+TYPES
+writable() {
+	for sec in $(objdump -h "$1" | awk '/rodata/ { print $2 }'); do
+		objcopy --rename-section \
+		    "${sec}=.data.rw${sec},alloc,load,data,contents" "$1"
+	done
+}
+HOSTCC="gcc -m32 -std=gnu89 -fcommon -w"
+CMDS=mach_services/cmds
+for f in compose error parse util; do
+	${HOSTCC} -I"${XK}/shim" -I${CMDS}/compose \
+	    -c -o "${XK}/compose/$f.o" ${CMDS}/compose/$f.c
+	writable "${XK}/compose/$f.o"
+done
+${HOSTCC} -o "${HOSTBIN}/compose" "${XK}"/compose/*.o
+for f in ${CMDS}/ptbldump/ptbldump.c xkern/framework/idmap/idmap.c \
+    xkern/framework/prottbl.c xkern/framework/xk_debug.c \
+    mach_services/servers/s_xkern/framework/prottbl_parse.c; do
+	o="${XK}/ptbldump/$(basename "$f" .c).o"
+	${HOSTCC} -DXK_DEBUG -DALLOC_DONT_USE_INLINE -DXKSTANDALONE \
+	    -I"${XK}/shim" -I${CMDS}/ptbldump -I. -Imach_services/servers \
+	    -Ixkern/include -idirafter "${OSFMK}/export/at386/include" \
+	    -c -o "$o" "$f"
+	writable "$o"
+done
+${HOSTCC} -o "${HOSTBIN}/ptbldump" "${XK}"/ptbldump/*.o
+rm -rf "${XK}"
+
+for f in mig makeboot migcom config compose ptbldump; do
 	[ -x "${HOSTBIN}/$f" ] || { echo "no ${HOSTBIN}/$f" >&2; exit 1; }
 done
 
