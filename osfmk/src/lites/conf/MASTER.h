@@ -47,7 +47,14 @@
 #define	BOOT	SERVER+ether+inet+ffs+pty
 
 /*  Standard configuration */
-#define	STD	BOOT+second_server+syscalltrace+compat_43+compat_oldsock+kernfs+nfs+atsys
+/*
+ * AI-ONLY NOTE: fifo added.  Named pipes are standard in OSF/1, not
+ * an option (OSF/1 1.0 manual, mkfifo(3), mknod(2)), and in
+ * Berkeley's GENERIC configurations ("POSIX fifo support").  Added to
+ * STD's definition, so that the configuration keeps its name.
+ * docs/deferred.md, S-20.
+ */
+#define	STD	BOOT+second_server+syscalltrace+compat_43+compat_oldsock+kernfs+nfs+atsys+fifo
 
 /*  Everything that is known to work */
 #define	LARGE	STD+ext2fs+union+msdosfs+slice

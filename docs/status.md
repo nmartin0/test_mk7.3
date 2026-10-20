@@ -1113,7 +1113,8 @@ once takes its own.
   a login and commands written to `/tmp/in`; the foreground child ran
   and halted meanwhile, giving the parent its terminal back; then the
   background child, told to, printed and halted. Lites
-  here has no FIFOs (S-20), so `mkfifo` could not be the feed.
+  here had no FIFOs then (S-20, fixed in 0119), so `mkfifo` could not
+  be the feed; with 0119 it can, and the same test passes through one.
 - A halted child's exit status is not 0: the shell reported "Exit 4".
   `boot()` calls `second__exit()` with no argument, and the trap
   (`i386/second_syscalls.s`, `kernel_trap(second__exit, SYS_exit,

@@ -34,6 +34,14 @@
  */
 
 #include "quota.h"
+/*
+ * AI-ONLY NOTE: the option header, as ffs_vnops.c includes it.
+ * Lites gives options as headers, not as -D on the command line as
+ * 4.4BSD's config did; without this one FFS_FIFOOPS was NULL here
+ * and a FIFO's vnode had no operations: the server faulted at the
+ * first stat of one.  docs/deferred.md, S-20.
+ */
+#include "fifo.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>

@@ -1393,9 +1393,44 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   puts `fifo` in none of its sets -- not `STD`, not `LARGE` ("Everything
   that is known to work"), not `UNTESTED` -- so `STD+WS+osfmach3`
   builds without it. NetBSD 1.0's programs that make a FIFO fail the
-  same way. **Open, for the maintainer**: adding `fifo` to the
-  configuration, untested by Lites' own lists, or leaving it out as
-  Lites shipped.
+  same way. **Fixed in 0119**, by the maintainer's choice: named pipes
+  built in by default, as OSF/1 has them -- its manual gives `mkfifo`
+  and a FIFO made by `mknod` as standard, not as an option (OSF/1 1.0,
+  `mkfifo(3)`, `mknod(2)`) -- and as every Berkeley GENERIC
+  configuration in `nmartin0/4.4BSD-Lite2` does ("options FIFO # POSIX
+  fifo support (in all filesystems)"). `fifo` goes into `STD`'s
+  definition in `conf/MASTER.h`, so that the configuration keeps its
+  name. Turned on, the option needed two fixes, both by Lites' own
+  idiom:
+  - `nfs/nfs_vnops.c` did not compile: its FIFO wrappers set times
+    from Lite2's `time`, which Lites does not have; `get_time()`, as
+    Lites writes Lite2's `ifp->if_lastchange = time` in
+    `net/if_ethersubr.c`.
+  - The server faulted at the first `stat` of a FIFO (the parent's
+    `/etc/rc`, clearing `/tmp`, was enough): the vnode had no
+    operations. Traced with QEMU's gdb stub to `path_getattr()`
+    calling through a null vector. Lites gives options as headers
+    (`"fifo.h"`, `FIFO` 0 or 1), where 4.4BSD's `config` gave `-DFIFO`
+    on the command line (`usr.sbin/config/mkmakefile.c`), and
+    `ufs/ffs/ffs_vfsops.c` did not include it, so `FFS_FIFOOPS`
+    (`ufs/ffs/ffs_extern.h`) was `NULL`. The include added, as
+    `ffs_vnops.c` has it; `ffs_extern.h`'s `#ifdef FIFO` made `#if
+    FIFO`, Lites' test, so that a build without the option still
+    links.
+  `lites/makefile` now remakes a configuration when `conf/MASTER.h`
+  changes too; before, the first rebuild silently kept the old sets.
+  Measured: both configurations build, with no new warnings, and both
+  have the FIFO vector; `uname` still says `STD+WS+osfmach3`. `mkfifo`
+  makes a FIFO (`prw-r--r--`), a reader and a writer pass data through
+  it both ways, `rm` removes it, a child server makes one, and the
+  parent's `/etc/rc` clears one from `/tmp` and comes up multi-user.
+  The second server fed through one, as `docs/status.md` first tried,
+  boots and takes commands. **Still open, for the maintainer**: the
+  same missing header in `nfs/nfs_serv.c` (`#ifndef FIFO` with no
+  `"fifo.h"`), so this machine, serving NFS, still refuses another
+  machine's request to make a FIFO, with `ENXIO`. Not used here;
+  `ufs/ext2fs`, `ufs/lfs` and `ufs/minixfs` have the same pattern and
+  are not built.
 
 ### The `ne` driver, measured on 14 October 2026
 

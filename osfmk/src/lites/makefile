@@ -207,8 +207,10 @@ ${_LITES_CROSS_}: ${ALWAYS}
 
 # AI-ONLY NOTE: conf/MASTER as well: configure reads it for the
 # options a configuration name selects, so a changed MASTER (a new
-# option, as noemulator) must make each configuration again.
-${LITES_CONFIG}/config.status: ${_LITES_CROSS_} configure Makefile.in conf/MASTER
+# option, as noemulator) must make each configuration again.  And
+# conf/MASTER.h, which defines the sets a name is made of (STD and the
+# rest), so that a set given another option (fifo in STD) does too.
+${LITES_CONFIG}/config.status: ${_LITES_CROSS_} configure Makefile.in conf/MASTER conf/MASTER.h
 	${MAKEPATH} ${.TARGET}
 	_s_=`cd ${configure:P:H} && pwd` && \
 	${_LITES_CD_} ${.TARGET:H} && ${_LITES_PATH_} AWK=${LITES_AWK} \

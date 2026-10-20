@@ -2465,7 +2465,14 @@ nfsfifo_read(ap)
 	 * Set access flag.
 	 */
 	np->n_flag |= NACC;
-	np->n_atim = time;
+	/*
+	 * AI-ONLY NOTE: Lites has no time variable; its mapped clock is
+	 * read with get_time(), as Lites itself writes Lite2's
+	 * "ifp->if_lastchange = time" (net/if_ethersubr.c).  Here and in
+	 * the next two functions, compiled only with the fifo option;
+	 * docs/deferred.md, S-20.
+	 */
+	get_time(&np->n_atim);
 	return (VOCALL(fifo_vnodeop_p, VOFFSET(vop_read), ap));
 }
 
@@ -2488,7 +2495,7 @@ nfsfifo_write(ap)
 	 * Set update flag.
 	 */
 	np->n_flag |= NUPD;
-	np->n_mtim = time;
+	get_time(&np->n_mtim);	/* AI-ONLY NOTE: nfsfifo_read() */
 	return (VOCALL(fifo_vnodeop_p, VOFFSET(vop_write), ap));
 }
 
@@ -2513,9 +2520,9 @@ nfsfifo_close(ap)
 
 	if (np->n_flag & (NACC | NUPD)) {
 		if (np->n_flag & NACC)
-			np->n_atim = time;
+			get_time(&np->n_atim);	/* AI-ONLY NOTE: nfsfifo_read() */
 		if (np->n_flag & NUPD)
-			np->n_mtim = time;
+			get_time(&np->n_mtim);	/* AI-ONLY NOTE: as above */
 		np->n_flag |= NCHG;
 		if (vp->v_usecount == 1 &&
 		    (vp->v_mount->mnt_flag & MNT_RDONLY) == 0) {

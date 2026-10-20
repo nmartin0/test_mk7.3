@@ -93,7 +93,8 @@ __END_DECLS
 
 extern int (**ffs_vnodeop_p)();
 extern int (**ffs_specop_p)();
-#ifdef FIFO
+/* AI-ONLY NOTE: #if, as fifo.h defines FIFO as 0 or 1; ffs_vfsops.c */
+#if FIFO
 extern int (**ffs_fifoop_p)();
 #define FFS_FIFOOPS ffs_fifoop_p
 #else
