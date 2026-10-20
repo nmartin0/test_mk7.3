@@ -1115,11 +1115,11 @@ once takes its own.
   background child, told to, printed and halted. Lites
   here had no FIFOs then (S-20, fixed in 0119), so `mkfifo` could not
   be the feed; with 0119 it can, and the same test passes through one.
-- A halted child's exit status is not 0: the shell reported "Exit 4".
-  `boot()` calls `second__exit()` with no argument, and the trap
+- A halted child's exit status was not 0: the shell reported "Exit
+  4". `boot()` called `second__exit()` with no argument, and the trap
   (`i386/second_syscalls.s`, `kernel_trap(second__exit, SYS_exit,
-  1)`) takes one, so the status is whatever is on the stack. Lites'
-  own; not changed.
+  1)`) takes one, so the status was whatever was on the stack: S-21,
+  open.
 
 **What it showed.**
 

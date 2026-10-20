@@ -1431,6 +1431,14 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   machine's request to make a FIFO, with `ENXIO`. Not used here;
   `ufs/ext2fs`, `ufs/lfs` and `ufs/minixfs` have the same pattern and
   are not built.
+- **S-21. A halted child server exits with a status from the stack.**
+  Found 20 October 2026: the parent's shell reported "Exit 4" after a
+  child's `halt`. `boot()` (`serv/misc.c`) calls `second__exit()` with
+  no argument, and Lites' trap takes one (`i386/second_syscalls.s`,
+  `kernel_trap(second__exit, SYS_exit, 1)`, Helander's, 1994), so the
+  status is whatever is on the stack. No public document of OSF's says
+  what status a halted second server exits with. **Open**, for the
+  maintainer: pass a status, or keep Lites' line.
 
 ### The `ne` driver, measured on 14 October 2026
 
