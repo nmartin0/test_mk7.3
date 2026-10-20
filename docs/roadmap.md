@@ -168,7 +168,8 @@ the tree (`docs/status.md`, "A child server"; S-16 and S-17 in
 
 **State on 17 October 2026**, milestone by milestone: 0 done; 1 done,
 OSF's boot loader booting what the running system builds; 2 done; 3
-done, with S-11 for the maintainer (S-8 closed, 18 October); 4 done, with
+done, with S-11 kept as Lites has it, for item 2's step 5 (S-8 closed,
+18 October); 4 done, with
 `sendmail` deferred (S-12); 5 done, the system rebuilding itself
 identically but for three build stamps.
 At the boundary with Tier 1, Lites against the OSF/1 server's
@@ -242,8 +243,8 @@ already running; since 0107 Lites runs `/sbin/init` itself, as the
 OSF/1 server does (O-2). *State:* done. `/etc/rc` runs to a multi-user
 login with NetBSD 1.0's daemons; programs fault, catch and return as
 on NetBSD (S-3, S-4, S-5, S-7, 0053-0062); `cc` builds and runs
-programs. Open: S-11,
-Utah's `signal_send_running`, for the maintainer.
+programs. S-11, Utah's `signal_send_running`, is kept as Lites has
+it and done again in Tier 1 item 2, step 5.
 
 **4. Online.** The kernel's own `ne` driver, already in the PRODUCTION
 configuration, with QEMU's `ne2k_isa`; its two defects fixed first
@@ -395,7 +396,9 @@ from the sources above:
    into the server.
 5. *Fork's return in the child, signals and exit.* Signal frames on
    the user stack and `sigreturn`: Lite2's i386 `sendsig()` and
-   `sigreturn()`.
+   `sigreturn()`. A signal for a thread that makes no system calls
+   (S-11) is delivered OSF's way, by `thread_abort_safely` between a
+   suspend and a resume, retried when the abort fails.
 
 Items 1 to 3 are the first that can be tested, together: the
 `noemulator` server running one program, then `init`, then a shell.

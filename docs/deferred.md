@@ -1119,13 +1119,17 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   section out is that you cannot interrupt (only SIGKILL) a process
   that isn't making system calls ... Need to fix this." Signals with
   a default action are not affected, nor are processes that make
-  system calls. **Not changed; for the maintainer**: setting the
-  switch is the upstream's own way on; the race they describe is the
-  emulator's signal thread suspending and aborting a thread that is
-  already taking the signal at a system call's end, and under OSFMK an
-  abort of a thread in an exception is S-7's again. A fix would give
-  the notification the care 0053's reply has, measured with this
-  program first.
+  system calls. **Kept as Lites has it**, by the maintainer's choice
+  (20 October 2026): the switch stays 0, and the delivery is done
+  again in Tier 1 item 2, step 5 (`docs/roadmap.md`), where signals
+  move into the server. OSF's own recipe for it, from the OSF Mach 3
+  Kernel Interfaces' `thread_abort_safely`: suspend the thread, abort
+  it safely, set its state to the handler's frame, resume; if the
+  abort fails, as it does for a thread taking an exception, resume
+  and try again later. Setting the switch
+  instead would meet the race Utah describe: the emulator's signal
+  thread aborting a thread already taking the signal at a system
+  call's end, which under OSFMK is S-7's case again.
 - **S-12. NetBSD's `ftpd` and `sendmail` die in `setproctitle()`.**
   `ftp` in fixed on 15 October 2026 by the maintainer's option (a);
   `sendmail` deferred by the maintainer. NetBSD 1.0's libc
