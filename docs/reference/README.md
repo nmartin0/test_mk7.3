@@ -34,6 +34,30 @@ that "verbatim" is checkable rather than asserted.
 `RULES.md`, cited through `docs/` by section ("`RULES.md` 3.3"), is
 this file; `docs/method.md` names both.
 
+**Imported** (22 October 2026), from OSF RI's publications, mirrored
+at `ftp.gwdg.de/pub/misc/opengroup/ri/` and arranged here as there,
+under `osf-ri/`. Each carries OSF's or The Open Group's "Permission
+to reproduce this document without fee is hereby granted, provided
+that the copyright notice and this permission notice appear in all
+copies" in its front matter. The copies are the maintainer's, taken
+from that mirror; each file's size matches the mirror's listing.
+
+	60ba27eed141b64d3e3f210c887762ad158e83b7  osf-ri/os/osfmk/mk7.3/RelNotes7.Book.ps
+	6539b48342bd9cad8896fdbf4432715a1a8a9400  osf-ri/os/osfmk/mk6.1/relnotes.ps
+
+`RelNotes7.Book.ps` is the *MK7.3 Release Notes* (The Open Group
+Research Institute, 30 October 1997), 900,694 bytes: the whole book,
+whose chapters the mirror also has one by one (`Features.ps`,
+`Install-MK7.ps`, `API.ps`, `Changes.ps`, and the front matter), so
+those are not carried twice. `docs/` cites its chapter 2 as
+`Install-MK7.ps`. `relnotes.ps` is the *OSF-RI MK6.1 Release Notes*
+(Marc J. Teller, revision 1.3, 1994), 252,776 bytes; the mirror's
+`mk6.1/` also has `api-changes.ps` and a `README`, not yet here.
+
+Not imported: OSF RI's papers this project cites (the collocation
+design, "Mach3 Locking Protocol", the untyped IPC design), whose
+copies carry no permission notice.
+
 ## Why test_mk7.3's rules apply here more directly than they did there
 
 They were written for **this kernel**: OSF Mach Kernel 7.3 from MkLinux
