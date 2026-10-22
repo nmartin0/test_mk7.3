@@ -186,8 +186,9 @@ Child servers run as Helander designed, nested and side by side, and
 four of the five defects they showed are fixed or settled (S-18 to
 S-21, 0115-0124) and S-17, the parent's terminal, is open; named
 pipes are built in (0119); six bug fixes from the
-MkLinux project's 1999 tree are taken (0125). Open: S-22, shell
-commands faulting under heavy load (`docs/deferred.md`).
+MkLinux project's 1999 tree are taken (0125). S-22, NetBSD 1.0's
+shell failing with sixteen background jobs, is fixed in the userland
+with NetBSD's own 1996 lines (`docs/deferred.md`).
 
 **0. The releases, not the copies.** Neither import is its upstream's
 release (`docs/provenance/precedent.md`, "Where the two imports came

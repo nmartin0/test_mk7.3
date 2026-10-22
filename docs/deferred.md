@@ -1488,17 +1488,30 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   it**, by the maintainer's choice (0124): the line stays as Utah
   wrote it.
 
-- **S-22. Under heavy load, the shell's `[`, `expr` and backquoted
-  commands sometimes die with a segmentation fault.** Found 20 October
-  2026, in a load test of a candidate change (thirty background
-  `sleep`s, a `cc` loop and forty `cat /etc/* | sort | wc -l`
-  pipelines at once): "Segmentation fault - core dumped" from `[`,
-  `expr` and command substitution, now and then. The unchanged build,
-  0124 with 0125's fixes, does the same under the same load, so the
-  change was not the cause. Not yet reproduced by hand, and not
-  diagnosed: the core files, which program faults where, and whether
-  load or only concurrency matters, are the first things to look at.
-  Open.
+- **S-22. With about sixteen background jobs, NetBSD 1.0's `sh`
+  cannot start a program.** Found 20 October 2026 in a load test,
+  where `[`, `expr` and backquoted commands died with "Segmentation
+  fault - core dumped"; diagnosed 22 October, fixed the same day
+  (`docs/status.md`, "NetBSD 1.0's shell, rebuilt"). Not load, not
+  Lites, not OSFMK: NetBSD 1.0's `/bin/sh`, `jobs.c` 1.11,
+  `makejob()`. When the job table grows, the shell copies it to a
+  larger block and frees the old one, but a one-process job's `ps`
+  points at its own `ps0`, inside the old table, and is not moved. A
+  forked child frees every job (`forkshell()`, `freejob()`), and once
+  `malloc()` has reused the old table for strings it is handed text
+  for a pointer and dies in `free()` before it can exec: measured in
+  the server's exception handler, every fault at the same `/bin/sh`
+  address, `free()`'s magic check, reading 0x3120382c. Every time:
+  with 14 background jobs `[` and `expr` pass ten of ten; at 16 they
+  fail ten of ten, and the shell then hangs. Builtins pass,
+  as they do not fork. Memory size changes nothing. 4.4BSD-Lite2's
+  `sh` (`jobs.c` 8.5) has the same code. NetBSD fixed it in `jobs.c`
+  1.19 (christos, 16 October 1996) by moving the pointers with the
+  table, and took the fix into its released 1.2 as 1.17.6.1 (January
+  1997). **Fixed by the maintainer's choice, 22 October 2026**: NetBSD
+  1.0's shell rebuilt on the running system with those lines,
+  `docs/tools/mknbsh.sh` and `docs/tools/netbsd10-sh.diff`. A change
+  to the userland, not to Lites or the kernel.
 
 ### The `ne` driver, measured on 14 October 2026
 

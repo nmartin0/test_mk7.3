@@ -277,7 +277,9 @@ into an assertion string, and the build time.
 
 None inside a vendor directory. Outside them, ours: `docs/`, its
 tools in `docs/tools/` (the sandbox, the host tools, the disk, the
-boot under QEMU, the NetBSD root, the self-hosting root), and
+boot under QEMU, the NetBSD root, the self-hosting root, NetBSD 1.0's
+shell with its fix -- `netbsd10-sh.diff` carries four lines that are
+NetBSD's, BSD-licensed, into NetBSD's own `jobs.c`), and
 `.gitignore`; and, never committed, what `mksandbox.sh` generates --
 `Buildconf.local` and the kernel's link script (0083).
 

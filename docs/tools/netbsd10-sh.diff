@@ -1,0 +1,27 @@
+NetBSD 1.0's bin/sh/jobs.c (1.11): NetBSD's fix of jobs.c 1.19, 16
+October 1996, as NetBSD 1.2.1 took it (1.17.6.1).  docs/tools/mknbsh.sh
+applies it; docs/deferred.md, S-22.
+
+--- a/bin/sh/jobs.c
++++ b/bin/sh/jobs.c
+@@ -460,6 +460,20 @@
+ 			} else {
+ 				jp = ckmalloc((njobs + 4) * sizeof jobtab[0]);
+ 				bcopy(jobtab, jp, njobs * sizeof jp[0]);
++				/*
++				 * AI-ONLY NOTE: the next four lines are
++				 * NetBSD's, jobs.c 1.19 (christos, 16
++				 * October 1996), as NetBSD 1.2.1 took them
++				 * (1.17.6.1).  A one-process job's ps
++				 * points at its own ps0, inside the old
++				 * table; left there, a forked child frees
++				 * it in freejob() and dies.  osfmk's
++				 * docs/deferred.md, S-22.
++				 */
++				/* Relocate `ps' pointers */
++				for (i = 0; i < njobs; i++)
++					if (jp[i].ps == &jobtab[i].ps0)
++						jp[i].ps = &jp[i].ps0;
+ 				ckfree(jobtab);
+ 				jobtab = jp;
+ 			}

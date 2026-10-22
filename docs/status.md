@@ -1148,3 +1148,38 @@ once takes its own.
   "emulator-less servers started from a classic server"
   (barbou@gr.osf.org, `kern/syscall_emulation.c`). Recorded for when
   item 2 resumes.
+
+## NetBSD 1.0's shell, rebuilt
+
+**Measured 22 October 2026**, for S-22 (`docs/deferred.md`). NetBSD
+1.0's `bin/sh` source is the `netbsd-1-0` branch of NetBSD's
+repository (`github.com/NetBSD/src`): its last change to `bin/sh` is
+of 29 August 1994, before the release, and every `$Id` of the shell's
+own files in NetBSD 1.0's `/bin/sh` binary is in it. The shell is
+linked statically, with the C library inside it.
+
+`docs/tools/mknbsh.sh` stages that source in the root tree with
+`docs/tools/netbsd10-sh.diff` applied, NetBSD's own lines from 1996;
+on the running system, `cd /usr/src/netbsd/bin/sh && make NOMAN=1 &&
+make NOMAN=1 install` builds and installs it as `/bin/sh` with NetBSD
+1.0's `cc`, `yacc` and `lex`.
+
+- *The build.* The unchanged source, built the same way and stripped,
+  is the size of NetBSD's `/bin/sh` (262,144 bytes) and not identical
+  to it: 224,115 bytes differ, and the ones sampled are addresses off
+  by twelve, so something early in the program is twelve bytes longer
+  or shorter in this build than in NetBSD's. The same program, not
+  the same bytes; which object differs is not known.
+- *The fix.* With the shipped shell, a script that starts N background
+  `sleep`s and then runs `[`, a backquoted `echo` and `expr` ten times
+  each passes at N = 0 and 14; at 16 every `[` and `expr` dies of
+  SIGSEGV and the shell hangs. With the rebuilt shell it passes at 0,
+  14, 16, 20 and 30, run as a program and, installed as `/bin/sh`,
+  after a reboot: `/etc/rc` and the multi-user start run on it.
+- *Seen on the way:* Lites printed "m_o_data_unlock (require write)
+  x2" twice while `strip` rewrote a file just copied. It is Lites'
+  own notice (`serv/xmm_interface.c`, `m_o_data_unlock`): the
+  kernel asked for write access to a file's pages while Lites held
+  them in its buffer cache as written, where its comment expects a
+  read first ("Kernel always requests read access first"). It takes
+  the case and goes on; nothing failed.
