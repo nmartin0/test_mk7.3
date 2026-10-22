@@ -608,7 +608,7 @@ open(p, uap, retval)
 		}
 		if (error == ERESTART)
 			error = EINTR;
-		fdp->fd_ofiles[indx] = NULL;
+		fdunreserve(fdp, indx);		/* AI-ONLY NOTE: below */
 		return (error);
 	}
 	p->p_dupfd = 0;
@@ -632,13 +632,22 @@ open(p, uap, retval)
 		if (error = VOP_ADVLOCK(vp, (caddr_t)fp, F_SETLK, &lf, type)) {
 			(void) vn_close(vp, fp->f_flag, fp->f_cred, p);
 			ffree(fp);
-			fdp->fd_ofiles[indx] = NULL;
+			fdunreserve(fdp, indx);	/* AI-ONLY NOTE: below */
 			return (error);
 		}
 		VOP_LOCK(vp);
 		fp->f_flag |= FHASLOCK;
 	}
 	VOP_UNLOCK(vp);
+	/*
+	 * AI-ONLY NOTE: the file enters the table only now, whole:
+	 * falloc() reserved slot indx, and vn_open() and VOP_ADVLOCK()
+	 * above can sleep, when another thread of the process could
+	 * otherwise find it untyped, or close it under us.  On failure
+	 * the slot is given back with fdunreserve() (sys/filedesc.h,
+	 * UF_RESERVED).
+	 */
+	fdinstall(fdp, indx, fp);
 	*retval = indx;
 	return (0);
 }

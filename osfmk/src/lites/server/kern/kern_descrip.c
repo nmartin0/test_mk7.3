@@ -150,6 +150,7 @@ dup2(p, uap, retval)
 {
 	register struct filedesc *fdp = p->p_fd;
 	register u_int old = uap->from, new = uap->to;
+	register struct file *fp;
 	int i, error;
 
 	if (old >= fdp->fd_nfiles ||
@@ -161,19 +162,38 @@ dup2(p, uap, retval)
 		*retval = new;
 		return (0);
 	}
+	/*
+	 * AI-ONLY NOTE: new is reserved before finishdup() enters the
+	 * file.  A slot another call has reserved is EBADF, not taken
+	 * (sys/filedesc.h, UF_RESERVED).  A file already at new is
+	 * taken out of the table before it is closed, as closef() can
+	 * sleep and another thread of the process must not find it
+	 * there meanwhile.  fdalloc() gives another slot than new only
+	 * if new were taken while it grew the table, which cannot
+	 * happen while it keeps the master lock, as it does (its
+	 * MALLOC() is the server's malloc()); were that to change, the
+	 * slot is given back and the call is EBADF, not 4.4BSD's panic.
+	 */
 	if (new >= fdp->fd_nfiles) {
 		if (error = fdalloc(p, new, &i))
 			return (error);
-		if (new != i)
-			panic("dup2: fdalloc");
-	} else if (fdp->fd_ofiles[new]) {
+		if (new != i) {
+			fdunreserve(fdp, i);
+			return (EBADF);
+		}
+	} else if (fdp->fd_ofileflags[new] & UF_RESERVED) {
+		return (EBADF);
+	} else if (fp = fdp->fd_ofiles[new]) {
 		if (fdp->fd_ofileflags[new] & UF_MAPPED)
 			(void) munmapfd(p, new);
+		fdp->fd_ofiles[new] = NULL;
+		fdp->fd_ofileflags[new] = UF_RESERVED;
 		/*
 		 * dup2() must succeed even if the close has an error.
 		 */
-		(void) closef(fdp->fd_ofiles[new], p);
-	}
+		(void) closef(fp, p);
+	} else
+		fdp->fd_ofileflags[new] = UF_RESERVED;
 	return (finishdup(fdp, (int)old, (int)new, retval));
 }
 
@@ -334,7 +354,18 @@ finishdup(fdp, old, new, retval)
 {
 	register struct file *fp;
 
+	/*
+	 * AI-ONLY NOTE: new is reserved (fdalloc(), or dup2() below).
+	 * old was checked by the caller, but dup2() may have slept
+	 * closing new's file, and another thread of the process closed
+	 * old meanwhile: then new is given back and the call is EBADF,
+	 * as for an old never open.
+	 */
 	fp = fdp->fd_ofiles[old];
+	if (fp == NULL) {
+		fdunreserve(fdp, new);
+		return (EBADF);
+	}
 	fdp->fd_ofiles[new] = fp;
 	fdp->fd_ofileflags[new] = fdp->fd_ofileflags[old] &~ UF_EXCLOSE;
 	fp->f_count++;
@@ -492,8 +523,15 @@ fdalloc(p, want, result)
 		if ((i = want) < fdp->fd_freefile)
 			i = fdp->fd_freefile;
 		for (; i < last; i++) {
-			if (fdp->fd_ofiles[i] == NULL) {
-				fdp->fd_ofileflags[i] = 0;
+			/*
+			 * AI-ONLY NOTE: a reserved slot is taken, though
+			 * its fd_ofiles[] is NULL; the slot given out is
+			 * reserved until fdinstall() or fdunreserve()
+			 * (sys/filedesc.h, UF_RESERVED).
+			 */
+			if (fdp->fd_ofiles[i] == NULL &&
+			    (fdp->fd_ofileflags[i] & UF_RESERVED) == 0) {
+				fdp->fd_ofileflags[i] = UF_RESERVED;
 				if (i > fdp->fd_lastfile)
 					fdp->fd_lastfile = i;
 				if (want <= fdp->fd_freefile)
@@ -544,14 +582,26 @@ fdavail(p, n)
 {
 	register struct filedesc *fdp = p->p_fd;
 	register struct file **fpp;
-	register int i, lim;
+	register char *flp;
+	register int i, lim, last;
 
+	/*
+	 * AI-ONLY NOTE: a reserved slot is not free (sys/filedesc.h,
+	 * UF_RESERVED); and slots at or above the limit are not
+	 * counted, as fdalloc() above does not give them out
+	 * (last = min(fd_nfiles, lim)).  4.4BSD counted them: the table
+	 * grows by NDEXTENT whatever the limit, and with RLIMIT_NOFILE
+	 * below its size fdavail() said yes where fdalloc() then said
+	 * EMFILE, and unp_externalize() panics on that.
+	 */
 	lim = min((int)p->p_rlimit[RLIMIT_NOFILE].rlim_cur, maxfiles);
 	if ((i = lim - fdp->fd_nfiles) > 0 && (n -= i) <= 0)
 		return (1);
+	last = min(fdp->fd_nfiles, lim);
 	fpp = &fdp->fd_ofiles[fdp->fd_freefile];
-	for (i = fdp->fd_nfiles - fdp->fd_freefile; --i >= 0; fpp++)
-		if (*fpp == NULL && --n <= 0)
+	flp = &fdp->fd_ofileflags[fdp->fd_freefile];
+	for (i = last - fdp->fd_freefile; --i >= 0; fpp++, flp++)
+		if (*fpp == NULL && (*flp & UF_RESERVED) == 0 && --n <= 0)
 			return (1);
 	return (0);
 }
@@ -572,6 +622,7 @@ falloc(p, resultfp, resultfd)
 		return (error);
 	if (nfiles >= maxfiles) {
 		tablefull("file");
+		fdunreserve(p->p_fd, i);	/* AI-ONLY NOTE: below */
 		return (ENFILE);
 	}
 	/*
@@ -587,7 +638,13 @@ falloc(p, resultfp, resultfd)
 		fpp = &fq->f_filef;
 	else
 		fpp = &filehead;
-	p->p_fd->fd_ofiles[i] = fp;
+	/*
+	 * AI-ONLY NOTE: the file is not entered in fd_ofiles[i] here:
+	 * slot i stays reserved, and the caller enters the file with
+	 * fdinstall() once it is whole, or gives the slot back with
+	 * fdunreserve() (sys/filedesc.h, UF_RESERVED).  4.4BSD entered
+	 * it here, untyped, for the rest of the open to see.
+	 */
 	if (fq = *fpp)
 		fq->f_fileb = &fp->f_filef;
 	fp->f_filef = fq;
@@ -606,6 +663,37 @@ falloc(p, resultfp, resultfd)
 	if (resultfd)
 		*resultfd = i;
 	return (0);
+}
+
+/*
+ * AI-ONLY NOTE: new.  Enter a whole file in a slot fdalloc() reserved,
+ * or give such a slot back (sys/filedesc.h, UF_RESERVED).  The
+ * slot's other flags are the caller's to set after fdinstall();
+ * fdunreserve() leaves the hints as close() leaves them.
+ */
+void
+fdinstall(fdp, fd, fp)
+	register struct filedesc *fdp;
+	int fd;
+	struct file *fp;
+{
+	fdp->fd_ofiles[fd] = fp;
+	fdp->fd_ofileflags[fd] &= ~UF_RESERVED;
+	if (fd > fdp->fd_lastfile)
+		fdp->fd_lastfile = fd;
+}
+
+void
+fdunreserve(fdp, fd)
+	register struct filedesc *fdp;
+	int fd;
+{
+	fdp->fd_ofileflags[fd] = 0;
+	while (fdp->fd_lastfile > 0 && fdp->fd_ofiles[fdp->fd_lastfile] == NULL &&
+	    (fdp->fd_ofileflags[fdp->fd_lastfile] & UF_RESERVED) == 0)
+		fdp->fd_lastfile--;
+	if (fd < fdp->fd_freefile)
+		fdp->fd_freefile = fd;
 }
 
 /*
@@ -676,6 +764,17 @@ fdcopy(p)
 	newfdp->fd_nfiles = i;
 	bcopy(fdp->fd_ofiles, newfdp->fd_ofiles, i * sizeof(struct file **));
 	bcopy(fdp->fd_ofileflags, newfdp->fd_ofileflags, i * sizeof(char));
+	/*
+	 * AI-ONLY NOTE: a slot the parent has reserved is a call of the
+	 * parent's still in progress; the child gets the slot free
+	 * (sys/filedesc.h, UF_RESERVED).
+	 */
+	while (--i >= 0)
+		if (newfdp->fd_ofileflags[i] & UF_RESERVED) {
+			newfdp->fd_ofileflags[i] = 0;
+			if (i < newfdp->fd_freefile)
+				newfdp->fd_freefile = i;
+		}
 	fpp = newfdp->fd_ofiles;
 	for (i = newfdp->fd_lastfile; i-- >= 0; fpp++)
 		if (*fpp != NULL)

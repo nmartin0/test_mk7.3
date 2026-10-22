@@ -610,7 +610,7 @@ unp_externalize(rights)
 		if (fdalloc(p, 0, &f))
 			panic("unp_externalize");
 		fp = *rp;
-		p->p_fd->fd_ofiles[f] = fp;
+		fdinstall(p->p_fd, f, fp);	/* AI-ONLY NOTE: as socket() */
 		fp->f_msgcount--;
 		unp_rights--;
 		*(int *)rp++ = f;

@@ -440,8 +440,9 @@ sites: `__sysctl` (the page size, for `malloc`), `break`, `fstat`,
 `readv` and `writev`, then `fork`; an interactive shell then needs
 step 5, as Ctrl-C is a caught signal. `__sysctl` is in (0132, 0133),
 `break` (0134) and `fstat` (0135, 0136). An independent review of
-each found what `docs/deferred.md` S-23 records, open before item 2
-is done.
+each found what `docs/deferred.md` S-23 records: the table's open
+window, now closed for both servers (0137); its second half, a
+reference held across a sleeping call, is open before item 2 is done.
 
 What differs from the plan above:
 

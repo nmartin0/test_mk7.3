@@ -100,11 +100,17 @@ socket(p, uap, retval)
 	fp->f_flag = FREAD|FWRITE;
 	fp->f_type = DTYPE_SOCKET;
 	fp->f_ops = &socketops;
+	/*
+	 * AI-ONLY NOTE: falloc() reserved slot fd; the file enters the
+	 * table whole, with its socket, or the slot is given back
+	 * (sys/filedesc.h, UF_RESERVED).
+	 */
 	if (error = socreate(uap->domain, &so, uap->type, uap->protocol)) {
-		fdp->fd_ofiles[fd] = 0;
+		fdunreserve(fdp, fd);
 		ffree(fp);
 	} else {
 		fp->f_data = (caddr_t)so;
+		fdinstall(fdp, fd, fp);
 		*retval = fd;
 	}
 	return (error);
@@ -208,6 +214,7 @@ accept(
 	fp->f_flag = FREAD|FWRITE;
 	fp->f_ops = &socketops;
 	fp->f_data = (caddr_t)so;
+	fdinstall(p->p_fd, *retval, fp);	/* AI-ONLY NOTE: as socket() */
 	nam = m_get(M_WAIT, MT_SONAME);
 	(void) soaccept(so, nam);
 	if (uap->name) {
@@ -310,16 +317,18 @@ socketpair(p, uap, retval)
 		 if (error = soconnect2(so2, so1))
 			goto free4;
 	}
+	fdinstall(fdp, sv[0], fp1);		/* AI-ONLY NOTE: as socket() */
+	fdinstall(fdp, sv[1], fp2);
 	error = copyout((caddr_t)sv, (caddr_t)uap->rsv, 2 * sizeof (int));
 	retval[0] = sv[0];		/* XXX ??? */
 	retval[1] = sv[1];		/* XXX ??? */
 	return (error);
 free4:
 	ffree(fp2);
-	fdp->fd_ofiles[sv[1]] = 0;
+	fdunreserve(fdp, sv[1]);		/* AI-ONLY NOTE: as socket() */
 free3:
 	ffree(fp1);
-	fdp->fd_ofiles[sv[0]] = 0;
+	fdunreserve(fdp, sv[0]);
 free2:
 	(void)soclose(so2);
 free1:
@@ -607,13 +616,15 @@ pipe(p, uap, retval)
 	retval[1] = fd;
 	if (error = unp_connect2(wso, rso))
 		goto free4;
+	fdinstall(fdp, retval[0], rf);		/* AI-ONLY NOTE: as socket() */
+	fdinstall(fdp, retval[1], wf);
 	return (0);
 free4:
 	ffree(wf);
-	fdp->fd_ofiles[retval[1]] = 0;
+	fdunreserve(fdp, retval[1]);		/* AI-ONLY NOTE: as socket() */
 free3:
 	ffree(rf);
-	fdp->fd_ofiles[retval[0]] = 0;
+	fdunreserve(fdp, retval[0]);
 free2:
 	(void)soclose(wso);
 free1:

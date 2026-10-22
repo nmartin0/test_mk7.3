@@ -1,13 +1,14 @@
 #!/bin/sh
-# mkprobe.sh <out> -- build probe.c into a NetBSD 1.0 ZMAGIC a.out:
+# mkprobe.sh <out> [<source>] -- build probe.c, or <source> in its
+# style, into a NetBSD 1.0 ZMAGIC a.out:
 # header and text in the first pages from 0x1000, entry 0x1020, data
 # and BSS in the page after, as NetBSD's ld lays out a static
 # program.  Needs
 # a host gcc and binutils for i386 (-m32); no NetBSD tools.
 set -eu
-D=$(cd "$(dirname "$0")" && pwd); OUT=$1; T=$(mktemp -d)
+D=$(cd "$(dirname "$0")" && pwd); OUT=$1; SRC=${2:-$D/probe.c}; T=$(mktemp -d)
 gcc -m32 -O1 -ffreestanding -fno-pic -fno-stack-protector -fno-builtin \
-	-c "$D/probe.c" -o "$T/probe.o"
+	-c "$SRC" -o "$T/probe.o"
 as --32 "$D/start.s" -o "$T/start.o"
 (cd "$T" && ld -m elf_i386 -T "$D/probe.ld" start.o probe.o -o probe.elf)
 objcopy -O binary -j .text "$T/probe.elf" "$T/text"

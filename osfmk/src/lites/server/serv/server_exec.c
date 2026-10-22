@@ -1237,17 +1237,27 @@ void
 fdcloseexec(struct proc *p)
 {
 	register struct filedesc *fdp = p->p_fd;
-	register struct file **fpp;
-	register char *of;
+	register struct file *fp;
 	register int i;
 
-	fpp = fdp->fd_ofiles;
-	of = fdp->fd_ofileflags;
-	for (i = fdp->fd_lastfile; i-- >= 0; fpp++,of++)
-		if (*fpp && (*of & UF_EXCLOSE)) {
-			(void) closef(*fpp, p);
-			*fpp = NULL;
-			*of = 0;
+	/*
+	 * AI-ONLY NOTE: each file is taken out of the table before it
+	 * is closed, as close() and dup2() do, since closef() can sleep
+	 * and another thread of the process must not find it there
+	 * meanwhile; and the table is indexed afresh each time round,
+	 * as it can grow during that sleep.  docs/deferred.md, S-23.
+	 * The freed slot lowers fd_freefile, as 4.4BSD-Lite2's
+	 * fdcloseexec() (kern/kern_descrip.c) does and Lites' did not,
+	 * so the next open takes the lowest free slot.
+	 */
+	for (i = 0; i <= fdp->fd_lastfile; i++)
+		if ((fp = fdp->fd_ofiles[i]) != NULL &&
+		    (fdp->fd_ofileflags[i] & UF_EXCLOSE)) {
+			fdp->fd_ofiles[i] = NULL;
+			fdp->fd_ofileflags[i] = 0;
+			if (i < fdp->fd_freefile)
+				fdp->fd_freefile = i;
+			(void) closef(fp, p);
 		}
 
 	while (fdp->fd_lastfile > 0 && 

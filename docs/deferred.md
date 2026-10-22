@@ -1534,12 +1534,29 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   `fstat` (`serv/serv_syscalls.c`), and `close()` follows its null
   `f_ops`. So a hostile program could stop the system, with or
   without the emulator. 4.4BSD had the same table order and was safe
-  only by having one thread. `fstat` without the emulator returns
-  `EBADF` there instead (0136). The rest is open: the fix is either
-  one system call at a time per process in the server, or files
-  entered in the table only when ready, as later BSDs do; which, and
-  whether OSF/1's server, which had threads (`uthread`), shows the
-  way, is to be settled before Tier 1 item 2 is called done.
+  only by having one thread.
+  **The open window is closed in 0137, for both servers.** *Design of
+  the OSF/1 Operating System*, 11.1.2, requires that no thread be left
+  with a descriptor "referring to nothing"; Darwin 0's design meets
+  it, and is followed here, written fresh: a slot is reserved
+  (`UF_RESERVED`, Darwin 0's `bsd/sys/filedesc.h`, APSL) while its
+  file is built, and the file enters the table, with `fdinstall()`,
+  only when whole. The slot's
+  `fd_ofiles[]` stays NULL until then, so every lookup that tests for
+  NULL -- `close`, `fcntl`, `fpathconf`, `select`, `getattr`, the
+  file-port map, `dup`, `fstat` -- gives `EBADF`, and `fork` gives the
+  child the slot free. Tested: a fuzzer against the table code,
+  45 million operations with a second thread acting at every sleep,
+  AddressSanitizer-clean, where the old code faults; and both servers
+  booted running `docs/tools/noemuprobe/fdprobe.c`, which the old
+  servers panic (`unp_externalize`) and the new pass.
+  **Still open, the second half of OSF/1's design (11.1.2):** a call
+  that sleeps using a file -- `read`, `write` on a pipe or socket --
+  holds no reference on it, so another thread's `close` can free it
+  underneath, a use-after-free in the server. The fix is the book's:
+  a reference taken for the length of such a call and "released when
+  the operation is completed"; its own patch, before Tier 1 item 2 is
+  called done.
 
 ### The `ne` driver, measured on 14 October 2026
 

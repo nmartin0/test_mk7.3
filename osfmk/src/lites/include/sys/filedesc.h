@@ -81,6 +81,18 @@ struct filedesc0 {
  */
 #define	UF_EXCLOSE 	0x01		/* auto-close on exec */
 #define	UF_MAPPED 	0x02		/* mapped from device */
+/*
+ * AI-ONLY NOTE: a slot fdalloc() has given out whose file is not yet
+ * in fd_ofiles[], which stays NULL until fdinstall() puts it there
+ * or fdunreserve() gives the slot back.  Threads of one process
+ * share the table and a system call can sleep between the two, and
+ * a descriptor must never refer to nothing (Design of the OSF/1
+ * Operating System, 11.1.2, "Synchronization on Descriptors").
+ * Darwin 0 reserves slots the same way (UF_RESERVED,
+ * bsd/sys/filedesc.h, 1999); this code is written here, not taken
+ * from it.  docs/deferred.md, S-23.
+ */
+#define	UF_RESERVED	0x04		/* allocated, file not yet in */
 
 /*
  * Storage required per open file descriptor.
@@ -94,6 +106,8 @@ struct filedesc0 {
 int	fdalloc __P((struct proc *p, int want, int *result));
 int	fdavail __P((struct proc *p, int n));
 int	falloc __P((struct proc *p, struct file **resultfp, int *resultfd));
+void	fdinstall __P((struct filedesc *fdp, int fd, struct file *fp));
+void	fdunreserve __P((struct filedesc *fdp, int fd));
 struct	filedesc *fdcopy __P((struct proc *p));
 void	fdfree __P((struct proc *p));
 #endif
