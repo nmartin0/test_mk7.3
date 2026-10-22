@@ -38,6 +38,8 @@
  *	@(#)vfs_vnops.c	8.2 (Berkeley) 1/21/94
  */
 
+#include "no_emulator.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
@@ -475,6 +477,18 @@ vn_stat(vp, sb, p)
 	error = VOP_GETATTR(vp, vap, p->p_ucred, p);
 	if (error)
 		return (error);
+#if NO_EMULATOR
+	/*
+	 * AI-ONLY NOTE: without the emulator the server copies sb out
+	 * to the process (stat, lstat, fstat), so the fields not set
+	 * below -- st_lspare, st_qspare -- would carry a server
+	 * thread's stack, which serves every process.  Zeroed first,
+	 * as NetBSD's vn_stat() zeroes it (kern/vfs_vnops.c,
+	 * memset(sb, 0, sizeof(*sb))).  With the emulator, sb was
+	 * built in the process's own task.
+	 */
+	bzero((caddr_t)sb, sizeof (*sb));
+#endif
 	/*
 	 * Copy from vattr table
 	 */

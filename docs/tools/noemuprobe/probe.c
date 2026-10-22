@@ -50,6 +50,9 @@ int start_c(int *kframe)
 	check("copyout to an unaligned address", !scerr && ((struct timeval *)p)->tv_sec >= tv.tv_sec && p[8+4] == 0x55);
 	r = sc(188, "/sbin/init", &st); out(" stat /sbin/init size "); num((long)st.st_size); out(" mode "); hex(st.st_mode); out("\n");
 	check("stat (188) copyout", !scerr && st.st_size > 10000 && (st.st_mode & 0170000) == 0100000);
+	{ struct stat zs; for (i = 0; i < (int)sizeof zs; i++) ((char *)&zs)[i] = 0x77;
+	  r = sc(188, "/sbin/init", &zs);
+	  check("stat spares zeroed, not server stack", !scerr && zs.st_lspare == 0 && zs.st_qspare[0] == 0 && zs.st_qspare[1] == 0); }
 	r = sc(188, "/nonexistent", &st); check("stat missing -> ENOENT (2)", scerr && r == 2);
 	r = sc(188, (char *)0x7, &st); check("stat bad path -> EFAULT (14)", scerr && r == 14);
 	r = sc(116, (struct timeval *)0x10, 0); check("gettimeofday to text page -> EFAULT", scerr && r == 14);
