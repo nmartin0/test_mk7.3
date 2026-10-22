@@ -434,6 +434,12 @@ descriptors kept; `exit`; and an unknown call killed by `SIGSYS`, as
 probe, stops with `SIGSEGV` at the bad path, as its `useracc()` says
 it will.
 
+*Step 4 begun, 22 October 2026.* What a NetBSD 1.0 shell needs, in
+the order it needs it, measured from the programs' own system call
+sites: `__sysctl` (the page size, for `malloc`), `break`, `fstat`,
+`readv` and `writev`, then `fork`; an interactive shell then needs
+step 5, as Ctrl-C is a caught signal. `__sysctl` is in (0132).
+
 What differs from the plan above:
 
 - *The table is 4.4BSD's, not Lites' `sysent`.* Lites' own table is

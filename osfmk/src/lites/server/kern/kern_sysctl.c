@@ -41,6 +41,7 @@
  */
 
 #include "compat_43.h"
+#include "no_emulator.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -55,6 +56,9 @@
 #include <sys/tty.h>
 #include <vm/vm.h>
 #include <sys/sysctl.h>
+#if NO_EMULATOR
+#include <serv/server_defs.h>
+#endif
 
 sysctlfn kern_sysctl;
 sysctlfn hw_sysctl;
@@ -166,6 +170,85 @@ s___sysctl(
 	*retval = oldlen;
 	return (0);
 }
+
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: the system call for a process the server runs
+ * without the emulator (docs/roadmap.md, Tier 1 item 2, step 4).
+ * The arguments are 4.4BSD-Lite2's __sysctl()'s, addresses in the
+ * process; s___sysctl() above takes them in the server, as the
+ * emulator's bsd_sysctl() (serv/bsd_server_side.c) brings them.
+ * So this is Lite2's __sysctl() around it -- the name and *oldlenp
+ * copied in, *oldlenp copied out, the size in *retval -- with
+ * bsd_sysctl()'s buffers in the server for the old and new values,
+ * copied out and in.  An old buffer of length 0 is still a buffer,
+ * as in Lite2, so a value that does not fit is ENOMEM, not a size.
+ */
+struct __sysctl_args {
+	int	*name;
+	u_int	namelen;
+	void	*old;
+	size_t	*oldlenp;
+	void	*new;
+	size_t	newlen;
+};
+
+int
+__sysctl(p, uap, retval)
+	struct proc *p;
+	register struct __sysctl_args *uap;
+	int *retval;
+{
+	int error;
+	int name[CTL_MAXNAME];
+	size_t oldlen = 0;
+	vm_offset_t old = 0, new = 0;
+	vm_size_t oldsize = 0, newsize = 0;
+
+	if (uap->namelen > CTL_MAXNAME || uap->namelen < 2)
+		return (EINVAL);
+	if (error = copyin((caddr_t)uap->name, (caddr_t)name,
+			   uap->namelen * sizeof(int)))
+		return (error);
+	if (uap->oldlenp &&
+	    (error = copyin((caddr_t)uap->oldlenp, (caddr_t)&oldlen,
+			    sizeof(oldlen))))
+		return (error);
+	if (uap->old != NULL) {
+		oldsize = round_page(oldlen ? oldlen : 1);
+		if (vm_allocate(mach_task_self(), &old, oldsize, TRUE)
+		    != KERN_SUCCESS)
+			return (ENOMEM);
+	}
+	if (uap->new != NULL) {
+		newsize = round_page(uap->newlen ? uap->newlen : 1);
+		if (vm_allocate(mach_task_self(), &new, newsize, TRUE)
+		    != KERN_SUCCESS) {
+			error = ENOMEM;
+			goto out;
+		}
+		if (error = copyin((caddr_t)uap->new, (caddr_t)new,
+				   uap->newlen))
+			goto out;
+	}
+	error = s___sysctl(p, name, uap->namelen,
+			   uap->old ? (void *)old : NULL,
+			   uap->oldlenp ? &oldlen : NULL,
+			   uap->new ? (void *)new : NULL, uap->newlen,
+			   retval);
+	if (error == 0 && uap->old != NULL && oldlen)
+		error = copyout((caddr_t)old, (caddr_t)uap->old, oldlen);
+	if (error == 0 && uap->oldlenp)
+		error = copyout((caddr_t)&oldlen, (caddr_t)uap->oldlenp,
+				sizeof(oldlen));
+out:
+	if (oldsize)
+		(void)vm_deallocate(mach_task_self(), old, oldsize);
+	if (newsize)
+		(void)vm_deallocate(mach_task_self(), new, newsize);
+	return (error);
+}
+#endif /* NO_EMULATOR */
 
 /*
  * Attributes stored in the kernel.

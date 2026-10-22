@@ -19,6 +19,7 @@
 #include "trace.h"
 
 int	nosys();
+int	__sysctl();
 int	accept();
 int	chdir();
 int	chflags();
@@ -376,7 +377,7 @@ struct sysent noemul_sysent[] = {
 	{ 5, lseek },			/* 199 = lseek */
 	{ 4, truncate },			/* 200 = truncate */
 	{ 4, ftruncate },		/* 201 = ftruncate */
-	{ 6, nosys },			/* 202 = __sysctl, not in the server */
+	{ 6, __sysctl },			/* 202 = __sysctl */
 	{ 2, mlock },			/* 203 = mlock */
 	{ 2, munlock },			/* 204 = munlock */
 	{ 1, nosys },			/* 205 = undelete, not in the server */

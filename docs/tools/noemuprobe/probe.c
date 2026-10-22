@@ -57,6 +57,18 @@ int start_c(int *kframe)
 	r = sc(4, con, (char *)0x10, 4); check("write from page 0 -> EFAULT", scerr && r == 14);
 	{ char b[5]; r = sc(4, con, "copyin across odd offsets\n" + 1, 25); check("write from an odd address", !scerr && r == 25); }
 	r = sc(60, 022); r = sc(60, 027); check("umask returns previous (022)", !scerr && r == 022);
+	/* __sysctl (202): CTL_HW 6 HW_PAGESIZE 7, CTL_KERN 1 KERN_OSTYPE 1 */
+	{ int mib[2]; int pg = 0; unsigned long sz = sizeof pg; mib[0] = 6; mib[1] = 7;
+	  r = sc(202, mib, 2, &pg, &sz, 0, 0); out(" hw.pagesize "); num(pg); out("\n");
+	  check("sysctl hw.pagesize", !scerr && pg == 4096 && sz == sizeof pg); }
+	{ int mib[2]; char b[32]; unsigned long sz = sizeof b; mib[0] = 1; mib[1] = 1;
+	  r = sc(202, mib, 2, b, &sz, 0, 0); if (!scerr) { out(" kern.ostype "); out(b); out("\n"); }
+	  check("sysctl kern.ostype, a string", !scerr && sz > 1 && sz <= sizeof b && b[sz-1] == 0); }
+	{ int mib[2]; unsigned long sz = 0; mib[0] = 1; mib[1] = 1;
+	  r = sc(202, mib, 2, 0, &sz, 0, 0); check("sysctl size only (old NULL)", !scerr && sz > 1); }
+	{ int mib[2]; char b[2]; unsigned long sz = sizeof b; mib[0] = 1; mib[1] = 1;
+	  r = sc(202, mib, 2, b, &sz, 0, 0); check("sysctl short buffer -> ENOMEM (12)", scerr && r == 12); }
+	r = sc(202, (int *)0x10, 2, 0, 0, 0, 0); check("sysctl name in page 0 -> EFAULT", scerr && r == 14);
 	out("summary: "); num(ok_count); out(" ok, "); num(bad_count); out(" failed\n");
 	if (argc >= 2 && mode[0]=='e' && mode[1]=='x') {	/* "exec": exec self again */
 		char *nargv[] = { "/root/t", "again", "x y", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };
