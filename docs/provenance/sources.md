@@ -57,12 +57,13 @@ the extra files all accounted for, but for these:
 
 **The MkLinux 1999 tree is newer, but not OSF's.** Its x86 changes
 worth taking are bug fixes: `vm/vm_kern.c` (`kmem_alloc_contig()` uses
-the map entry before checking `vm_map_find_space()`, and misses a
-`vm_object_unlock`); `device/net_device.c` (`IOBUS_LOCK_INIT` given
+the map entry before checking `vm_map_find_space()`);
+`device/net_device.c` (`IOBUS_LOCK_INIT` given
 the start routine for the interrupt routine); `scsi/rz_disk.c` (a
 capacity of `... | lba4 + 1`, `+` binding first); `libmach/
-mach_msg_server.c` (buffers leaked on early returns; its own fix has
-an unused temporary); `libsa_mach/printf.c` (`%h`, precision);
+mach_msg_server.c` (buffers leaked on early returns; its own fix
+swaps two flags wrongly in one of its two functions);
+`libsa_mach/printf.c` (`%h`, precision);
 `bootstrap/bootstrap.c` (CR and CRLF in `bootstrap.conf`, `*ptr` for
 `*pptr`). Its device layer is GNU Mach's (Elgin Lee's 1998 port),
 excluded. Its `kern/lock.c` has the `return; // dg` slp's `44e8969`
@@ -117,8 +118,8 @@ OK; none is taken by this page.
 
 1. **Done, 0121--0122**: `cmk1.1`'s commands and servers, and
    `compose` and `ptbldump` built by `mkhostbin.sh`.
-2. **The six bug fixes from the 1999 tree** above, as kind B rows,
-   each with the file's own line.
+2. **Done, 0125**: the six bug fixes from the 1999 tree above, as
+   kind B rows, each with the file's own line.
 3. **`makeboot` and `mig` built from source** (`cmk1.1`), replacing
    the PowerPC binaries' scripts `mkhostbin.sh` copies.
 4. **DR3's six symbolic links restored**, and `start.s~` removed or
@@ -136,3 +137,68 @@ OK; none is taken by this page.
    between `xkne` glue and `net_device` for `if_ne.c`.
 8. **For Lites**: the `lites` CVS history (1.0 to 1.1.u3) and
    `xmach`'s Lites, as donors after `nmartin0/4.4BSD-Lite2`'s `dev3`.
+
+## Checked again, 20 October 2026
+
+**DIPC's gap, searched for a second time.** Every tree and archive
+above, every revision in the superglobalmegacorp `osfmk` CVS file
+`ipc_mqueue.c,v`, `darwinstep` and the web. `KMSG_CONNECTING` and `kmsg_connect_reply_wait` appear
+only in copies of `ipc/ipc_mqueue.c`, and are defined nowhere.
+`c_imr_connect_reply_race`, counted among the missing before, is
+defined in that same file (line 948). So the gap is two names in one
+file; the rest is the three mismatched spots above. `net_device.c`'s
+`xknet` code is switched off (`NET_XKMACHKERNEL`), not incomplete:
+it names nothing undefined, though it does not compile as it stands
+(an undeclared variable, two names declared only elsewhere, a
+function with no prototype, one comparison of unlike pointers).
+
+**The 1999 tree's USB stack is not worth taking.**
+`mach_kernel/busses/usb`, about 12,400 lines, is NetBSD's 1998 USB code
+inside the kernel (not Lites), under the NetBSD Foundation's
+four-clause licence. Only the PowerMac configuration names it, as
+`pseudo-device usb 0`; its `bsdcomp.h` is empty, it includes
+`sys/device.h` and `sys/bus.h`, which the tree lacks, and it has no
+PCI attachment. It was never running. A later, complete NetBSD stack
+would be the donor if USB is ever wanted.
+
+**`net_device` and the x-kernel.** The x-kernel (University of
+Arizona) builds network stacks from protocol modules joined by a
+configuration file; OSF used it for kernel-to-kernel messages, which
+DIPC rides on. `net_device` is DR3's shared network-driver framework:
+a driver supplies two short tables of routines, one for the card and
+one for how it is wired to the machine (ports or shared memory), and
+the framework does registration, interrupts, queues and the x-kernel
+attachment. Only one DR3 driver uses it (HP700 Myrinet). It does not
+let a BSD driver drop in; the driver still has to be cut into those
+routines. For `if_ne.c` the shipped, tested way is the WD driver's
+`xkwd` glue in `if_ns8390.c` (some 400 to 600 lines); moving it onto
+`net_device` means first making the framework's x-kernel half build.
+
+**`stand/AT386/misc.c`, `console.c`, `rmcoffhdr.c`** (Intel's notice)
+are built by nothing: `stand/AT386`'s makefile builds `boot/` and
+`rmelfhdr`, and the boot has its own A20 code. They shipped on the
+DR3 CD, in MkLinux 1.0b2 and in the 1999 tree, and stay as shipped.
+
+**More to consider**, each its own patch if wanted:
+
+9. MK6.1's `cthread_mach_msg()` (`libcthreads/cthreads.c`, about 150
+   lines with its helpers), which our `cthreads.h` already declares
+   and nothing defines; it bounds how many threads wait on one port,
+   the deferred item "Lites' receive threads". Needs `cthread_block`
+   and the `CTHREAD_FILTER` hooks checked first.
+10. MK6.1's documentation (the Kernel Interfaces, the Server Writer's
+   Guide, Kernel Principles, release notes, the OSF RI papers), about
+   5 MB of PostScript, into `/docs`.
+11. The 1999 tree's `ppc/POWERMAC/if_tulip.c` (NetBSD `if_de.c` 1.81,
+   BSD licence, on OSFMK's PCI layer), a second network driver QEMU
+   emulates on x86, once PCI is up.
+12. MK6.1's tests and libraries (`ipc_test`, `xptest`, `mach_perf`,
+   `librthreads`, `libxmm`), each checked against 7.3's interfaces.
+13. CMU's `lites/user` programs from the Lites CVS (`mach_init`, `ps`,
+   `top` and others), CMU's licence.
+
+MkLinux 1.0b2's PCI files (item 5) carry only `@OSF_COPYRIGHT@`
+placeholders; the one licence written out in 1.0b2 is
+`conf/copyright.osf`, the OSF/RI non-commercial licence. Taking them
+is the maintainer's call. `gdb-4.16-mk` on the DR3 CD is GPL: a tool
+to run, not to merge.

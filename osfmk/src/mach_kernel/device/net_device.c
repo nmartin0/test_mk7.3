@@ -458,8 +458,14 @@ net_driver_allocate(
     NETQ_INIT(&netp->net_head, maxlen);
     queue_init(&netp->net_mqueue);
     mpqueue_init(&netp->net_done);
+    /*
+     * AI-ONLY NOTE: net_driver_intr for the interrupt routine, as the
+     * MkLinux project's tree has it (net_device.c, 17 January 1999);
+     * DR3 gave net_driver_start twice.  iobus.h's macro takes (start,
+     * intr, ...).  docs/provenance/sources.md.
+     */
     IOBUS_LOCK_INIT(&netp->net_dev_lock, out_unit, net_driver_start,
-		    net_driver_start, net_driver_timeout, net_driver_callback);
+		    net_driver_intr, net_driver_timeout, net_driver_callback);
     netp->net_callback.ncb_fct = (void (*)(int))net_driver_callback;
     netp->net_callback.ncb_arg = out_unit;
 

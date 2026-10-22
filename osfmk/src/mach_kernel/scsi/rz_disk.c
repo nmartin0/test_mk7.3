@@ -416,10 +416,16 @@ scdisk_open(
 	}
 
 	cap = (scsi_rcap_data_t*) tgt->cmd_ptr;
-	disk_size = (cap->lba1<<24) |
-	  	    (cap->lba2<<16) |
-		    (cap->lba3<< 8) |
-		     cap->lba4 + 1;
+	/*
+	 * AI-ONLY NOTE: the + 1 outside the |, as the MkLinux project's
+	 * tree has it (rz_disk.c, 6 February 1999).  In DR3's line + binds
+	 * first; when the last block address ends in 0xff, the carry into
+	 * the next byte is lost.  docs/provenance/sources.md.
+	 */
+	disk_size = ( (cap->lba1<<24) |
+	  	      (cap->lba2<<16) |
+		      (cap->lba3<< 8) |
+		       cap->lba4 ) + 1;
 	if (scsi_debug)
 		printf("rz%d holds %d blocks\n", tgt->unit_no, disk_size);
 

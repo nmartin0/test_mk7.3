@@ -245,8 +245,9 @@ _doprnt(register const char *fmt,
 		}
 	    }
 
-	    if (*fmt == 'l')
-		fmt++;	/* need it if sizeof(int) < sizeof(long) */
+	   if (*fmt == 'l' || *fmt == 'h') {
+		fmt++;  /* need it if short not passed as int or sizeof(int) < sizeof(long) */
+	   }
 
 	    switch(*fmt) {
 		case 'b':
@@ -427,7 +428,23 @@ _doprnt(register const char *fmt,
 			u /= base;
 		    } while (u != 0);
 
-		    length -= (&buf[MAXBUF-1] - p);
+		    /*
+		     * AI-ONLY NOTE: a precision on numbers, and %h below and
+		     * the padding after sign and prefix, as the MkLinux
+		     * project's tree has this file (10 December 1998); DR3
+		     * ignored a precision and printed no zeros for it.  But
+		     * padding on the right stays blank, as DR3's: a '-' flag
+		     * overrides '0' (C, 7.19.6.1), and that tree padded with
+		     * padc there.  docs/provenance/sources.md.
+		     */
+		    {
+			int s = (&buf[MAXBUF-1] - p);
+			if (prec > s)
+			  prec -= s;
+			else
+			  prec = 0;
+			length -= (s + prec);
+		    }
 		    if (sign_char)
 			length--;
 		    if (prefix)
@@ -443,11 +460,13 @@ _doprnt(register const char *fmt,
 		    if (prefix)
 			while (*prefix)
 			    (*outc)(outc_arg, *prefix++);
-		    if (padc == '0') {
-			/* zero padding goes after sign and prefix */
+		    if (!ladjust) {
+			/* other padding goes after sign and prefix */
 			while (--length >= 0)
-			    (*outc)(outc_arg, '0');
+			    (*outc)(outc_arg, padc);
 		    }
+		    while (--prec >= 0)
+			(*outc)(outc_arg, '0');
 		    while (++p != &buf[MAXBUF])
 			(*outc)(outc_arg, *p);
 

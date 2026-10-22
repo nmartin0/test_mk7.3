@@ -285,6 +285,18 @@ kmem_alloc_contig(
 		kr = vm_map_find_space(map, &addr, size, mask, &entry);
 	}
 
+	/*
+	 * AI-ONLY NOTE: the result checked before entry is used, as the
+	 * MkLinux project's tree has it (vm_kern.c, 10 April 1999).  On
+	 * failure vm_map_find_space() returns no entry, and DR3 wrote
+	 * through it first.  docs/provenance/sources.md.
+	 */
+	if (kr != KERN_SUCCESS) {
+		if ((flags & KMA_KOBJECT) == 0)
+			vm_object_deallocate(object);
+		return kr;
+	}
+
 	if ((flags & KMA_KOBJECT) == 0) {
 		entry->object.vm_object = object;
 		entry->offset = offset = 0;
@@ -296,12 +308,6 @@ kmem_alloc_contig(
 			entry->object.vm_object = object;
 			entry->offset = offset;
 		}
-	}
-
-	if (kr != KERN_SUCCESS) {
-		if ((flags & KMA_KOBJECT) == 0)
-			vm_object_deallocate(object);
-		return kr;
 	}
 
 	vm_map_unlock(map);

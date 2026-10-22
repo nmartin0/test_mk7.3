@@ -72,7 +72,16 @@ mach_msg_server_once(
     mach_port_t rcv_name,
     mach_msg_options_t options)
 {
+    /*
+     * AI-ONLY NOTE: the buffers freed on every way out, through
+     * cleanup:, as the MkLinux project's tree has this file (15
+     * February 1999); DR3 returned early and leaked them.  Its swap of
+     * the two flags in this function assigned allocatedReply from the
+     * already swapped allocatedRequest; allocatedTemp, as its swap in
+     * mach_msg_server() below has it.  docs/provenance/sources.md.
+     */
     mig_reply_error_t *bufRequest = 0, *bufReply = 0, *bufTemp;
+    boolean_t allocatedRequest = FALSE, allocatedReply = FALSE, allocatedTemp;
     register mach_msg_return_t mr;
     register kern_return_t kr;
 
@@ -80,12 +89,15 @@ mach_msg_server_once(
 		     (vm_address_t *)&bufRequest,
 		     max_size + MAX_TRAILER_SIZE,
 		     TRUE)) != KERN_SUCCESS)
-      return kr;    
+      goto cleanup;
+    allocatedRequest = TRUE;
+
     if ((kr = vm_allocate(mach_task_self(),
 		     (vm_address_t *)&bufReply,
 		     max_size + MAX_TRAILER_SIZE,
 		     TRUE)) != KERN_SUCCESS)
-      return kr;    
+      goto cleanup;
+    allocatedReply = TRUE;
 
     mr = mach_msg_overwrite_trap(&bufRequest->Head, MACH_RCV_MSG|options,
 				 0, max_size, rcv_name,
@@ -98,7 +110,7 @@ mach_msg_server_once(
 
 	if (!(bufReply->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) &&
 	    bufReply->RetCode != KERN_SUCCESS) {
-	    if (bufReply->RetCode == MIG_NO_REPLY)
+	    if (bufReply->RetCode == MIG_NO_REPLY) {
 		/*
 		 * This return code is a little tricky--
 		 * it appears that the demux routine found an
@@ -107,7 +119,10 @@ mach_msg_server_once(
 		 * the local user or the remote one, we pretend it's
 		 * ok.
 		 */
-		return KERN_SUCCESS;
+	
+                kr = KERN_SUCCESS;
+		goto cleanup;
+            }
 
 	    /* don't destroy the reply port right,
 	       so we can send an error message */
@@ -120,7 +135,8 @@ mach_msg_server_once(
 	    if (bufReply->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX)
 		mach_msg_destroy(&bufReply->Head);
 
-	    return KERN_SUCCESS;
+            kr = KERN_SUCCESS;
+            goto cleanup;
 	}
 
 	/* send reply.  */
@@ -129,6 +145,10 @@ mach_msg_server_once(
 	bufRequest = bufReply;
 	bufReply = bufTemp;
 
+        allocatedTemp = allocatedRequest;
+        allocatedRequest = allocatedReply;
+        allocatedReply = allocatedTemp;		/* AI-ONLY NOTE: above */
+        
 	/*
 	 *	We don't want to block indefinitely because the client
 	 *	isn't receiving messages from the reply port.
@@ -154,23 +174,33 @@ mach_msg_server_once(
       case MACH_SEND_TIMED_OUT:
 	/* the reply can't be delivered, so destroy it */
 	mach_msg_destroy(&bufRequest->Head);
-	return KERN_SUCCESS;	/* Matches error hiding behavior in
-				   mach_msg_server.  */
+        kr = KERN_SUCCESS;      /* Matches error hiding behavior in
+                                   mach_msg_server.  */
+        goto cleanup;
+				  
 
       case MACH_RCV_TOO_LARGE:
-	return KERN_SUCCESS;	/* Matches error hiding behavior in
+	kr = KERN_SUCCESS;	/* Matches error hiding behavior in
 				   mach_msg_server.  */
+        goto cleanup;
 
       default:
 	/* Includes success case.  */
-	(void)vm_deallocate(mach_task_self(),
+        kr = mr;
+        goto cleanup;
+    }
+
+cleanup:
+        if ( allocatedRequest == TRUE )  
+	    (void)vm_deallocate(mach_task_self(),
 			    (vm_address_t) bufRequest,
 			    max_size + MAX_TRAILER_SIZE);
-	(void)vm_deallocate(mach_task_self(),
+        if ( allocatedReply == TRUE ) 
+	    (void)vm_deallocate(mach_task_self(),
 			    (vm_address_t) bufReply,
 			    max_size + MAX_TRAILER_SIZE);
-	return mr;
-    }
+        return kr;
+
 }
 
 /*
@@ -187,6 +217,7 @@ mach_msg_server(
     mach_msg_options_t options)
 {
     mig_reply_error_t *bufRequest = 0, *bufReply = 0, *bufTemp;
+    boolean_t allocatedRequest = FALSE, allocatedReply = FALSE, allocatedTemp;
     register mach_msg_return_t mr;
     register kern_return_t kr;
 
@@ -194,12 +225,15 @@ mach_msg_server(
 		     (vm_address_t *)&bufRequest,
 		     max_size + MAX_TRAILER_SIZE,
 		     TRUE)) != KERN_SUCCESS)
-      return kr;    
+      goto cleanup;
+    allocatedRequest = TRUE;
+
     if ((kr = vm_allocate(mach_task_self(),
 		     (vm_address_t *)&bufReply,
 		     max_size + MAX_TRAILER_SIZE,
 		     TRUE)) != KERN_SUCCESS)
-      return kr;    
+      goto cleanup;
+    allocatedReply = TRUE;
 
     for (;;) {
       get_request:
@@ -237,6 +271,10 @@ mach_msg_server(
 	    bufRequest = bufReply;
 	    bufReply = bufTemp;
 
+            allocatedTemp = allocatedRequest;
+            allocatedRequest = allocatedReply;
+            allocatedReply = allocatedTemp;
+
 	    /*
 	     *	We don't want to block indefinitely because the client
 	     *	isn't receiving messages from the reply port.
@@ -263,21 +301,26 @@ mach_msg_server(
 	  case MACH_SEND_TIMED_OUT:
 	    /* the reply can't be delivered, so destroy it */
 	    mach_msg_destroy(&bufRequest->Head);
-	    break;
+            goto cleanup;
 
 	  case MACH_RCV_TOO_LARGE:
 	    /* the kernel destroyed the request */
-	    break;
+            goto cleanup;
 
 	  default:
 	    /* should only happen if the server is buggy */
+            kr = mr;
+            goto cleanup;
+	}
+
+cleanup:
+        if ( allocatedRequest == TRUE )
 	    (void)vm_deallocate(mach_task_self(),
 				(vm_address_t) bufRequest,
 				max_size + MAX_TRAILER_SIZE);
+        if ( allocatedReply == TRUE )
 	    (void)vm_deallocate(mach_task_self(),
 				(vm_address_t) bufReply,
 				max_size + MAX_TRAILER_SIZE);
-	    return mr;
-	}
     }
 }
