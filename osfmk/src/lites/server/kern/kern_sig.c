@@ -90,6 +90,7 @@
 #include "compat_43.h"
 #include "diagnostic.h"
 #include "data_synch.h"
+#include "no_emulator.h"
 
 #include <serv/server_defs.h>
 #include <serv/synch_prim.h>
@@ -1325,7 +1326,19 @@ postsig(signum)
 			code = ps->ps_code;
 			ps->ps_code = 0;
 		}
-#ifdef LITES
+#if NO_EMULATOR
+		/*
+		 * AI-ONLY NOTE: for now, without the emulator, a caught
+		 * signal ends the process as its default action would:
+		 * the handler's frame (4.4BSD's sendsig(), and
+		 * sigreturn() back) is not built yet.  The only caller
+		 * is the system call's way out (i386/syscall.c).
+		 * docs/roadmap.md, Tier 1 item 2, step 5.
+		 */
+		printf("(lites) pid %d: signal %d caught; handlers are not "
+		       "run without the emulator yet\n", p->p_pid, signum);
+		sigexit(p, signum);
+#elif defined(LITES)
 		panic("postsig: sendsig(action, signum, returnmask, code);");
 #else /* LITES */
 		sendsig(action, signum, returnmask, code);

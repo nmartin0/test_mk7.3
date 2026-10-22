@@ -51,6 +51,7 @@
  */
 
 #include <map_uarea.h>
+#include "no_emulator.h"
 
 #include <serv/import_mach.h>
 
@@ -139,6 +140,14 @@ extend_reply_msg(
 	struct data_desc *dd;
 	vm_offset_t addr;
 
+#if NO_EMULATOR
+	/*
+	 * AI-ONLY NOTE: without the emulator the reply is an exception
+	 * reply, with no room for data (i386/syscall.c), and the data
+	 * goes into the task instead (serv/user_copy.c, copyout()).
+	 */
+	panic("extend_reply_msg: no emulator to take the data");
+#endif
 	if (size == 0)
 		return 0;
 
@@ -413,6 +422,14 @@ extend_reply_msg(
 	struct data_desc *dd;
 	vm_offset_t addr;
 
+#if NO_EMULATOR
+	/*
+	 * AI-ONLY NOTE: without the emulator the reply is an exception
+	 * reply, with no room for data (i386/syscall.c), and the data
+	 * goes into the task instead (serv/user_copy.c, copyout()).
+	 */
+	panic("extend_reply_msg: no emulator to take the data");
+#endif
 	if (size == 0)
 		return 0;
 

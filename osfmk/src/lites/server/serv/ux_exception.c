@@ -49,6 +49,8 @@
  *
  */
 
+#include "no_emulator.h"
+
 #include <sys/param.h>
 #include <sys/proc.h>
 #include <sys/systm.h>
@@ -221,6 +223,11 @@ kern_return_t catch_exception_raise(
  * flavour, and each state with its count.  EXCEPTION_STATE, without
  * the thread and task, names no process, so it stays a stub.
  */
+#if !NO_EMULATOR
+/*
+ * AI-ONLY NOTE: the server without the emulator has its own, the
+ * system call (i386/syscall.c), sent to a process's port.
+ */
 kern_return_t catch_exception_raise_state(
 	mach_port_t		port,
 	exception_type_t	exception,
@@ -234,6 +241,7 @@ kern_return_t catch_exception_raise_state(
 {
 	panic("catch_exception_raise_state");
 }
+#endif /* !NO_EMULATOR */
 
 /*
  * AI-ONLY NOTE: new; was a panic stub.  The exception port is

@@ -34,6 +34,7 @@
 #include "machid_register.h"
 #include "second_server.h"
 #include "vnpager.h"
+#include "no_emulator.h"
 
 #include <serv/server_defs.h>
 #include <sys/exec_file.h>
@@ -67,6 +68,25 @@ static mach_error_t server_exec(struct proc *, char *, char *, char *,
 				char *, struct exec_load_info *,
 				mach_port_t *);
 void fdcloseexec(struct proc *p);
+#if NO_EMULATOR
+static vm_offset_t server_exec_start_program(struct proc *, char *,
+					     vm_address_t, int, int,
+					     char *, char *, char *,
+					     struct exec_load_info *);
+void noemul_set_program_state(struct proc *, vm_offset_t, vm_offset_t);
+void noemul_set_syscall_port(struct proc *);
+
+/*
+ * AI-ONLY NOTE: the binaries the server runs without the emulator:
+ * NetBSD's, whose system calls are 4.4BSD's (kern/noemul_sysent.c).
+ * The emulator runs 386BSD's and FreeBSD's with the same table
+ * (emulator/i386/e_trampoline.c, emul_setup), converting their
+ * older structures (e_bnr_stat() and the like); without it they
+ * would get 4.4BSD's, so they are not taken.  docs/roadmap.md,
+ * Tier 1 item 2.
+ */
+#define	NOEMUL_BINARY(type)	((type) == BT_NETBSD)
+#endif /* NO_EMULATOR */
 
 
 struct after_exec_state {
@@ -186,6 +206,25 @@ mach_error_t s_execve(
 	assert(kr == KERN_SUCCESS);
 	kr = vm_write(p->p_task, new_arg_addr, data, count);
 	assert(kr == KERN_SUCCESS);
+#if NO_EMULATOR
+	/*
+	 * AI-ONLY NOTE: no emulator to finish the exec: the server
+	 * makes the stack the emulator makes (after_exec(), then
+	 * emulator/emul_init.c and emul_exec.c), and starts the program
+	 * on it (server_exec_start_program()).  The strings are read
+	 * from the server's copy, so it is kept until then.
+	 * docs/roadmap.md, Tier 1 item 2.
+	 */
+	kr = vm_allocate(p->p_task, &stack_start, stack_size, FALSE);
+	assert(kr == KERN_SUCCESS);
+	sp = server_exec_start_program(p, (char *) data, new_arg_addr,
+				       arg_count, env_count,
+				       fname, cfname, cfarg, &li_data);
+	kr = vm_deallocate(mach_task_self(), data, count);
+	assert(kr == KERN_SUCCESS);
+	if (MACH_PORT_VALID(image_port))	/* none: nothing emulated */
+	    mach_port_deallocate(mach_task_self(), image_port);
+#else /* NO_EMULATOR */
 	kr = vm_deallocate(mach_task_self(), data, count);
 	assert(kr == KERN_SUCCESS);
 	/* Allocate stack */
@@ -219,6 +258,7 @@ mach_error_t s_execve(
 
 	assert(p->p_after_exec_state == NULL);
 	p->p_after_exec_state = state;
+#endif /* NO_EMULATOR */
 
 	/* Make it run */
 	kr = thread_resume(p->p_thread);
@@ -309,8 +349,21 @@ mach_error_t server_exec_cleanup_task(struct proc *p)
 	    if (thread_list[i] == p->p_thread) {
 		    kr = thread_suspend(p->p_thread);
 		    assert(kr == KERN_SUCCESS);
+#if NO_EMULATOR
+		    /*
+		     * AI-ONLY NOTE: not aborted.  Without the emulator
+		     * the thread is in the system call's exception RPC
+		     * (or has not run, for init), and the reply starts it
+		     * on the new program (i386/syscall.c, EJUSTRETURN).
+		     * Aborted, it would leave the RPC and, under OSFMK, go
+		     * to the task's exception port (docs/deferred.md,
+		     * S-7); the emulator's thread is aborted out of its
+		     * own mach_msg instead.
+		     */
+#else
 		    kr = thread_abort(p->p_thread);
 		    assert(kr == KERN_SUCCESS);
+#endif
 	    } else if (MACH_PORT_VALID(thread_list[i])) {
 		    thread_terminate(thread_list[i]);
 		    mach_port_deallocate(mach_task_self(), thread_list[i]);
@@ -646,6 +699,12 @@ mach_error_t server_exec_native_sanity(
 
 	type = get_binary_type(hdr);
 
+#if NO_EMULATOR
+	/* AI-ONLY NOTE: NetBSD's a.out, checked as Lites' own a.out is */
+	if (!NOEMUL_BINARY(type))
+	    return ENOEXEC;
+	if (NOEMUL_BINARY(type)
+#else
 	if (type != BT_LITES_Z && type != BT_LITES_Q
 	    && type != BT_LITES_SOM && type != BT_LITES_LITTLE_ECOFF
 	    && type != BT_LITES_ELF)
@@ -655,6 +714,7 @@ mach_error_t server_exec_native_sanity(
 	 * "ain't not such thing as a sanity clause" -groucho
 	 */
 	if ((type == BT_LITES_Q || type == BT_LITES_Z)
+#endif
 	    && (hdr->aout.a_text > MAXTSIZ
 		|| hdr->aout.a_text > vattr.va_size
 		|| hdr->aout.a_data == 0
@@ -792,6 +852,18 @@ mach_error_t server_exec_open(
 
 		type = get_binary_type(hdr);
 	}
+#if NO_EMULATOR
+	/*
+	 * AI-ONLY NOTE: no emulator to load: the binary itself is the
+	 * program, whatever its type, or ENOEXEC
+	 * (server_exec_native_sanity()).
+	 */
+	err = server_exec_native_sanity(vp, hdr, cred, p, &type);
+	if (err) {
+		vput(vp);
+		return err;
+	}
+#else /* NO_EMULATOR */
 	/* Non-native binaries */
 	if (type != BT_LITES_Z && type != BT_LITES_Q
 	    && type != BT_LITES_SOM && type != BT_LITES_LITTLE_ECOFF
@@ -855,6 +927,7 @@ mach_error_t server_exec_open(
 			return err;
 		}
 	}
+#endif /* NO_EMULATOR */
 
 	/* Emulator or other native */
 
@@ -1337,6 +1410,149 @@ static mach_error_t OLD_server_exec_load(
 	return KERN_SUCCESS;
 }
 #endif 0
+
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: new.  What the emulator does to start a program,
+ * done by the server for one it runs without it (docs/roadmap.md,
+ * Tier 1 item 2).  The stack is the one the emulator builds
+ * (emulator/emul_init.c, emul_setup_argv(), with_kframe), from the
+ * strings s_execve() has put at arg_addr, its server copy at
+ * "strings":
+ *
+ *	argc, [cfnamep [cfargp]] argv0p ... argvNp 0 env0p ... envNp 0
+ *	[cfname 0 [cfarg 0] fname 0]
+ *
+ * immediately below them, and the stack pointer at argc, where a
+ * NetBSD program's crt0 finds it.  For a "#!" script the interpreter
+ * and its argument come first and the script's name replaces argv[0],
+ * as there.  Then the rest of the emulator's emul_exec_load() and
+ * emul_exec_start(): the end of the last data page, the start of the
+ * BSS, zeroed; the registers set; and, new, the thread's system
+ * calls sent to the process's port (i386/syscall.c).
+ */
+static void server_exec_zero(
+	struct proc	*p,
+	vm_offset_t	start,
+	vm_size_t	count)
+{
+	vm_offset_t page = trunc_page(start);
+	pointer_t data;
+	mach_msg_type_number_t data_count;
+	kern_return_t kr;
+
+	kr = vm_read(p->p_task, page, vm_page_size, &data, &data_count);
+	assert(kr == KERN_SUCCESS);
+	bzero((char *) data + (start - page), count);
+	kr = vm_write(p->p_task, page, data, data_count);
+	assert(kr == KERN_SUCCESS);
+	(void) vm_deallocate(mach_task_self(), data, data_count);
+}
+
+static vm_offset_t server_exec_start_program(
+	struct proc		*p,
+	char			*strings,
+	vm_address_t		arg_addr,
+	int			arg_count,
+	int			env_count,
+	char			*fname,
+	char			*cfname,
+	char			*cfarg,
+	struct exec_load_info	*li)
+{
+	boolean_t with_interpreter = cfname[0] != '\0';
+	boolean_t with_cfarg = with_interpreter && cfarg[0] != '\0';
+	vm_size_t space_needed, buf_size;
+	vm_offset_t kframe, page, buf;
+	natural_t *kf, *argv, *av;
+	char *ap, *cp;
+	int argc, i;
+	kern_return_t kr;
+
+	space_needed = (env_count + arg_count + 2) * sizeof(char *);
+	if (with_interpreter) {
+		space_needed += strlen(cfname) + 1;
+		space_needed += strlen(fname) + 1;
+		space_needed += strlen(cfarg) + 1;
+		space_needed += sizeof(char *);		/* for cfname */
+		if (with_cfarg)
+		    space_needed += sizeof(char *);
+	}
+	space_needed += sizeof(natural_t);		/* argc */
+	space_needed = ((space_needed + sizeof(natural_t) - 1)
+			& ~(sizeof(natural_t) - 1));
+
+	kframe = arg_addr - space_needed;
+	page = trunc_page(kframe);
+	buf_size = arg_addr - page;
+	kr = vm_allocate(mach_task_self(), &buf, buf_size, TRUE);
+	assert(kr == KERN_SUCCESS);
+#define	UADDR(x)	((natural_t)((vm_offset_t)(x) - buf + page))
+
+	av = (natural_t *) (buf + (kframe - page));
+	kf = av++;
+	argv = av;
+	if (with_interpreter)
+	    av++;			/* room for cfname and cfarg */
+	if (with_cfarg)
+	    av++;
+	ap = strings;
+	for (i = 0; i < arg_count; i++) {
+		*av++ = arg_addr + (ap - strings);
+		ap += strlen(ap) + 1;
+	}
+	argc = arg_count;
+	*av++ = 0;
+	for (i = 0; i < env_count; i++) {
+		*av++ = arg_addr + (ap - strings);
+		ap += strlen(ap) + 1;
+	}
+	*av++ = 0;
+	if (with_interpreter) {
+		cp = (char *) av;
+		argv[0] = UADDR(cp);
+		strcpy(cp, cfname);
+		cp += strlen(cfname) + 1;
+		argc++;
+		if (with_cfarg) {
+			argv[1] = UADDR(cp);
+			strcpy(cp, cfarg);
+			cp += strlen(cfarg) + 1;
+			argc++;
+		}
+		/* the script for argv[0]; with none, its slot is the 0 */
+		if (fname[0] != '\0' && arg_count > 0) {
+			argv[with_cfarg ? 2 : 1] = UADDR(cp);
+			strcpy(cp, fname);
+		}
+	}
+	*kf = argc;
+#undef	UADDR
+
+	kr = vm_write(p->p_task, page, buf, buf_size);
+	assert(kr == KERN_SUCCESS);
+	(void) vm_deallocate(mach_task_self(), buf, buf_size);
+
+	if (li->zero_count > 0)
+	    server_exec_zero(p, li->zero_start, li->zero_count);
+
+	/*
+	 * AI-ONLY NOTE: no emulation vector.  A task inherits its
+	 * parent's (kern/syscall_emulation.c, eml_task_reference()), and
+	 * init's parent is the server's own task, which has the
+	 * emulator's when the server runs as a child of an emulator-based
+	 * one; its calls would go to an emulator that is not there.  A
+	 * count of 0 discards it: OSFMK's task_set_emulation_vector(),
+	 * "for emulator-less servers started from a classic server"
+	 * (barbou@gr.osf.org).  Without it a system call raises
+	 * EXC_SYSCALL, as i386/locore.s's mach_call_range does.
+	 */
+	(void) task_set_emulation_vector(p->p_task, 0, 0, 0);
+	noemul_set_program_state(p, li->pc, kframe);
+	noemul_set_syscall_port(p);
+	return kframe;
+}
+#endif /* NO_EMULATOR */
 
 extern char *trampoline_page;
 

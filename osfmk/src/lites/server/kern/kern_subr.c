@@ -70,6 +70,7 @@
  */
 
 #include "diagnostic.h"
+#include "no_emulator.h"
 
 #include <serv/server_defs.h>
 #include <sys/param.h>
@@ -126,6 +127,16 @@ mach_error_t uiomove(cp, n, uio)
 		} else {
 			/* UIO_USERSPACE || UIO_USERISPACE */
 			if (uio->uio_rw == UIO_READ) {
+#if NO_EMULATOR
+				/*
+				 * AI-ONLY NOTE: copyout(), as 4.4BSD's
+				 * uiomove() does; without the emulator it
+				 * writes the task (serv/user_copy.c).
+				 */
+				error = copyout(cp, iov->iov_base, cnt);
+				if (error)
+				    return (error);
+#else /* NO_EMULATOR */
 				vm_offset_t user_addr;
 
 				user_addr = extend_reply_msg(
@@ -134,6 +145,7 @@ mach_error_t uiomove(cp, n, uio)
 							     iov->iov_len);
 				bcopy(cp, (void *) user_addr, cnt);
 				extend_current_output(cnt);
+#endif /* NO_EMULATOR */
 			} else {
 				error = copyin(iov->iov_base, cp, cnt);
 				if (error)
@@ -176,6 +188,14 @@ again:
 		*iov->iov_base = c;
 	} else {
 		/* UIO_USERSPACE || UIO_USERISPACE */
+#if NO_EMULATOR
+		/*
+		 * AI-ONLY NOTE: subyte(), as 4.4BSD's ureadc() does, and
+		 * its EFAULT; serv/user_copy.c.
+		 */
+		if (subyte(iov->iov_base, c) < 0)
+		    return (EFAULT);
+#else /* NO_EMULATOR */
 		register char *		user_addr;
 
 		user_addr = (char *) extend_reply_msg(
@@ -183,6 +203,7 @@ again:
 						iov->iov_len, iov->iov_len);
 		*user_addr = c;
 		extend_current_output(1);
+#endif /* NO_EMULATOR */
 	}
 	iov->iov_base++;
 	iov->iov_len--;

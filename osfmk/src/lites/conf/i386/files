@@ -32,5 +32,8 @@ fileif	ns		netns/ns_cksum.c
 fileif	lites		i386/serv_machdep.c
 fileif	lites		i386/conf.c
 fileif	lites		i386/i386_exception.c
+# AI-ONLY NOTE: system calls taken as EXC_SYSCALL exceptions, for the
+# server without the emulator; docs/roadmap.md, Tier 1 item 2.
+fileif	noemulator	i386/syscall.c
 fileif	lites		i386/misc_asm.s
 fileif	second_server	i386/second_syscalls.s

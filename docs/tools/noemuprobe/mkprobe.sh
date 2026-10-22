@@ -1,0 +1,25 @@
+#!/bin/sh
+# mkprobe.sh <out> -- build probe.c into a NetBSD 1.0 ZMAGIC a.out:
+# header and text in the first page at 0x1000, entry 0x1020, data and
+# BSS in the second, as NetBSD's ld lays out a static program.  Needs
+# a host gcc and binutils for i386 (-m32); no NetBSD tools.
+set -eu
+D=$(cd "$(dirname "$0")" && pwd); OUT=$1; T=$(mktemp -d)
+gcc -m32 -O1 -ffreestanding -fno-pic -fno-stack-protector -fno-builtin \
+	-c "$D/probe.c" -o "$T/probe.o"
+as --32 "$D/start.s" -o "$T/start.o"
+(cd "$T" && ld -m elf_i386 -T "$D/probe.ld" start.o probe.o -o probe.elf)
+objcopy -O binary -j .text "$T/probe.elf" "$T/text"
+objcopy -O binary -j .data "$T/probe.elf" "$T/data"
+python3 - "$T/text" "$T/data" "$OUT" <<'P'
+import struct, sys
+t = open(sys.argv[1], 'rb').read(); d = open(sys.argv[2], 'rb').read()
+assert len(t) <= 0x1000 - 0x20 and len(d) <= 0x1000
+# midmag 0x0086010b, network order: no flags, MID_I386, ZMAGIC
+hdr = bytes([0x00, 0x86, 0x01, 0x0b]) + \
+      struct.pack('<7I', 0x1000, 0x1000, 0, 0, 0x1020, 0, 0)
+img = hdr + t
+img += b'\0' * (0x1000 - len(img)) + d + b'\0' * (0x1000 - len(d))
+open(sys.argv[3], 'wb').write(img)
+P
+rm -rf "$T"

@@ -38,6 +38,7 @@
 #include <serv/server_defs.h>
 #include <serv/bsd_msg.h>
 #include <bsd_types_gen.h>
+#include "no_emulator.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -61,6 +62,11 @@ extern boolean_t bsd_bootstrap_server(mach_msg_header_t *,
  * from the bootstrap.  docs/deferred.md, S-19.
  */
 vm_size_t cthread_stack_size = 64 * 1024;
+#endif
+#if NO_EMULATOR
+/* AI-ONLY NOTE: system calls without the emulator; i386/syscall.c */
+extern boolean_t bsd_syscall_server(mach_msg_header_t *,
+				    mach_msg_header_t *);
 #endif
 
 #if OSFMACH3
@@ -319,6 +325,10 @@ void ux_server_loop()
 		if (!seqnos_memory_object_server(request_ptr,&reply_ptr->Head))
 		if (!bsd_1_server(request_ptr, &reply_ptr->Head))
 		if (!ux_generic_server(request_ptr, &reply_ptr->Head))
+#if NO_EMULATOR
+		/* AI-ONLY NOTE: system calls; i386/syscall.c */
+		if (!bsd_syscall_server(request_ptr, &reply_ptr->Head))
+#endif
 		if (!exc_server(request_ptr, &reply_ptr->Head))
 		if (!seqnos_notify_server(request_ptr, &reply_ptr->Head))
 #if OSFMACH3
@@ -449,6 +459,10 @@ ux_act_entry(request_ptr)
 	if (!seqnos_memory_object_server(request_ptr, &reply_ptr->Head))
 	if (!bsd_1_server(request_ptr, &reply_ptr->Head))
 	if (!ux_generic_server(request_ptr, &reply_ptr->Head))
+#if NO_EMULATOR
+	/* AI-ONLY NOTE: system calls; i386/syscall.c */
+	if (!bsd_syscall_server(request_ptr, &reply_ptr->Head))
+#endif
 	if (!exc_server(request_ptr, &reply_ptr->Head))
 	if (!seqnos_notify_server(request_ptr, &reply_ptr->Head))
 #if OSFMACH3
