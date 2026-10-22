@@ -1,1 +1,1 @@
-link ppc/profile-md.h
+ppc/profile-md.h

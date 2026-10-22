@@ -45,13 +45,17 @@ changed files, all recorded (notes at the sites, `imports.md`), and
 the extra files all accounted for, but for these:
 
 - `i386/start.s~`, slp's editor backup: not DR3's, not recorded.
+  *Removed 22 October 2026:* its text is DR3's `start.s`, which the
+  CD's tarball and `0f6f7e6` keep.
 - Six symbolic links DR3 ships are plain files here. `export.tgz` has
   five under `export/powermac` (`include/machine`,
   `include/mach/machine`, `include/sa_mach/machine` and
   `mach_kernel/machine` to `ppc`; `include/profile/profile-md.h` to
   `ppc/profile-md.h`), and `tools.tgz` has `link/tools` to
   `../tools`. Ours are small files reading "link ...", as slp's
-  archive flattened them.
+  archive flattened them. *Restored 22 October 2026*: the five are
+  links again, to the targets `export.tgz` gives; `link/tools` was
+  already one.
 - `imports.md` lacks rows for `i386/mp_desc.c` and `ipc/ipc_port.c`
   (0095), which have notes at their sites. Added with this page.
 
@@ -120,10 +124,21 @@ OK; none is taken by this page.
    `compose` and `ptbldump` built by `mkhostbin.sh`.
 2. **Done, 0125**: the six bug fixes from the 1999 tree above, as
    kind B rows, each with the file's own line.
-3. **`makeboot` and `mig` built from source** (`cmk1.1`), replacing
-   the PowerPC binaries' scripts `mkhostbin.sh` copies.
-4. **DR3's six symbolic links restored**, and `start.s~` removed or
-   recorded.
+3. **`makeboot` and `mig` built from source**: *not needed, found 22
+   October 2026.* DR3's `mig` and `makeboot` in
+   `tools/ppc/ppc_linux/hostbin` are shell scripts, not PowerPC
+   binaries (those were `migcom` and `config`, built from OSF's
+   sources by `mkhostbin.sh`; `imports.md`, kind F). `mig` is DR3's
+   own and the build runs on it; `cmk1.1`'s `mig.sh` is a later
+   variant (`cc -E` for `cpp`, a `-split` flag), behind it in
+   `precedent.md`'s order. DR3's `makeboot` is PowerMac's; `cmk1.1`'s
+   is the C program MK6.1's build ran at step 9 to join the kernel and
+   the bootstrap task into one file (*MK6.1 Release Notes*), a step
+   MK7.3's PC build does not have: its boot programs load
+   `mach_kernel` and `/mach_servers/bootstrap` apart (*MK7.3 Release
+   Notes*, steps 1 to 9), as ours do.
+4. **Done, 22 October 2026**: DR3's five `export/powermac` links
+   restored (`link/tools` was already one), and `start.s~` removed.
 5. **PCI and drivers from MkLinux 1.0b2's OSF tree**: `device/
    dma_support.c`, `dma_direct_map.c`, `busses/pci/pci.h`, `if_tu.c`
    (DEC 21x4x; QEMU has a `tulip`), `if_fta.c`, `scsi_53C810_hdw.c`
