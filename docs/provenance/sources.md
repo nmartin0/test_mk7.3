@@ -197,8 +197,77 @@ DR3 CD, in MkLinux 1.0b2 and in the 1999 tree, and stay as shipped.
 13. CMU's `lites/user` programs from the Lites CVS (`mach_init`, `ps`,
    `top` and others), CMU's licence.
 
-MkLinux 1.0b2's PCI files (item 5) carry only `@OSF_COPYRIGHT@`
-placeholders; the one licence written out in 1.0b2 is
-`conf/copyright.osf`, the OSF/RI non-commercial licence. Taking them
-is the maintainer's call. `gdb-4.16-mk` on the DR3 CD is GPL: a tool
-to run, not to merge.
+`gdb-4.16-mk` on the DR3 CD is GPL: a tool to run, not to merge.
+
+## Checked by trying, 20 October 2026
+
+Each candidate tried in a copy of the tree; nothing taken.
+
+**DIPC's two names guard nothing in DR3.** `mach/message.h` defines
+`MACH_MSGH_BITS_CONNECTING` and `MACH_MSGH_BITS_CONNECT_WAIT` (lines
+237-238), in the space 1.0b2 left spare
+(`MACH_MSGH_BITS_DIPC_EXPANSION`), and nothing in DR3, 1.0b2 or the
+1999 tree sets either; only `ipc_kmsg.c`'s debug printer names them.
+So `KMSG_CONNECTING()` could only be false, and the block in
+`ipc_mqueue_finish_receive()` that uses the two names does nothing:
+without it, DR3 receives as 1.0b2 does, whose function has no such
+block. On one processor, without `MACH_RT`'s preemption, the race the
+block's comment describes cannot happen; on several it is open, as in
+1.0b2. A guard would be our own code, in `dipc_receive.c` as well.
+Searched for again, online: OSF's MK7.3a Release Notes (28 October
+1998) confirm the `+NORMA+net` configurations shipped; no source for
+MK7.x outside DR3 and its descendants was found.
+
+**Item 5, reversed: don't take 1.0b2's PCI header or `if_tu.c`.**
+1.0b2's `busses/pci/pci.h` is marked `@DEC_COPYRIGHT@`, "Originated
+from DEC alpha release", and its `if_tu.c` "Taken from DEC sources":
+DEC's code, likely why DR3 lacks them. DR3's `busses/pci/pci.c` and
+five other files include `pci.h`, so DR3's PCI does not build without
+one; a clean header would come from NetBSD's or FreeBSD's PCI
+definitions.
+
+9. **`cthread_mach_msg`: not taken.** `docs/deferred.md`, "Lites'
+   receive threads": 7.3's library no longer has what 6.1's code
+   uses. Trying it found `csw.s`'s `USER_INVOKE`
+   defect (`docs/deferred.md`).
+10. **MK6.1's documentation fits**: 7.1 MB, the 1993 specifications,
+   Kernel Principles, the Server Writer's Guide and Server Library,
+   release notes, eight RI papers; OSF's "permission to reproduce"
+   notice on the specifications, the guides, the release notes and
+   the rthreads paper, none on seven papers and two notes. It
+   describes 6.1. Better taken first: OSF's MK7.3 documents, the
+   Release Notes (30 October 1997, the same notice), the install
+   notes, and the locking, untyped-IPC and collocation design notes.
+11. **The 1999 `if_tulip.c` waits on PCI**: licence-clean (OSF's
+   notice and Matt Thomas's BSD licence), on the old device interface,
+   with PowerPC-only pieces (`eieio`, `bcopy_nc`, `flush_dcache`) to
+   replace; and DR3's PCI needs a clean `pci.h` first.
+12. **MK6.1's tests and libraries: nothing to take.** `ipc_test` and
+   `xptest` came with cmk1.1 (0121); `mach_perf`, `librthreads` and
+   `libxmm` are DR3's. Of these only `mach_perf` builds today.
+13. **CMU's USER programs, in part.** `ps`, `top`, `stacks`,
+   `hostinfo` and a dozen more are new to us; `ps` and `top` need
+   about seven Mach 3.0 to OSFMK renames each, and a way to link
+   OSFMK's libmach into NetBSD programs. The Mach-only tools are here
+   already in OSF's versions (`mach_services/cmds`). Not `mach_init`
+   (`imports.md`, kind B, the `wait4` row). Exclude the tree's GNU
+   readline and `gnu/`.
+
+**Where CMU's USER tools were used.** CMU's companion to its Mach 3
+kernels and UX server, hence `table()` and `task_by_pid`, CMU's calls;
+Lites reused the tree, and OSF took the Mach-only tools into its
+kernel tree.
+
+**`net_device` is for network cards only.** Every driver uses Mach's
+`dev_ops`; `net_device` (new in DR3; 1.0b2 has none) adds queues,
+filters, statistics and the x-kernel's attachment for network cards,
+which supply two tables of routines. Its only drivers are HP700
+Myrinet's. Its x-kernel half fails to compile in four places, one of
+them a design gap (`net_driver_xkalloc` has no Ethernet header to
+read), and has a `case` without a `break` that can leak a buffer.
+Left as it is until a driver moves onto it. For `if_ne.c`, the WD
+driver's `xkwd` glue (`if_ns8390.c`) is the pattern: about 400 to 450
+lines, some 85 per cent copied with names changed, 12 adapted (one
+staging buffer for port I/O, the receive path through
+`eth_dispatch`), the rest configuration and one `static` in
+`eth_common.h`, which its own comment asks for.

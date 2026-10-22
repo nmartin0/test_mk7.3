@@ -108,6 +108,18 @@ OSF's code is the one to call.
 full kernel build at 1,682s against 1,463s, Andrew 4%, SPEC SDM SDET
 about 8% at low load and under 1% at high.
 
+**Tried, 20 October 2026: Lites as it stands cannot run kernel-loaded.**
+Linked at `VM_MIN_KERNEL_LOADED_ADDRESS` (0x0c000000,
+`mach/i386/vm_param.h`) and started with `-k` in `bootstrap.conf`, as
+OSF's template allows, it stops at its first port. A kernel-loaded
+task gets a fast IPC space (`kern/ipc_tt.c` line 159, `space->is_fast
+= task->kernel_loaded`), and in a fast space
+`mach_port_allocate_name` refuses a chosen name (`ipc/mach_port.c`,
+`KERN_FAILURE`). Lites names every port by its object's address
+(`serv/port_object.c`, `port_object_allocate_receive()`), so it cannot
+start. Collocating it means changing how it names ports first: Tier 1
+item 4's work, not a setting.
+
 ### The locking converts to Mach's primitives
 
 **Settled by:** *Design of the OSF/1 Operating System*, which
@@ -878,6 +890,38 @@ three in OSFMK's `libcthreads` to the interface its header declares,
 on `cthread_t` where `cprocs.c` has `cproc_t`, and building the struct
 at the four call sites in `serv/ux_server_loop.c`.
 
+**Measured 20 October 2026, in a copy of the tree; nothing taken.**
+MK6.1's implementation (`libcthreads/cthreads.c`, `cthread_msg_active`,
+`cthread_mach_msg_real`, `cthread_mach_msg`, about 150 lines) is not a
+drop-in: 7.3's library was redesigned after 6.1 (about 1,600 of
+`cthreads.c`'s 3,700 lines differ: one global lock, wired threads,
+state bits), and the port-entry table, `port_list`, `port_lock` and
+the thread's `busy` field it uses are gone; only the header's
+declarations stayed. Ported onto 7.3's locking, it built, and Lites
+ran on it under load, both without a limit and with S-13's limit of
+13 restored -- once the `csw.s` defect below was fixed. The control,
+Utah's stubs with the limit of 13, did not hang in that test either,
+so the run does not show the port cures S-13.
+
+7.3's library has no implementation of its own, so 6.1's code is not taken. How to bound the receive threads again, if the limit is wanted
+back, is open: no public document of OSF's describes it.
+
+### `cthread_join()` returns 3: `csw.s`'s `USER_INVOKE`
+
+**Found 20 October 2026; not yet fixed.** `libcthreads/i386/csw.s`,
+`cthread_filter(context, type, a1, ...)`: the `USER_INVOKE` case
+(label `3:`) takes "the return result" from `8(%esp)`, which is the
+type, `CTHREAD_FILTER_USER_INVOKE`, 3; the result is at `12(%esp)`.
+The same line is in DR3, MkLinux 1.0b2, the 1999 tree and MK6.1. Every
+caller but one passes 0 and ignores the return; the one that passes a
+result, `cthread_exit()` to a joining thread (`cthreads.c`, line 1182),
+gets 3, so `cthread_join()` returns 3, not the thread's result. 6.1's
+`cthread_mach_msg` hands back `mach_msg`'s result the same way, which
+is how the fit test above found it. OSF's PowerMac version is right:
+`POWERMAC/csw.s`, `cthread_user_invoke(context, result)`, returns its
+second argument. One instruction, `12(%esp)`, with that as precedent;
+a patch to be shown before it is made.
+
 ### Lites' `memory_object_synchronize`
 
 **Deferred, 13 October 2026.** Lites panics in
@@ -1441,6 +1485,18 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   it**, by the maintainer's choice (0124): the line stays as Utah
   wrote it.
 
+- **S-22. Under heavy load, the shell's `[`, `expr` and backquoted
+  commands sometimes die with a segmentation fault.** Found 20 October
+  2026, in a load test of a candidate change (thirty background
+  `sleep`s, a `cc` loop and forty `cat /etc/* | sort | wc -l`
+  pipelines at once): "Segmentation fault - core dumped" from `[`,
+  `expr` and command substitution, now and then. The unchanged build,
+  0124 with 0125's fixes, does the same under the same load, so the
+  change was not the cause. Not yet reproduced by hand, and not
+  diagnosed: the core files, which program faults where, and whether
+  load or only concurrency matters, are the first things to look at.
+  Open.
+
 ### The `ne` driver, measured on 14 October 2026
 
 For roadmap milestone 4. With QEMU's `-device
@@ -1720,6 +1776,18 @@ The failure mode is the bad kind — a file that should be tracked is
 silently skipped and `git status` says nothing.  Not fixed here because
 this tree had no `.gitignore`; recorded so ours is written with `#`
 from the start, as it is (0089).
+
+**A copied sandbox still builds into the original's work area.**
+`docs/tools/mksandbox.sh` (lines 65-66) links the clone's `osfmk/obj`
+and `osfmk/export/at386` into `MK_BUILD`. A copy made with `cp -a`
+keeps the links, so a build in the copy writes the original's objects
+and exported libraries. On 20 October 2026 a test build in such a copy
+replaced `libcthreads.a` in the shared export; it was rebuilt from the
+original's source and matched a fresh build, and nothing had been
+built against it (0125's boot images were made half an hour before).
+A copy needs `mksandbox.sh` run in it with its own `MK_BUILD` before
+it builds. Not fixed in the script, which is right for one clone per
+build area; recorded so copies are made that way.
 
 ## 3. Refused
 

@@ -181,6 +181,14 @@ Each milestone below ends with its own line. The system at this point
 is kept as the `restored` branch, a checkpoint not committed to again
 (`docs/restored.md`).
 
+**Since then, to 21 October 2026**, nothing on this list reopened.
+Child servers run as Helander designed, nested and side by side, and
+four of the five defects they showed are fixed or settled (S-18 to
+S-21, 0115-0124) and S-17, the parent's terminal, is open; named
+pipes are built in (0119); six bug fixes from the
+MkLinux project's 1999 tree are taken (0125). Open: S-22, shell
+commands faulting under heavy load (`docs/deferred.md`).
+
 **0. The releases, not the copies.** Neither import is its upstream's
 release (`docs/provenance/precedent.md`, "Where the two imports came
 from"). Lites is restored from Utah's `lites-1.1.u3.tar.gz` (done, 13
@@ -439,6 +447,11 @@ collocated one (MK7.3 Release Notes, step 8), as `mach_perf`'s
 programs are linked here today, the `.INK` at `0xd0000000`. Which of
 the two to follow is settled when this item starts.
 
+*Tried, 20 October 2026:* Lites linked kernel-loaded stops at its first
+port, because it names ports by address and a kernel-loaded task's
+fast IPC space refuses chosen names (`docs/deferred.md`, "Collocation
+uses OSF's design"). This item starts by changing that.
+
 Expect about 13% on a realistic workload. Utah measured a full kernel
 build at 1,682s against 1,463s, Andrew at 4%, SPEC SDM SDET about 8% at
 low load and under 1% at high.
@@ -463,17 +476,29 @@ Listed so it is not rediscovered. None of it is scheduled.
 - **Multiple personalities.** The architecture's stated purpose. Once
   the syscall path is exception-driven and per-task, a second
   personality is a second exception port.
+- **Distributed IPC: DIPC and FLIPC.** *Added 21 October 2026, by the
+  maintainer.* OSFMK 7.3's own: its `+NORMA+net`
+  configurations shipped with MK7.3a (Release Notes, 28 October 1998),
+  messages and memory carried between kernels over the x-kernel's
+  KKT. What it takes, from `docs/provenance/sources.md`: the three
+  spots that stop a `NORMA` kernel building, from MkLinux 1.0b2's
+  text, and the block whose two names DR3 never defined (it tests a
+  bit nothing sets); the `ne` driver attached to the x-kernel as the
+  WD driver is (`xkwd`, `if_ns8390.c`); each kernel given its address
+  and node number; then two kernels under QEMU, and `cmk1.1`'s FLIPC
+  tests. Independent of Tier 1.
 
 ## What is not in scope
 
 - **ECOFF and `/sbin/loader`.** OSF/1 1.3 and later from OSF RI —
   MK6, MK7 — use ELF, rtld and dlopen. The loader path belongs to
   OSF/1 1.0–1.2 and to DEC's Alpha line. `exec_with_loader` is out.
-- **Alpha.** i386 was one of OSF's three reference platforms from 1990
-  and is where the collocated fast path is already written.
+- **Alpha.** i386 is the platform OSF's MK7.3 release builds and
+  boots, and is where the collocated fast path is already written.
 - **OSF/1 AD's distributed machinery**, which the AD papers
-  describe, and NORMA with it: the AD branch, not the MK single
-  server.
+  describe: the AD branch, not the MK single server. *Corrected 21 October
+  2026:* NORMA stood in this list; the kernel's DIPC and FLIPC are
+  OSFMK 7.3's own, now in Tier 2.
 
 ## The risky stretch
 
