@@ -1513,6 +1513,34 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   `docs/tools/mknbsh.sh` and `docs/tools/netbsd10-sh.diff`. A change
   to the userland, not to Lites or the kernel.
 
+- **S-23. Two system calls of one process can run in the server at
+  once, and Lites' code assumes they cannot.** Found 22 October 2026
+  by an independent review of `fstat` (Tier 1 item 2, step 4); traced
+  by reading, not yet shown by a program. A BSD process here is a
+  Mach task, and a task can make more threads: Mach's own calls are
+  open to any program. Under the emulator, each thread can send the
+  process's request port its own RPCs; without it, each thread's
+  exception port can be set to the request port, whose send right a
+  thread's `thread_get_exception_ports()` returns. Nothing then keeps
+  the calls apart: `port_object_receive_lookup` orders messages by
+  sequence number only, and `start_server_op` lets several server
+  threads work for one process. Lites' 4.4BSD code assumes one
+  thread per process, as the kernel it came from had. One instance:
+  `open()` puts its file in the descriptor table before the file has a
+  type (`falloc()`, then `vn_open()`), and can sleep there, in
+  `namei()`'s copy-in or opening a FIFO with no writer; another thread
+  of the process then reaches a file of type 0. `fpathconf()` panics
+  on it (`kern_descrip.c`), as `getattr()` does for the emulator's
+  `fstat` (`serv/serv_syscalls.c`), and `close()` follows its null
+  `f_ops`. So a hostile program could stop the system, with or
+  without the emulator. 4.4BSD had the same table order and was safe
+  only by having one thread. `fstat` without the emulator returns
+  `EBADF` there instead (0136). The rest is open: the fix is either
+  one system call at a time per process in the server, or files
+  entered in the table only when ready, as later BSDs do; which, and
+  whether OSF/1's server, which had threads (`uthread`), shows the
+  way, is to be settled before Tier 1 item 2 is called done.
+
 ### The `ne` driver, measured on 14 October 2026
 
 For roadmap milestone 4. With QEMU's `-device

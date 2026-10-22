@@ -37,6 +37,7 @@ int	fchown();
 int	fcntl();
 int	flock();
 int	fpathconf();
+int	fstat();
 int	fstatfs();
 int	fsync();
 int	ftruncate();
@@ -365,7 +366,7 @@ struct sysent noemul_sysent[] = {
 	{ 0, nosys },			/* 187 = lfs_segwait */
 #endif
 	{ 2, stat },			/* 188 = stat */
-	{ 2, nosys },			/* 189 = fstat, not in the server */
+	{ 2, fstat },			/* 189 = fstat */
 	{ 2, lstat },			/* 190 = lstat */
 	{ 2, pathconf },			/* 191 = pathconf */
 	{ 2, fpathconf },		/* 192 = fpathconf */

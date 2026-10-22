@@ -33,6 +33,8 @@
  *	@(#)sys_socket.c	8.1 (Berkeley) 6/10/93
  */
 
+#include "no_emulator.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
@@ -182,6 +184,37 @@ soo_getattr(so, va)
 	    (struct mbuf *)va, (struct mbuf *)0, 
 	    (struct mbuf *)0));
 }
+
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: 4.4BSD-Lite2's soo_stat() (kern/sys_socket.c 8.3),
+ * for fstat() without the emulator: a zeroed stat, S_IFSOCK, and
+ * what the protocol's PRU_SENSE fills.  Lites' protocols fill a
+ * vattr there, not Lite2's stat (kern/uipc_usrreq.c,
+ * netinet/tcp_usrreq.c), so it is asked through soo_getattr() into
+ * a zeroed vattr and the three fields any of them sets -- block
+ * size, device, inode -- are moved across, as vn_stat() moves them.
+ * Zeroed, not VATTR_NULL()ed as getattr() does for the emulator,
+ * so the rest are 0, as in Lite2, not VNOVAL.
+ */
+soo_stat(so, ub)
+	register struct socket *so;
+	register struct stat *ub;
+{
+	struct vattr va;
+	int error;
+
+	bzero((caddr_t)&va, sizeof (va));
+	if (error = soo_getattr(so, &va))
+		return (error);
+	bzero((caddr_t)ub, sizeof (*ub));
+	ub->st_mode = S_IFSOCK;
+	ub->st_blksize = va.va_blocksize;
+	ub->st_dev = va.va_fsid;
+	ub->st_ino = va.va_fileid;
+	return (0);
+}
+#endif /* NO_EMULATOR */
 
 /* ARGSUSED */
 soo_close(fp, p)

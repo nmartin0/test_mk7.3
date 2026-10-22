@@ -25,7 +25,7 @@ static void check(const char *what, int cond){ out(cond?"  ok   ":"  FAIL "); ou
 struct timeval { long tv_sec, tv_usec; };
 struct stat { unsigned long st_dev; unsigned long st_ino; unsigned short st_mode; short st_nlink; unsigned long st_uid, st_gid, st_rdev;
 	long st_atime, st_atimens, st_mtime, st_mtimens, st_ctime, st_ctimens; long long st_size; long long st_blocks; unsigned long st_blksize, st_flags, st_gen; long st_lspare; long long st_qspare[2]; };
-static char unal[64];
+static char unal[128];
 extern char _end[];			/* probe.ld: the end of data and BSS */
 int start_c(int *kframe)
 {
@@ -91,6 +91,24 @@ int start_c(int *kframe)
 	  r = sc(17, (char *)(b0 + 0x1000)); *(volatile int *)b0 = 9;
 	  check("after them, a page grows and holds", !scerr && *(volatile int *)b0 == 9);
 	  r = sc(17, (char *)b0); check("and shrinks back", !scerr); }
+	/* fstat (189) */
+	{ struct stat fs, ps; int fd;
+	  r = sc(189, con, &fs); check("fstat console: a character device", !scerr && (fs.st_mode & 0170000) == 0020000);
+	  fd = sc(5, "/sbin/init", 0, 0); check("open /sbin/init", !scerr && fd >= 0);
+	  for (i = 0; i < (int)sizeof fs; i++) ((char *)&fs)[i] = ((char *)&ps)[i] = 0x77;
+	  r = sc(189, fd, &fs); sc(188, "/sbin/init", &ps);
+	  check("fstat file = stat (size, inode, mode)", !scerr && fs.st_size == ps.st_size && fs.st_ino == ps.st_ino && fs.st_mode == ps.st_mode);
+	  check("fstat spares zeroed, not server stack",
+	        fs.st_lspare == 0 && fs.st_qspare[0] == 0 && fs.st_qspare[1] == 0);
+	  r = sc(189, fd, (struct stat *)(unal + 1)); check("fstat to an unaligned buffer", !scerr && ((struct stat *)(unal + 1))->st_ino == ps.st_ino);
+	  r = sc(189, fd, (struct stat *)0x10); check("fstat to page 0 -> EFAULT", scerr && r == 14);
+	  sc(6, fd); r = sc(189, fd, &fs); check("fstat closed fd -> EBADF (9)", scerr && r == 9);
+	  r = sc(189, -1, &fs); check("fstat fd -1 -> EBADF", scerr && r == 9);
+	  fd = sc(97, 1, 1, 0); check("socket(AF_UNIX, SOCK_STREAM)", !scerr && fd >= 0);
+	  for (i = 0; i < (int)sizeof fs; i++) ((char *)&fs)[i] = 0x77;
+	  r = sc(189, fd, &fs); out(" socket blksize "); num(fs.st_blksize); out("\n");
+	  check("fstat socket: S_IFSOCK, zeros not -1", !scerr && fs.st_mode == 0140000 && fs.st_size == 0 && fs.st_uid == 0 && fs.st_nlink == 0);
+	  sc(6, fd); }
 	out("summary: "); num(ok_count); out(" ok, "); num(bad_count); out(" failed\n");
 	if (argc >= 2 && mode[0]=='e' && mode[1]=='x') {	/* "exec": exec self again */
 		char *nargv[] = { "/root/t", "again", "x y", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };

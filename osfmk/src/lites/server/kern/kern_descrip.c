@@ -62,6 +62,7 @@
 
 #include "compat_43.h"
 #include "file_ports.h"
+#include "no_emulator.h"
 #include "diagnostic.h"
 
 #include <sys/param.h>
@@ -374,6 +375,56 @@ close(p, uap, retval)
 	*pf = 0;
 	return (closef(fp, p));
 }
+
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: 4.4BSD-Lite2's fstat() (kern/kern_descrip.c 8.8,
+ * under the same notice as this file), for a process the server runs
+ * without the emulator, which made the call itself from
+ * bsd_getattr() (emulator/e_templates.h, DEF_FSTAT).  Sockets go to
+ * soo_stat(), Lite2's, in Lites' vattr form (kern/sys_socket.c).
+ * Not Lite2's panic for another type: open() puts its file in the
+ * table before it has a type, and can sleep there (namei, a FIFO),
+ * and another thread of the process can call fstat() on it then
+ * (docs/deferred.md, S-23).  EBADF, as for a file not yet there.
+ */
+struct fstat_args {
+	int	fd;
+	struct	stat *sb;
+};
+/* ARGSUSED */
+fstat(p, uap, retval)
+	struct proc *p;
+	register struct fstat_args *uap;
+	int *retval;
+{
+	int fd = uap->fd;
+	register struct filedesc *fdp = p->p_fd;
+	register struct file *fp;
+	struct stat ub;
+	int error;
+
+	if ((u_int)fd >= fdp->fd_nfiles ||
+	    (fp = fdp->fd_ofiles[fd]) == NULL)
+		return (EBADF);
+	switch (fp->f_type) {
+
+	case DTYPE_VNODE:
+		error = vn_stat((struct vnode *)fp->f_data, &ub, p);
+		break;
+
+	case DTYPE_SOCKET:
+		error = soo_stat((struct socket *)fp->f_data, &ub);
+		break;
+
+	default:
+		return (EBADF);
+	}
+	if (error == 0)
+		error = copyout((caddr_t)&ub, (caddr_t)uap->sb, sizeof (ub));
+	return (error);
+}
+#endif /* NO_EMULATOR */
 
 /*
  * Return pathconf information about a file descriptor.
