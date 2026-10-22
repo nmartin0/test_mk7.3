@@ -908,19 +908,22 @@ back, is open: no public document of OSF's describes it.
 
 ### `cthread_join()` returns 3: `csw.s`'s `USER_INVOKE`
 
-**Found 20 October 2026; not yet fixed.** `libcthreads/i386/csw.s`,
-`cthread_filter(context, type, a1, ...)`: the `USER_INVOKE` case
-(label `3:`) takes "the return result" from `8(%esp)`, which is the
-type, `CTHREAD_FILTER_USER_INVOKE`, 3; the result is at `12(%esp)`.
-The same line is in DR3, MkLinux 1.0b2, the 1999 tree and MK6.1. Every
-caller but one passes 0 and ignores the return; the one that passes a
-result, `cthread_exit()` to a joining thread (`cthreads.c`, line 1182),
-gets 3, so `cthread_join()` returns 3, not the thread's result. 6.1's
-`cthread_mach_msg` hands back `mach_msg`'s result the same way, which
-is how the fit test above found it. OSF's PowerMac version is right:
-`POWERMAC/csw.s`, `cthread_user_invoke(context, result)`, returns its
-second argument. One instruction, `12(%esp)`, with that as precedent;
-a patch to be shown before it is made.
+**Found 20 October 2026; fixed 22 October (0127).**
+`libcthreads/i386/csw.s`, `cthread_filter(context, type, a1, ...)`:
+the `USER_INVOKE` case (label `3:`) takes "the return result" from
+`8(%esp)`, which is the type, `CTHREAD_FILTER_USER_INVOKE`, 3; the
+result is at `12(%esp)`. The same line is in DR3, MkLinux 1.0b2, the
+1999 tree and MK6.1. Every caller but one passes 0 and ignores the
+return; the one that passes a result, `cthread_exit()` to a joining
+thread (`cthreads.c`, line 1182), gets 3, so `cthread_join()` returns
+3, not the thread's result. 6.1's `cthread_mach_msg` hands back
+`mach_msg`'s result the same way, which is how the fit test above
+found it. OSF's PowerMac version is right: `POWERMAC/csw.s`,
+`cthread_user_invoke(context, result)`, returns its second argument.
+**Fixed in 0127**: `12(%esp)`. A test task started by the bootstrap
+beside the servers, joining a thread that returns 42 and one that
+calls `cthread_exit(7)`, printed "3 and 3" with DR3's library and "42
+and 7" with the fix.
 
 ### Lites' `memory_object_synchronize`
 

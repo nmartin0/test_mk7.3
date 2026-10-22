@@ -219,8 +219,16 @@ ENTRY(cthread_filter)
  *	result  - The result code to return to the invoked user context.
  */
 
+/*
+ * AI-ONLY NOTE: the result is the argument after the type, at
+ * 12(%esp), as the other cases here take theirs (INTERNAL_BUILD's
+ * func, INVOKE_SELF's ARG2); DR3 read 8(%esp), the type, so
+ * cthread_join() returned CTHREAD_FILTER_USER_INVOKE, 3.  OSF's
+ * POWERMAC/csw.s, cthread_user_invoke(context, result), returns
+ * the result.  docs/deferred.md, "cthread_join() returns 3".
+ */
 3:	movl	4(%esp),%ecx	/* Get the context pointer */
-	movl	8(%esp),%eax	/* Get the return result */
+	movl	12(%esp),%eax	/* Get the return result */
 	movl	(%ecx),%esp	/* Switch the stack to the user context */
 	addl	$8,%esp		/* Pop the internal continuation */
 #if GFUDGE > 0
