@@ -69,6 +69,8 @@ int start_c(int *kframe)
 	{ int mib[2]; char b[2]; unsigned long sz = sizeof b; mib[0] = 1; mib[1] = 1;
 	  r = sc(202, mib, 2, b, &sz, 0, 0); check("sysctl short buffer -> ENOMEM (12)", scerr && r == 12); }
 	r = sc(202, (int *)0x10, 2, 0, 0, 0, 0); check("sysctl name in page 0 -> EFAULT", scerr && r == 14);
+	{ int mib[2]; char b[8]; unsigned long sz = 0xfffff800UL; mib[0] = 1; mib[1] = 1;
+	  r = sc(202, mib, 2, b, &sz, 0, 0); check("sysctl length that wraps -> EFAULT", scerr && r == 14); }
 	out("summary: "); num(ok_count); out(" ok, "); num(bad_count); out(" failed\n");
 	if (argc >= 2 && mode[0]=='e' && mode[1]=='x') {	/* "exec": exec self again */
 		char *nargv[] = { "/root/t", "again", "x y", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };

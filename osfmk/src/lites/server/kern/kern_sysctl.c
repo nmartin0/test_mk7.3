@@ -183,6 +183,10 @@ s___sysctl(
  * bsd_sysctl()'s buffers in the server for the old and new values,
  * copied out and in.  An old buffer of length 0 is still a buffer,
  * as in Lite2, so a value that does not fit is ENOMEM, not a size.
+ * A length that wraps round_page() is EFAULT, as Lite2's useracc()
+ * refuses such a buffer before the call.  Lite2 checks the old
+ * buffer can be written before setting a new value; here a bad old
+ * buffer is found when the value is copied out, after.
  */
 struct __sysctl_args {
 	int	*name;
@@ -216,12 +220,19 @@ __sysctl(p, uap, retval)
 		return (error);
 	if (uap->old != NULL) {
 		oldsize = round_page(oldlen ? oldlen : 1);
+		if (oldsize < oldlen)		/* wrapped: no such buffer */
+			return (EFAULT);
 		if (vm_allocate(mach_task_self(), &old, oldsize, TRUE)
 		    != KERN_SUCCESS)
 			return (ENOMEM);
 	}
 	if (uap->new != NULL) {
 		newsize = round_page(uap->newlen ? uap->newlen : 1);
+		if (newsize < uap->newlen) {	/* wrapped: no such buffer */
+			newsize = 0;
+			error = EFAULT;
+			goto out;
+		}
 		if (vm_allocate(mach_task_self(), &new, newsize, TRUE)
 		    != KERN_SUCCESS) {
 			error = ENOMEM;
