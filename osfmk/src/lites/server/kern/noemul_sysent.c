@@ -78,6 +78,7 @@ int	msync();
 int	munlock();
 int	munmap();
 int	nfssvc();
+int	obreak();
 int	ocreat();
 int	oftruncate();
 int	ogetdirentries();
@@ -161,7 +162,7 @@ struct sysent noemul_sysent[] = {
 	{ 3, mknod },			/* 14 = mknod */
 	{ 2, chmod },			/* 15 = chmod */
 	{ 3, chown },			/* 16 = chown */
-	{ 1, nosys },			/* 17 = break, not in the server */
+	{ 1, obreak },			/* 17 = break */
 	{ 3, getfsstat },		/* 18 = getfsstat */
 	{ 3, olseek },			/* 19 = old lseek */
 	{ 0, getpid },			/* 20 = getpid */

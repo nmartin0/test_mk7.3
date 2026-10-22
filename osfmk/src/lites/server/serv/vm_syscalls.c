@@ -69,6 +69,8 @@
  *	@(#)vm_mmap.c	8.4 (Berkeley) 1/12/94
  */
 
+#include "no_emulator.h"
+
 #include <serv/server_defs.h>
 #include <sys/fcntl.h>
 #include <sys/file.h>
@@ -510,3 +512,64 @@ mach_error_t fd_to_file_port(
 	    return EBADF;
 	return fadd_port(fp, port);
 }
+
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: break, for a process the server runs without the
+ * emulator (docs/roadmap.md, Tier 1 item 2, step 4): 4.4BSD-Lite2's
+ * obreak() (vm/vm_unix.c 8.2, Utah $Hdr: vm_unix.c 1.1 89/11/07$,
+ * under the same Utah and Regents notice as this file), with the
+ * process's task for its vm_map, as the emulator's e_obreak()
+ * (emulator/emul_exec.c) allocates in its own.  vm_daddr and
+ * vm_dsize are set by server_exec_load() (serv/server_exec.c).
+ * The arithmetic is not Lite2's: its signed (int)(new - old) turns
+ * a break near 3 GB negative, past RLIMIT_DATA, and shrinks where
+ * it should grow.  Here, as e_obreak() does it, addresses compare
+ * unsigned and a round_page() that wraps is refused (a break of 0
+ * with it, as NetBSD's uvm_unix.c sys_obreak() 1.51 refuses one);
+ * the limit holds when growing, as there.  A break below the data's
+ * start is still taken, as in Lite2, e_obreak() and NetBSD: it
+ * frees the process's own pages, and only its own.  The master lock
+ * is held across vm_allocate() and vm_deallocate() on the task, as
+ * munmap() and mprotect() above hold it; mmap_vm_map() lets it go
+ * only around vm_map() of a file, which the vnode pager must serve.
+ */
+struct obreak_args {
+	char	*nsiz;
+};
+
+int
+obreak(p, uap, retval)
+	struct proc *p;
+	struct obreak_args *uap;
+	int *retval;
+{
+	register struct vmspace *vm = p->p_vmspace;
+	vm_offset_t new, old;
+	kern_return_t rv;
+
+	old = (vm_offset_t)vm->vm_daddr;
+	new = round_page((vm_offset_t)uap->nsiz);
+	if (new == 0)			/* 0, or round_page() wrapped */
+		return(ENOMEM);
+	if (new > old && new - old > p->p_rlimit[RLIMIT_DATA].rlim_cur)
+		return(ENOMEM);
+	old = round_page(old + ctob(vm->vm_dsize));
+	if (new > old) {
+		rv = vm_allocate(p->p_task, &old, new - old, FALSE);
+		if (rv != KERN_SUCCESS) {
+			uprintf("sbrk: grow failed, return = %d\n", rv);
+			return(ENOMEM);
+		}
+		vm->vm_dsize += btoc(new - old);
+	} else if (new < old) {
+		rv = vm_deallocate(p->p_task, new, old - new);
+		if (rv != KERN_SUCCESS) {
+			uprintf("sbrk: shrink failed, return = %d\n", rv);
+			return(ENOMEM);
+		}
+		vm->vm_dsize -= btoc(old - new);
+	}
+	return(0);
+}
+#endif /* NO_EMULATOR */

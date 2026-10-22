@@ -978,6 +978,24 @@ static mach_error_t server_exec_load(
 	p->p_vmspace->vm_tsize = secs[0].size / NBPG;	/* XXX */
 	p->p_vmspace->vm_dsize = (secs[1].size		/* XXX */
 				  + secs[2].size) / NBPG; /* XXX */
+#if NO_EMULATOR
+	/*
+	 * AI-ONLY NOTE: used now, by obreak() (serv/vm_syscalls.c):
+	 * the data's start, and its size to the break, where the
+	 * emulator puts it, the end of the last section loaded
+	 * (emulator/emul_exec.c, emul_exec_load(), "assumes BSS is
+	 * last"), rounded up to a page as obreak() rounds it.
+	 */
+	if (kr == KERN_SUCCESS) {
+		vm_offset_t end = 0;
+
+		for (i = 0; i < NSECTIONS && secs[i].how != EXEC_M_STOP; i++)
+			if (end < secs[i].va + secs[i].size)
+				end = secs[i].va + secs[i].size;
+		p->p_vmspace->vm_daddr = (caddr_t)secs[1].va;
+		p->p_vmspace->vm_dsize = btoc(end - secs[1].va);
+	}
+#endif
 
 	return kr;
 }

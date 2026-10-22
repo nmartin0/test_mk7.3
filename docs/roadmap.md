@@ -438,7 +438,8 @@ it will.
 the order it needs it, measured from the programs' own system call
 sites: `__sysctl` (the page size, for `malloc`), `break`, `fstat`,
 `readv` and `writev`, then `fork`; an interactive shell then needs
-step 5, as Ctrl-C is a caught signal. `__sysctl` is in (0132).
+step 5, as Ctrl-C is a caught signal. `__sysctl` is in (0132, 0133),
+and `break` (0134).
 
 What differs from the plan above:
 

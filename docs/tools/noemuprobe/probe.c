@@ -9,7 +9,7 @@
  *   plain   the checks, then exit(7) (and the server's "init died")
  *   exec    the checks, execve itself as "again", then /bin/sh -c
  *   run     the checks, then call 9999, which nosys() ends by SIGSYS
- *   nosys   the checks, then break (17), not in the server yet
+ *   nosys   the checks, then sstk (70), nosys in 4.4BSD too
  */
 typedef unsigned int u_int;
 extern int sc(int code, ...);		/* returns eax; carry -> errno via scerr */
@@ -26,6 +26,7 @@ struct timeval { long tv_sec, tv_usec; };
 struct stat { unsigned long st_dev; unsigned long st_ino; unsigned short st_mode; short st_nlink; unsigned long st_uid, st_gid, st_rdev;
 	long st_atime, st_atimens, st_mtime, st_mtimens, st_ctime, st_ctimens; long long st_size; long long st_blocks; unsigned long st_blksize, st_flags, st_gen; long st_lspare; long long st_qspare[2]; };
 static char unal[64];
+extern char _end[];			/* probe.ld: the end of data and BSS */
 int start_c(int *kframe)
 {
 	int argc = kframe[0]; char **argv = (char **)(kframe+1); char **envp = argv + argc + 1;
@@ -71,6 +72,22 @@ int start_c(int *kframe)
 	r = sc(202, (int *)0x10, 2, 0, 0, 0, 0); check("sysctl name in page 0 -> EFAULT", scerr && r == 14);
 	{ int mib[2]; char b[8]; unsigned long sz = 0xfffff800UL; mib[0] = 1; mib[1] = 1;
 	  r = sc(202, mib, 2, b, &sz, 0, 0); check("sysctl length that wraps -> EFAULT", scerr && r == 14); }
+	/* break (17): the break starts at the end of the data page (probe.ld's _end, rounded) */
+	{ unsigned long b0 = ((unsigned long)_end + 0xfff) & ~0xfffUL; char *g = (char *)(b0 + 0x3000);
+	  out(" break "); hex(b0); out("\n");
+	  r = sc(17, (char *)(b0 + 0x4000)); check("break grows four pages", !scerr && r == 0);
+	  r = sc(116, (struct timeval *)g, 0); check("copyout into the grown pages", !scerr);
+	  *(volatile int *)(g + 0xff0) = 5; check("store into the grown pages", *(volatile int *)(g + 0xff0) == 5);
+	  r = sc(17, (char *)b0); check("break shrinks back", !scerr && r == 0);
+	  r = sc(116, (struct timeval *)g, 0); check("shrunk pages gone -> EFAULT", scerr && r == 14); }
+	r = sc(17, (char *)0x7f000000); check("break past the data limit -> ENOMEM (12)", scerr && r == 12);
+	r = sc(17, (char *)0); check("break 0 -> ENOMEM", scerr && r == 12);
+	r = sc(17, (char *)0xfffff800); check("break that wraps 4G -> ENOMEM", scerr && r == 12);
+	r = sc(17, (char *)0xbfff0000); check("break near 3G -> ENOMEM, not a shrink", scerr && r == 12);
+	{ unsigned long b0 = ((unsigned long)_end + 0xfff) & ~0xfffUL;
+	  r = sc(17, (char *)(b0 + 0x1000)); *(volatile int *)b0 = 9;
+	  check("after them, a page grows and holds", !scerr && *(volatile int *)b0 == 9);
+	  r = sc(17, (char *)b0); check("and shrinks back", !scerr); }
 	out("summary: "); num(ok_count); out(" ok, "); num(bad_count); out(" failed\n");
 	if (argc >= 2 && mode[0]=='e' && mode[1]=='x') {	/* "exec": exec self again */
 		char *nargv[] = { "/root/t", "again", "x y", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };
@@ -83,7 +100,7 @@ int start_c(int *kframe)
 		r = sc(59, "/bin/sh", nargv, nenv); out("execve sh returned "); num(r); out("\n");
 	}
 	if (argc >= 2 && mode[0]=='r') { out("calling 9999 (out of range: nosys) -> SIGSYS\n"); sc(9999); out("survived?!\n"); }
-	if (argc >= 2 && mode[0]=='n') { out("calling break (17, nosys) -> SIGSYS\n"); sc(17, 0); out("survived nosys?!\n"); }
+	if (argc >= 2 && mode[0]=='n') { out("calling sstk (70, nosys) -> SIGSYS\n"); sc(70, 0); out("survived nosys?!\n"); }
 	out("exit(7)\n");
 	sc(1, 7);
 	return 0;
