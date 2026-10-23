@@ -237,3 +237,42 @@ carried.
   the Digital Media Law Project's "Publishing Trade Secrets"; the
   Wine Developer FAQ; Wikipedia's articles "Clean-room design",
   "ReactOS" and "OSF/1".
+
+### Found on 23 October 2026, second search
+
+OSF/1 MK release notes posted by OSF to the `osf1-mk` mailing list, and
+CMU's notes on OSF's releases, as CMU's Mach FAQ keeps them
+(`ftp.lip6.fr/pub/mach/cmu/FAQ/`). No permission notice; cited, not
+carried.
+
+| document | bytes | SHA-256 |
+|---|---|---|
+| [James Loveluck, Patrick Roudaud, *OSF/1 MK5.0.1 Release Notes*, version 1.1 (OSF RI Grenoble, 19 May 1993)](https://ftp.lip6.fr/pub/mach/cmu/FAQ/OSF1-mk.rel5.0.1) | 26,710 | `69b25691a95b16340c17185374a36b16a86538056fd44dc0fea53aa4a088951b` |
+| [James Loveluck, *Announcing Documentation for Microkernel in OSF/1 MK 5.0* (23 April 1993)](https://ftp.lip6.fr/pub/mach/cmu/FAQ/OSF1-mk.rel5.0.doc) | 5,061 | `c9475cdb2c172a47ce54a6ea396a9590ca832f7f5b8c65504b9c6bd918a78c6a` |
+| [CMU Mach FAQ, *OSF releases of Mach* (12 November 1992)](https://ftp.lip6.fr/pub/mach/cmu/FAQ/OSF.releases) | 2,070 | `f615c214ef43fcdc098da154186664d5e752a02c625ebc28adb3281fbc2445d4` |
+| [CMU Mach FAQ, *Hard copies of OSF/RI documents* (19 March 1992)](https://ftp.lip6.fr/pub/mach/cmu/FAQ/OSF.docs) | 5,068 | `764bb7ca135931df54eb4b765c865e1b07971527aeac4aac4f1cceb8f4b204a4` |
+
+Dejan Milojičić's task-migration papers, from OSF RI's
+`os/task_migration/` on the same mirror as above. No permission notice;
+cited, not carried.
+
+| document | bytes | SHA-256 |
+|---|---|---|
+| [Milojičić et al., *Task Migration on the top of the Mach Microkernel* (USENIX Mach III, 1993)](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/machIII.ps.Z) | 121,815 | `060c646b5689008acbd462f140cea3e24f941bd11fbd9654d7ce4be386f07a38` |
+| [Milojičić et al., *Process vs. Task Migration* (HICSS-29, 1996)](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/pmvtm.ps) | 184,778 | `967e046b9e8c7f80274721be25b3e90d9b45c1361da802fccfb3c5128faccec1` |
+| [Milojičić et al., *Concurrency, a Case Study in Remote Tasking and Distributed IPC* (HICSS-29, 1996)](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/concurrency.ps) | 231,265 | `f98830ad4eb2c4796278f2ad8646f153c59adb963af366762dfc3e14e777446e` |
+| [Milojičić, Black, Sears, *Operating System Support for Concurrent Remote Task Creation* (IPPS, 1995)](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/ipps6.ps) | 102,242 | `36e41858cf8865800d0bbb5f98b6c3de21607acd414130cf25c85c71a935f142` |
+| [Milojičić et al., *Experiences with Load Distribution on top of the Mach Microkernel* (SEDMS IV, 1993)](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/sedmsIV.ps.Z) | 109,025 | `41da5e7e1036f3c02dd09123667d043fc49fdaf63e6e732270a939b43eb7cc06` |
+| [Milojičić et al., *Load Distribution on Microkernels* (FTDCS IV)](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/ftdcsIV.ps.Z) | 104,861 | `b48ed2336f80e731d8c51727c6737b836463e6c4ecabc036062013fe547d524e` |
+| [Condict, Milojičić, Reynolds, Bolinger, *Towards a World-Wide Civilization of Objects* (1996)](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/fdr/SigOps96a.frame.ps) | 151,423 | `bdcea1fddb3fe529c5379e4d16043a09f6e86d88f730d894f282a1586ee3a7e3` |
+
+CMU's Mach documents as mirrored at Lysator
+(`hina.lysator.liu.se/pub/doc/OS/mach/`). No permission notice; cited,
+not carried.
+
+| document | bytes | SHA-256 |
+|---|---|---|
+| [Baron, Black, Bolosky, Chew, Draves et al., *Mach Kernel Interface Manual* (CMU)](https://hina.lysator.liu.se/pub/doc/OS/mach/manual.doc) | 174,504 | `296aa362b62168b6d91221094b2a123f3695caab4af95e062bc6b6fb479bd27b` |
+| [CMU, *The Mach 3.0 micro-kernel: source directories*](https://hina.lysator.liu.se/pub/doc/OS/mach/kern-dir.doc) | 4,734 | `551be0fb67d18299933c3f3ccd7951c0f8cf933159f2e2b77f3fbe660b518a60` |
+| [Rich Draves, *Unix-server configurations* (CMU, 9 March 1992)](https://hina.lysator.liu.se/pub/doc/OS/mach/build.ux) | 1,365 | `e709877dddaecba8af6204f68dded57abae8e26b63a5180502146fabec5e01c3` |
+| [Daniel Julin, *Multi-Server availability* (mail, CMU, 11 September 1992)](https://hina.lysator.liu.se/pub/doc/OS/mach/multi-server.info) | 10,964 | `42bbdb6ff106d38b84a71a2dd7635bbffd3c746f0da180b3ee7f992f9f551a3e` |
