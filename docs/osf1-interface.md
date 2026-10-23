@@ -80,7 +80,7 @@ page and quoted only where the exact words decide a test.
 | FSA | Roy, Noveck, Netterwala, *The File System Architecture of OSF/1 AD Version 2* (OSF RI, 1993) | cited |
 | CMUX | Black et al., *The Mach Exception Handling Facility* (CMU) | cited |
 | DRN3, DTO3 | *DEC OSF/1 3.0 Release Notes* and *Technical Overview* (DEC, August 1994) | cited |
-| DEC10 | DEC OSF/1 1.0 (MIPS) manual pages, as kept at `typewritten.org/Manual/DEC/OSF:1/1.0/mips/` | read on the web |
+| DEC10 | The OSF/1 1.0 manual (DEC's MIPS release), as kept at `typewritten.org/Manual/DEC/OSF:1/1.0/mips/`. Its pages are written up item by item in `docs/osf1-calls.md`, and cited here by that file's item IDs (`sigaction-E3`, `signal.h.4-44`) | cited |
 | TRU | Tru64 UNIX 5.x manual pages, as kept at `typewritten.org/Manual/DEC/Tru64/` | read on the web |
 
 The AD papers describe a distributed OSF/1; only what they say of
@@ -743,7 +743,8 @@ process, `SIGHUP` and `SIGCONT` are posted to every member.
   Source: AD3 §4.3, pp. 4-5.
   Test:   P forks C; C makes its own group and stops itself; P exits; C
           receives both (`SIGHUP` first [POSIX]). With no stopped member,
-          neither is sent.
+          neither is sent. The manual's `exit` page names only `SIGHUP`
+          (`exit-20`).
 
 **PROC-32** [OSF/1] When a session leader exits, `SIGHUP` is sent to
 every member of the foreground process group, the session loses its
@@ -852,9 +853,9 @@ example `SIGSEGV`); suspend.
 
 **SIG-4** [OSF/1] `SIGKILL` and `SIGSTOP` can be neither ignored nor
 caught.
-  Source: BOOK §4.4.2.2, p. 4-10.
-  Test:   `sigaction` to ignore or catch either fails [POSIX: `EINVAL`];
-          `SIGKILL` still kills.
+  Source: BOOK §4.4.2.2, p. 4-10; DEC10 `sigaction-E3` (`EINVAL`).
+  Test:   `sigaction` to ignore or catch either fails with `EINVAL`;
+          `SIGKILL` still kills. The manual adds `SIGCONT` (ERR-18).
 
 **SIG-5** [OSF/1] A masked signal is kept pending and delivered when it
 is unmasked.
@@ -1710,6 +1711,124 @@ a place in advance; `cthread_msg_busy` gives it up. The library is
 
 ---
 
+## MAN — rules the 1.0 manual states across calls
+
+The 1.0 manual's own items are in `docs/osf1-calls.md`. These are the
+ones that cut across calls, gathered here; each cites its items there.
+
+**MAN-1** [OSF/1] A call that blocks suspends only the calling thread,
+not the process. The manual says so of `open`, `close`, `fcntl`,
+`dup`, `dup2`, `read`, `write`, `wait` and its variants, `pause`,
+`sleep` and `tcdrain`.
+  Source: DEC10 `open-8`, `close-7`, `dup-4`, `read-8`, `write-11`,
+          `wait-9`, `pause.3-5`, `sleep.3-4`, `tcdrain.3-5`.
+  Test:   thread A blocks in each call; thread B keeps running.
+
+**MAN-2** [OSF/1] `_exit` from any thread ends the process and every
+thread in it. `abort`, which sends the process `SIGABRT`, is supported
+in multithreaded programs.
+  Source: DEC10 `exit-26`, `abort.3-2`, `abort.3-7`.
+  Test:   as BUG-6.
+
+**MAN-3** [OSF/1] `fork` in a multithreaded process makes a child with a
+copy of the calling thread and the whole address space, "possibly
+including the states of mutexes"; the child should do only what
+cannot deadlock until it calls `exec`. In the child, pending alarms
+and interval timers are cleared, signals pending for the parent are
+"disabled", and profiling stays on. `vfork`, a compatibility interface,
+shares memory as `fork` does.
+  Source: DEC10 `fork-10` to `fork-15`, `profil-9`.
+  Test:   a parent with a pending alarm forks; the child gets no
+          `SIGALRM`.
+
+**MAN-4** [OSF/1] `exec` sets caught signals back to the default and
+leaves ignored ones ignored; it keeps the pending signals, the signal
+mask, the time left on an alarm, the session and the process times;
+mapped regions are unmapped except those mapped with `MAP_INHERIT`;
+profiling is turned off.
+  Source: DEC10 `environ-25`, `environ-26`, `environ-30`, `profil-8`.
+  Test:   each kept and each reset item checked across `exec`.
+
+**MAN-5** [OSF/1] The current directory is shared by all threads.
+A second `alarm` from any thread resets the timer, as one from the same
+thread does; `ualarm` is not supported for multiple threads.
+  Source: DEC10 `chdir-7`, `alarm.3-10`, `alarm.3-11`.
+  Test:   thread A `chdir`s; thread B's relative opens follow.
+
+**MAN-6** [OSF/1] `sigwait` waits on the calling thread's pending
+signals, takes one atomically and returns its number; the effect is
+unspecified if any signal waited for is not blocked. In a
+multithreaded program `sigaction`
+should be used only for synchronous signals. See ERR-20.
+  Source: DEC10 `sigwait.3-3` to `sigwait.3-5`, `sigaction-19`.
+  Test:   block `SIGUSR1`, `sigwait` for it in thread B, send it; B
+          returns `SIGUSR1`.
+
+**MAN-7** [OSF/1] A stopped process receives no signal until it is
+continued, except `SIGKILL`, which always kills it, and `SIGCONT`,
+which always continues it. Setting a pending signal's action to
+`SIG_DFL` or a handler leaves it pending; setting `SIG_IGN` discards
+it. Attempts to block signals that cannot be blocked are silently
+ignored. At least one unblocked pending signal is delivered before
+`sigprocmask` returns.
+  Source: DEC10 `signal.h.4-43`, `signal.h.4-46`, `signal.h.4-48`,
+          `signal.h.4-53`, `signal.h.4-57`, `sigprocmask-11`,
+          `sigprocmask-12`, `sigblock-5`.
+  Test:   each statement in turn.
+
+**MAN-8** [OSF/1] `kill`: `SIGKILL`, `SIGSTOP`, `SIGTSTP` or `SIGCONT`
+sent to process 1 fails with `EINVAL`; `SIGCONT` may be sent to any
+process in the same session; `kill(0, …)` and `kill(-1, …)` skip system
+processes, and `kill(-1, …)` is for the superuser.
+  Source: DEC10 `kill-4`, `kill-8`, `kill-9`, `kill-E2`, `kill-E4`.
+  Test:   each case.
+
+**MAN-9** [OSF/1] A child stopping sends `SIGCHLD` to its parent unless
+the parent set `SA_NOCLDSTOP`. A parent that ignores `SIGCHLD` leaves
+no zombies: its exiting children are given to `init`.
+  Source: DEC10 `sigaction-11`, `signal.h.4-42`, `exit-18`.
+  Test:   a parent with `SIGCHLD` ignored; its child exits; no zombie
+          remains and `wait` fails with `ECHILD`.
+
+**MAN-10** [Compat] `signal()` depends on the library: plain `libc`
+behaves like `sigaction` with no flags; `-lbsd` restarts calls; `-lsys5`
+does not block the signal in the handler and resets it to the default
+on delivery.
+  Source: DEC10 `sigaction-16` to `sigaction-18`.
+  Test:   only where we provide those libraries.
+
+**MAN-11** [OSF/1] A traced process stops on every signal whatever its
+action; an `exec` while traced stops with `SIGTRAP` and does not honour
+set-user-ID.
+  Source: DEC10 `ptrace-5`, `ptrace-6`, `ptrace-10`.
+  Test:   trace a child that `exec`s a setuid program; it stops with
+          `SIGTRAP` and keeps its user ID.
+
+**MAN-12** [OSF/1] Terminals. Opening a terminal waits for carrier
+unless `CLOCAL` or `O_NONBLOCK` is set; loss of carrier sends `SIGHUP`
+and further reads fail; a background write with `TOSTOP` set raises
+`SIGTTOU`, or fails with `EIO` in an orphaned group; `tcsetattr` from
+the background raises `SIGTTOU`. The line discipline is set and read
+with `TIOCSETD` and `TIOCGETD`.
+  Source: DEC10 `tty.7-3`, `tty.7-5`, `tty.7-14`, `tty.7-68`,
+          `tty.7-72`, `tty.7-E3`, `tcsetattr.3-9`.
+  Test:   on a pty, each case that needs no modem.
+
+**MAN-13** [OSF/1] `setsid` fails with `EPERM` if the caller leads a
+process group or its pid is in use as a group ID. `setpgid` fails with
+`EACCES` on a child that has called `exec`, and with `EPERM` on a
+session leader or across sessions.
+  Source: DEC10 `setsid-E1`, `setpgid-E2` to `setpgid-E7`.
+  Test:   each error.
+
+**MAN-14** [DEC] Process 0 is the scheduler, 1 is `init` and 2 the
+pager; `init` runs after the root is mounted, and the root is first
+mounted read-only. `init`'s run levels are 0, s, 2 and 3, from
+`initdefault` in `inittab` or a console prompt.
+  Source: DEC10 `intro-37`, `init.8-5`, `init.8-6`, `init.8-8`,
+          `reboot-15`, `reboot-16`.
+  Test:   `init` is pid 1 (BOOT-16).
+
 ## BUG — defects OSF documented, and the behaviour we test instead
 
 **BUG-1** [MK] [2356] An `open` of a path longer than the maximum
@@ -1935,8 +2054,9 @@ thread or per process: per process (SIG-19), with the per-thread saved
 mask for `sigsuspend` (SIG-10).
 
 **GAP-9** The error number for opening a mounted file system's block
-device, or mounting one whose block device is open (FILE-4).
-Candidate: `EBUSY`.
+device, or mounting one whose block device is open (FILE-4). The
+manual gives `EBUSY` for mounting a device already mounted
+(`mount-E13`) and nothing for the `open`. Candidate: `EBUSY`.
 
 **GAP-10** How a task-level system-call port is set up for threads the
 server did not create (SYS-10). The mechanism is documented; the
@@ -1951,9 +2071,19 @@ Candidate: the port for root, nothing for others, as BSVC-4.
 exposed for unprivileged processes", as "a short term solution"
 (RN501 §4.1; PAT §2.1). Later releases do not say. Decision pending.
 
-**GAP-13** The signal table: numbers, names and default actions. Not
-in the documents read so far; DEC's `signal(4)` page is the next place
-to look.
+**GAP-13** *Closed by DEC10 `signal.h.4-2` to `signal.h.4-33`.* The
+signal numbers: `SIGHUP` 1, `SIGINT` 2, `SIGQUIT` 3, `SIGILL` 4,
+`SIGTRAP` 5, `SIGABRT` 6, `SIGEMT` 7, `SIGFPE` 8, `SIGKILL` 9, `SIGBUS`
+10, `SIGSEGV` 11, `SIGSYS` 12, `SIGPIPE` 13, `SIGALRM` 14, `SIGTERM`
+15, `SIGURG` 16, `SIGSTOP` 17, `SIGTSTP` 18, `SIGCONT` 19, `SIGCHLD`
+20, `SIGTTIN` 21, `SIGTTOU` 22, `SIGIO` 23, `SIGXCPU` 24, `SIGXFSZ` 25,
+`SIGVTALRM` 26, `SIGPROF` 27, `SIGWINCH` 28, `SIGINFO` 29, `SIGUSR1` 30,
+`SIGUSR2` 31. Core dump by default: `SIGQUIT`, `SIGILL`, `SIGTRAP`,
+`SIGABRT`, `SIGFPE`, `SIGBUS`, `SIGSEGV`, `SIGSYS`. Ignored by default:
+`SIGURG`, `SIGCHLD`, `SIGIO`, `SIGWINCH`, `SIGINFO`. Stop: `SIGSTOP`,
+`SIGTSTP`, `SIGTTIN`, `SIGTTOU`. Continue: `SIGCONT`. The rest
+terminate. The numbers are the 1.0 manual's; our ABI may differ
+(GAP-1).
 
 **GAP-14** The device number table (DEV-1). Only `sd0a` = 3,0 is
 documented.
@@ -1966,7 +2096,10 @@ user code.
 **GAP-16** The System V file system (FILE-9). Not in our tree.
 Decision: out of scope.
 
-**GAP-18** A `read` or `write` on a pipe interrupted before moving any
+**GAP-18** *Closed by DEC10 `read-E10`, `write-36`, `siginterrupt.3-4`
+and `sigvec-11`:* with restart asked for and no data moved, `read` and
+`write` are restarted; without it they fail with `EINTR`. The question
+was a `read` or `write` on a pipe interrupted before moving any
 data, when the handler asked for restart. DEC OSF/1 3.0 changed this to
 fail with `EINTR` always, "in order to be POSIX compliant"; earlier
 releases restarted or not by `SA_RESTART` (DRN3 §4.4.18.3, p. 4-20).
@@ -1983,23 +2116,30 @@ its session's controlling terminal was revoked (PROC-32). Candidate:
 **GAP-21** Whether our server provides STREAMS (FILE-22). Lites has
 none. Decision pending; out of scope until then.
 
-**GAP-22** Which thread library a program is expected to use. MK5.0.1
+**GAP-22** *Partly answered by DEC10:* `sigwait(3)` and `sleep(3)`, OSF
+pages, name `libpthreads.a`; the `pthread_*` pages are DEC's (DCE
+threads, draft 4). Which thread library a program is expected to use. MK5.0.1
 says "The pthreads library does not work" (RN501 §4.7), and fixed a
 panic in multithreaded programs (§4.6); DEC shipped DECthreads (draft 4 of
 1003.4a). Candidate: what our libc provides.
 
 **GAP-23** Whether `/proc`, which DEC documents (DTO3 §4.7), is part of
-OSF/1. No OSF document mentions it. Candidate: not required.
+OSF/1. No OSF document mentions it, and the 1.0 manual has no `/proc`
+page. Decision: not required.
 
-**GAP-17** Which system calls sleep interruptibly, and so can end with
-`EINTR` or be restarted (SYS-12, PROC-25). Not listed per call.
-Candidate: 4.4BSD-Lite2's choices.
+**GAP-17** *Largely closed by DEC10.* Which calls can end with `EINTR`:
+the manual lists it for `close`, `open`, `fcntl(F_SETLKW)`, `dup2`,
+`chmod`, `fsync`, `getmsg`, `putmsg`, `msgrcv`, `msgsnd`, `semop`,
+`poll`, `select`, `recv`, `recvmsg`, `read`, `write`, `wait`,
+`tcdrain`, `pause`, `sigsuspend`, `sigpause` and `lockf` (each page's
+`-E` items). Which of them restart: ERR-21.
 
 ## ERR — errors in the documents, and disagreements
 
 **ERR-1** The book says the suspend character "sends a SIGSTOP signal"
 (§4.4.2.1, p. 4-9) and elsewhere "a SUSPEND signal" (§4.4, p. 4-7).
-POSIX and BSD send `SIGTSTP`, which can be caught. We follow POSIX.
+The 1.0 manual says `VSUSP` generates `SIGTSTP` (`tty.7-70`), as POSIX
+and BSD do. We follow the manual.
 
 **ERR-2** When no handler takes an exception, Patience says "the kernel
 terminates the task" (PAT §4); the kernel manual says "the thread is
@@ -2077,6 +2217,67 @@ behaviour; SYS-11 does not depend on it.
 words, and calls `VPOP_SETPINIT` "Converts process to a child of init"
 where PMD says "kernelize a process" (PMA pp. 11-12; PMD p. 19).
 
+**ERR-18** Whether `SIGCONT` can be caught, ignored or blocked. The
+book names only `SIGKILL` and `SIGSTOP` (SIG-4). The 1.0 manual gives
+`EINVAL` for an attempt "to ignore or supply a handler for the
+SIGKILL, SIGSTOP, and SIGCONT signals" (`sigaction-E3`), its signal
+table marks `SIGCONT` "cannot be caught or ignored" (`signal.h.4-20`),
+and `sigpause(3)` says it cannot be blocked (`sigpause.3-6`); but the
+same manual excludes only `SIGKILL` elsewhere on the `sigaction` page
+(`sigaction-14`), and `sigprocmask` and `sigsuspend` name only
+`SIGKILL` and `SIGSTOP`. POSIX lets `SIGCONT` be caught. Decision
+pending; tests record the result.
+
+**ERR-19** A stop signal for a process in an orphaned group. TTY-5 and
+the manual's terminal pages say a terminal read fails with `EIO` and
+the process is neither stopped nor killed (`tty.7-71`, `read-E11`).
+The manual's signal table says "A process whose parent has ended shall
+be sent a SIGKILL signal if the SIGTSTP, SIGTTIN, or SIGTTOU signals
+are generated for that process" (`signal.h.4-44`), which is the BSD
+rule INT2 contrasts with. POSIX discards such signals. For terminal
+access we follow TTY-5; for a stop signal sent by `kill`, decision
+pending.
+
+**ERR-20** Per-thread pending signals. SIG-19 says pending signals are
+kept per process. `sigwait(3)`, an OSF page, waits until a signal is
+"in the thread's set of pending signals" (`sigwait.3-3`), and
+`sigaction(2)` says that in a multithreaded program it "should only be
+used for the synchronous signals" (`sigaction-19`). Masks are per
+process on every page (`sigprocmask-4`, `sigpending-2`,
+`sigsuspend-2`). The two models are not reconciled in any document.
+
+**ERR-21** Which calls restart. SYS-12 states the rule generally. The
+manual's `sigaction` page limits `SA_RESTART` to "`read()` and
+`write()` on a slow device (such as a terminal, but not a regular
+file) and the `wait()` function" (`sigaction-12`); `sigvec(2)`
+restarts every call unless `SV_INTERRUPT` is set (`sigvec-11`); and
+`poll`, `read` and `write` return `EINTR` only when the handler was
+installed without restart (`poll-E2`, `read-E10`, `write-E16`).
+Decision: restart exactly the calls the manual says may restart.
+
+**ERR-22** `setpgid` with a group of 0. The manual says a group ID of 0
+means the target's own process group ID is used (`setpgid-6`), and
+also gives `EINVAL` for a group ID of 0 or less (`setpgid-E1`). POSIX
+uses the target's pid. TTY-2's test (`setpgid(0, 0)`) depends on this.
+
+**ERR-23** Acquiring a controlling terminal. The manual's `tty(7)` says
+a terminal is never assigned by `open`; a session leader must call
+`ioctl(TIOCSCTTY)`, so "the O_NOCTTY flag to the open() function is
+ignored" (`tty.7-10`). Its `open(2)` describes `O_NOCTTY` as having an
+effect (`open-25`). `tty(7)` also says the caller "must not already be
+a session or process group leader" (`tty.7-11`), which cannot hold
+just after the `setsid` its own example calls.
+
+**ERR-24** A `read` or `write` interrupted after moving some data. The
+manual says without restart it returns −1 with `EINTR` even so
+(`read-21`, `write-35`), and elsewhere that the count is returned
+(`write-33`); pipes and FIFOs are excepted (`read-22`, `write-34`).
+POSIX returns the count. Decision pending.
+
+**ERR-25** The 1.0 manual's `reboot` describes the integrated kernel,
+booting `/vmunix` (`reboot-3`, `reboot-18`). Not binding on MK
+(BOOT-9).
+
 **ERR-13** The multithreaded signal rules (SIG-19, SIG-20) differ from
 what POSIX threads became: a per-process mask, and asynchronous signals
 to the first thread rather than to any thread not blocking them. The
@@ -2092,7 +2293,8 @@ These hold more of the interface and are to be worked through next.
 - *OSF/1 Internals*, Volumes I and II, beyond the modules cited above
   (VM internals, IPC, scheduling, sockets, STREAMS, LVM: mostly not
   interface).
-- The DEC OSF/1 1.0 manual pages at `typewritten.org`, sections 2 and 3:
-  the per-call interface, with each call's errors. This is the closest
-  public text to OSF/1's own manual pages, and the source a test suite
-  most needs.
+- The rest of the 1.0 manual's sections 3 and 8 (string, math, curses,
+  RPC and network library pages; administration commands), which
+  `docs/osf1-calls.md` leaves out as not bearing on the server.
+- DEC OSF/1 3.0's manual beyond the error-list comparison in
+  `docs/osf1-calls.md`, appendix A.

@@ -198,6 +198,21 @@ carried.
 | [CMU, *Mach bibliography*](https://ftp.lip6.fr/pub/mach/cmu/doc/mach_bib.ps.gz) | 41,438 | `37ebadab5bf68d965198f45a4cef1411d68ddf096c458da3b5e47a9cdae2a29d` |
 | [CMU document archive README](https://ftp.lip6.fr/pub/mach/cmu/doc/README) | 812 | `d515875a75b6263852345c3ad5f56e490fcdc3b328341840d453db5a1914ddf9` |
 
+### Manual pages, from typewritten.org
+
+Fetched on 23 October 2026, with the site allowed for this work. The
+pages are DEC's and OSF's copyright; cited, not carried. Each page's
+SHA-256 is listed in the file named.
+
+| manual | pages | hashes |
+|---|---|---|
+| OSF/1 1.0 (TIN) MIPS, `typewritten.org/Manual/DEC/OSF:1/1.0/mips/`: all of section 2, and the pages of sections 3, 4, 5, 7 and 8 that `docs/osf1-calls.md` uses | 332 | `osf1-1.0-man.sha256` |
+| DEC OSF/1 3.0 for Alpha AXP, `typewritten.org/Manual/DEC/OSF:1/3.0/`, section 2, for `docs/osf1-calls.md` appendix A | 205 | `osf1-3.0-man2.sha256` |
+
+The site also holds DEC OSF/1 X2.0-8 (MIPS), DEC OSF/1 "SILVER"
+Baselevel 4, HP OSF/1 A.01.00 (sections 1, 3 and 5 only), Digital UNIX
+and Tru64; not used yet.
+
 ### Pages read on the web, not fetched as files
 
 - OSF's Mach manual pages as served from the XNU repository
