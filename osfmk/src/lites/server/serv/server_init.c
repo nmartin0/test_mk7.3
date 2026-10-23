@@ -919,7 +919,7 @@ void get_config_info(
 {
 	kern_return_t	kr;
 	char	*boot_argv[32];
-	int	boot_argc = 0;
+	int	kboot_argc = 0;
 	char	*boot_root = (char *)0;
 	char	*cp;
 	int	first = 1;
@@ -929,7 +929,7 @@ void get_config_info(
 		kernel_boot_info[0] = '\0';
 	kernel_boot_info[KERNEL_BOOT_INFO_MAX - 1] = '\0';
 
-	boot_argv[boot_argc++] = (argc > 0) ? argv[0] : "startup";
+	boot_argv[kboot_argc++] = (argc > 0) ? argv[0] : "startup";
 	cp = kernel_boot_info;
 	while (*cp != '\0') {
 		char *word;
@@ -947,17 +947,17 @@ void get_config_info(
 			if (strcmp(word, "boot_device") != 0)
 				boot_root = word;
 		} else if (word[0] == '-' && word[1] != '\0'
-			   && boot_argc < 30) {
+			   && kboot_argc < 30) {
 			dprintf("(lites) boot flag from the kernel: %s\n", word);
-			boot_argv[boot_argc++] = word;
+			boot_argv[kboot_argc++] = word;
 		}
 		first = 0;
 	}
 	if (boot_root)
-		boot_argv[boot_argc++] = boot_root;
-	boot_argv[boot_argc] = (char *)0;
+		boot_argv[kboot_argc++] = boot_root;
+	boot_argv[kboot_argc] = (char *)0;
 
-	parse_arguments(boot_argc, boot_argv);
+	parse_arguments(kboot_argc, boot_argv);
 	if (argc > 0)
 		parse_arguments(argc, argv);
 	set_root();
