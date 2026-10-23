@@ -208,6 +208,11 @@ carried.
 - Digital UNIX V4.0 *System Administration*, "Configuring the
   Kernel", and *Technical Overview*, "Symmetrical Multiprocessing",
   as mirrored at `cs.auckland.ac.nz/references/unix/digital/`.
+- DEC OSF/1 1.0 (MIPS) and 3.0, and Tru64 UNIX 5.0a and 5.1b, manual
+  pages as kept at `typewritten.org/Manual/DEC/`: `mkfifo(3)`,
+  `mknod(2)`, `fattach(3)`, `ffm(4)`, `kopt(8)`, `config(8)`,
+  `sys_attrs_vfs(5)`. Read with the web tool; the site does not answer
+  the workspace's own fetches.
 - Tru64 UNIX manual pages, section 9r (`unix_master`, `simple_lock`,
   `lock_init`, `lock_write`, `mpsleep`), at `unix.com/man-page/osf1/`.
 - Lepreau, Hibler, Ford, Law, *In-Kernel Servers on Mach 3.0:
