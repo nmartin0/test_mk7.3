@@ -16,6 +16,12 @@ bytes and check them. Copyright subsists without a notice, so a
 document published for anonymous FTP but carrying no grant is cited,
 not carried -- the rule `README.md` already applies.
 
+Every public document met in this work is kept, by the maintainer's
+rule of 23 October 2026: carried here if it grants copying, and
+otherwise listed below and kept outside git, in the maintainer's
+archive `mk73-uncarried-docs` (its `SHA256SUMS` matches the hashes
+here).
+
 ## Carried here
 
 | file | document | grant |
@@ -296,3 +302,54 @@ not carried.
 | [CMU, *The Mach 3.0 micro-kernel: source directories*](https://hina.lysator.liu.se/pub/doc/OS/mach/kern-dir.doc) | 4,734 | `551be0fb67d18299933c3f3ccd7951c0f8cf933159f2e2b77f3fbe660b518a60` |
 | [Rich Draves, *Unix-server configurations* (CMU, 9 March 1992)](https://hina.lysator.liu.se/pub/doc/OS/mach/build.ux) | 1,365 | `e709877dddaecba8af6204f68dded57abae8e26b63a5180502146fabec5e01c3` |
 | [Daniel Julin, *Multi-Server availability* (mail, CMU, 11 September 1992)](https://hina.lysator.liu.se/pub/doc/OS/mach/multi-server.info) | 10,964 | `42bbdb6ff106d38b84a71a2dd7635bbffd3c746f0da180b3ee7f992f9f551a3e` |
+
+### Recorded on 24 October 2026, from earlier downloads
+
+Fetched during the searches of 22 and 23 October but not listed until
+now. None carries a permission notice; cited, not carried.
+
+More of CMU's Mach FAQ (`ftp.lip6.fr/pub/mach/cmu/FAQ/`):
+
+| document | bytes | SHA-256 |
+|---|---|---|
+| [James Loveluck, *Announcing OSF/1 MK5.0* (mail to `osf1-mk`, 23 April 1993)](https://ftp.lip6.fr/pub/mach/cmu/FAQ/obsolete/osf1-mk.rel5.0) | 23,733 | `d714e4ce574b2b9af046d8039f2a2a31ec1f2ce9b7d72606b4d775b4f3a42cec` |
+| [CMU Mach FAQ, *INDEX*](https://ftp.lip6.fr/pub/mach/cmu/FAQ/INDEX) | 3,122 | `0fcba2283a651becd6281ae4927db4fbb26046650225333f1eed7ff0d8d9bd13` |
+| [CMU Mach FAQ, *Mach 2.5/3.0 for the Intel 80386/80486*](https://ftp.lip6.fr/pub/mach/cmu/FAQ/i386_announce) | 5,549 | `4456aa3e31cefb780186404570443179dfc8cff104554e8da5abdb460dcb057c` |
+| [Mike Accetta, *RS6K announcement* (CMU, 3 January 1994)](https://ftp.lip6.fr/pub/mach/cmu/FAQ/rs6k_announce) | 1,943 | `7224362b29253bcbee45efabea7f2fcbcf6b54ce2cc590faadc55bcaeb534618` |
+| [Mary Thompson, *What machines does Mach run on* (CMU, January 1994)](https://ftp.lip6.fr/pub/mach/cmu/FAQ/platforms) | 4,281 | `29b9688c5f2b289fb0582f3d9fef9c3df591280f0299dbd430a097588ca4a5f1` |
+| [CMU Mach FAQ, *Mach status* (October 1994)](https://ftp.lip6.fr/pub/mach/cmu/FAQ/status.Oct94) | 711 | `d47065262d24a2d4179caf7a1de72e112d57211c003959591a578ec5a1d950af` |
+| [Mary R. Thompson, *How to get a Mach license* (CMU, October 1994)](https://ftp.lip6.fr/pub/mach/cmu/FAQ/license.info) | 7,459 | `f0409306d4c1e8f66a3aa12c97a42318b420de7bba414f6c33c9383dbd4cfb58` |
+
+CMU's Mach project web pages (`www.cs.cmu.edu/afs/cs/project/mach/public/www/doc/`):
+
+| document | bytes | SHA-256 |
+|---|---|---|
+| [CMU Mach project, *OSF Kernel and Server programming manuals*](https://www.cs.cmu.edu/afs/cs/project/mach/public/www/doc/osf.html) | 2,873 | `17e49074c795917ba00aa87f1792fa8a9757be8d58676475732c8df82d3bd1ce` |
+| [CMU Mach project, *Mach Installation Guides and How-To Documents*](https://www.cs.cmu.edu/afs/cs/project/mach/public/www/doc/install.html) | 5,672 | `05cbc651a565315f3765ac1795c102dcf9c20dd8483a9379feb099bacfc3f3b9` |
+| [CMU Mach project, *Mach publications*](https://www.cs.cmu.edu/afs/cs/project/mach/public/www/doc/publications.html) | 23,387 | `e24d0e40a0dc1db8dd7e2d98dbf81eaa9e1a4095bc2caa2d763d31ae7f65bd6e` |
+
+More of OSF RI's `os/task_migration/`:
+
+| document | bytes | SHA-256 |
+|---|---|---|
+| [OSF RI, task-migration presentation (`advisory.pres.ps`)](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/advisory.pres.ps) | 390,889 | `6e61d48901056ba43304df9761e21502643925efe0880e747690835c2c683af5` |
+| [OSF RI, task-migration presentation (`osdi.pres.ps`)](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/osdi.pres.ps) | 447,934 | `4e2e3d6a9e32fbcf305cc07c0530a11f1e1f77b828828996f7bbe95b13381459` |
+| [Dejan Milojičić, *Load Distribution, Implementation for the Mach Microkernel* (thesis, Kaiserslautern, 1993): announcement](https://ftp.gwdg.de/pub/misc/opengroup/ri/os/task_migration/thesis.info) | 19,027 | `5a2e87e934ef41639af8005b9b47afd8feab4a5305dfbe106738a8377397efb3` |
+
+The Archons Project's technical reports on the Alpha real-time
+operating system (CMU; not DEC's Alpha), from OSF RI's
+`real-time/alpha/techreps/`. The `OLD.` versions there were not fetched.
+
+| document | bytes | SHA-256 |
+|---|---|---|
+| [Archons *Alpha* reports: the index](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/README) | 985 | `79ece3bc11342743db033be5eb3c9e62e1915d394edff653440cd9febb650823` |
+| [Archons report 88011, *Requirements and Rationale*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/reqrat.ps) | 410,990 | `d1f7af6ea1c3cfc2843b7d9e49123ef0816708fec1d48aa6728f466c4339ed52` |
+| [Archons report 88021, *Programming Model*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/progmod.ps) | 590,953 | `1ee83f0347f05d61a78dc4cdbfaf0c27d6029f587984980fb6c4e25d97d4a8f3` |
+| [Archons report 88033, *The Alpha Distributed Computer System Testbed*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/testbed.ps) | 492,283 | `526197fd117d943b8f78f95cef6c91ecbea13ba5aa0bcc6e36e3b2a3de9526fe` |
+| [Archons report 88041, *Programming Utilities*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/progutl.ps) | 226,244 | `aa570d03f7d2f494447bdd2d96dd902bc8cd5d81c234cd5a1b0e68fd59a39a7d` |
+| [Archons report 88042, *Programming Language Support*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/proglang.ps) | 304,190 | `278cf6d797c1e9ba9abc3906d189b0c40f3f217f24dd32c05516dff93bcf33a3` |
+| [Archons report 88051, *Kernel Internals*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/kintrnl.ps) | 666,446 | `b5c38a4e90c5d7af77d51b17e37e0cccd2cdb20051388aafa68913f135d304b3` |
+| [Archons report 88061, *Kernel Interface*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/kintrfc.ps) | 215,389 | `8c0b7ae7c5cf29fa82559bf9e16c13ded11a816a1bd1befe3242b825ccac16b6` |
+| [Archons report 88071, *Program Maintenance Manual*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/pmntman.ps) | 695,903 | `13271e0ce851a01d5e0519eb4c890599fc1b0e519e57233789cf26fcf656032b` |
+| [Archons report 88121, *An Example Real-Time Command, Control and Battle Management Application for Alpha*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/c2appl.ps) | 519,819 | `490a01a2144e533b087365c1b576783ee6703e9b732e019247679a8d43f6c5bf` |
+| [Archons report 90021, *Scheduler Evaluation Experiments*](https://ftp.gwdg.de/pub/misc/opengroup/ri/real-time/alpha/techreps/sched.ps) | 301,219 | `bb3579623aab8f10f80f78bad43ba622c5df7ea6c79646cafb9f9281cd3894c1` |
