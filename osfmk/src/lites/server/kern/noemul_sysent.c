@@ -79,6 +79,7 @@ int	msync();
 int	munlock();
 int	munmap();
 int	nfssvc();
+int	noemul_select();
 int	obreak();
 int	ocreat();
 int	oftruncate();
@@ -245,7 +246,7 @@ struct sysent noemul_sysent[] = {
 	{ 2, dup2 },			/* 90 = dup2 */
 	{ 0, nosys },			/* 91 = getdopt */
 	{ 3, fcntl },			/* 92 = fcntl */
-	{ 5, nosys },			/* 93 = select, not in the server */
+	{ 5, noemul_select },		/* 93 = select */
 	{ 0, nosys },			/* 94 = setdopt */
 	{ 1, fsync },			/* 95 = fsync */
 	{ 3, setpriority },		/* 96 = setpriority */

@@ -204,6 +204,74 @@ int start_c(int *kframe)
 	  r = sc(120, rfd, v, 2); check("readv /sbin/init 2+3 -> 5", !scerr && r == 5);
 	  pp = sc2(199, rfd, 0, 0LL, 1); check("and the offset is 5", !scerr && pp == 5);
 	  sc(6, rfd); }
+	{ /* select (93): docs/osf1-calls.md, select-3 to select-23 */
+	  struct fds { u_int b[8]; } rs, ws, xs, keep, *edge;
+	  struct timeval z, t0, t1; long long pp; int rfd, wfd, cfd, k;
+	  unsigned long b0 = ((unsigned long)_end + 0xfff) & ~0xfffUL;
+#define	FZ(s)	for (k = 0; k < 8; k++) (s).b[k] = 0
+#define	FS(s, fd)	((s).b[(fd) / 32] |= 1u << ((fd) % 32))
+#define	FI(s, fd)	(((s).b[(fd) / 32] >> ((fd) % 32)) & 1)
+	  pp = sc2(42); rfd = (int)pp; wfd = (int)(pp >> 32); check("select: pipe", !scerr);
+	  z.tv_sec = 0; z.tv_usec = 0;
+	  r = sc(93, 257, 0, 0, 0, &z); check("select nfds 257 -> EINVAL", scerr && r == 22);
+	  r = sc(93, -1, 0, 0, 0, &z); check("select nfds -1 -> EINVAL", scerr && r == 22);
+	  FZ(rs); FZ(ws); FZ(xs);
+	  r = sc(93, 256, &rs, &ws, &xs, &z); check("select nfds 256, empty sets, poll -> 0", !scerr && r == 0);
+	  FZ(rs); FS(rs, rfd);
+	  r = sc(93, rfd + 1, &rs, 0, 0, &z); check("select empty pipe, poll -> 0, bit cleared", !scerr && r == 0 && !FI(rs, rfd));
+	  sc(4, wfd, "s", 1);
+	  FZ(rs); FS(rs, rfd); FZ(ws); FS(ws, wfd); FZ(xs); FS(xs, rfd);
+	  r = sc(93, (rfd > wfd ? rfd : wfd) + 1, &rs, &ws, &xs, &z);
+	  check("select readable + writable -> 2, both bits", !scerr && r == 2 && FI(rs, rfd) && FI(ws, wfd) && !FI(xs, rfd));
+	  FZ(ws); FS(ws, wfd);
+	  r = sc(93, wfd + 1, 0, &ws, 0, &z); check("select read set NULL -> 1", !scerr && r == 1 && FI(ws, wfd));
+	  FZ(rs); FS(rs, rfd); FS(rs, 30);
+	  r = sc(93, rfd + 1, &rs, 0, 0, &z); check("select ignores bits at nfds and above, clears them", !scerr && r == 1 && FI(rs, rfd) && !FI(rs, 30));
+	  FZ(rs); FS(rs, rfd); FS(rs, 25);
+	  r = sc(93, 26, &rs, 0, 0, &z); check("select ignores bits past the table (20), as Lite2", !scerr && r == 1 && !FI(rs, 25));
+	  FZ(rs); FS(rs, rfd);
+	  r = sc(93, rfd + 1, &rs, 0, 0, 0); check("select NULL timeout, ready pipe -> 1", !scerr && r == 1);
+	  z.tv_sec = 100000000; FZ(rs); FS(rs, rfd);
+	  r = sc(93, rfd + 1, &rs, 0, 0, &z); check("select tv_sec 100000000, ready pipe -> 1", !scerr && r == 1);
+	  z.tv_sec = 2000000;
+	  r = sc(93, rfd + 1, &rs, 0, 0, &z); check("select tv_sec 2000000 (past the cap), ready pipe -> 1", !scerr && r == 1);
+	  z.tv_sec = 100000001;
+	  r = sc(93, rfd + 1, &rs, 0, 0, &z); check("select tv_sec 100000001 -> EINVAL", scerr && r == 22);
+	  z.tv_sec = 0; z.tv_usec = -1;
+	  r = sc(93, rfd + 1, &rs, 0, 0, &z); check("select tv_usec -1 -> EINVAL", scerr && r == 22);
+	  z.tv_usec = 1000000; FZ(rs); FS(rs, rfd); keep = rs;
+	  r = sc(93, rfd + 1, &rs, 0, 0, &z); check("select tv_usec 1000000 -> EINVAL, set kept", scerr && r == 22 && rs.b[0] == keep.b[0]);
+	  z.tv_sec = -1; z.tv_usec = 0;
+	  r = sc(93, rfd + 1, &rs, 0, 0, &z); check("select tv_sec -1 -> EINVAL", scerr && r == 22);
+	  z.tv_sec = 0;
+	  r = sc(93, rfd + 1, &rs, 0, 0, (struct timeval *)0x10); check("select timeout in page 0 -> EFAULT", scerr && r == 14);
+	  r = sc(93, rfd + 1, (struct fds *)0x10, 0, 0, &z); check("select read set in page 0 -> EFAULT", scerr && r == 14);
+	  cfd = sc(41, rfd); sc(6, cfd);
+	  FZ(rs); FS(rs, rfd); FS(rs, cfd); keep = rs;
+	  r = sc(93, cfd + 1, &rs, 0, 0, &z); check("select a closed fd -> EBADF (9), set kept", scerr && r == 9 && rs.b[0] == keep.b[0]);
+	  /* a set ending at the last mapped word: only the words nfds covers are copied */
+	  r = sc(17, (char *)(b0 + 0x1000)); check("select: break grows a page", !scerr && r == 0);
+	  edge = (struct fds *)(b0 + 0x1000 - 4);
+	  edge->b[0] = 1u << rfd;
+	  r = sc(93, rfd + 1, edge, 0, 0, &z); check("select set in the last word of memory, nfds <= 32", !scerr && r == 1 && edge->b[0] == 1u << rfd);
+	  r = sc(93, 64, edge, 0, 0, &z); check("select same set, nfds 64: cut to the table, one word", !scerr && r == 1);
+	  edge = (struct fds *)(b0 + 0x1000 - 2);
+	  r = sc(93, rfd + 1, edge, 0, 0, &z); check("select set running off memory -> EFAULT", scerr && r == 14);
+	  sc(17, (char *)b0);
+	  { char c; sc(3, rfd, &c, 1); }	/* empty the pipe */
+	  z.tv_sec = 1; z.tv_usec = 0; FZ(rs); FS(rs, rfd);
+	  sc(116, &t0, 0); r = sc(93, rfd + 1, &rs, 0, 0, &z); sc(116, &t1, 0);
+	  k = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_usec - t0.tv_usec) / 1000;
+	  out(" select waited "); num(k); out(" ms\n");
+	  check("select 1 s timeout on an empty pipe -> 0 after about 1 s", !scerr && r == 0 && !FI(rs, rfd) && k >= 900 && k < 3000);
+	  z.tv_sec = 0; z.tv_usec = 200000;
+	  sc(116, &t0, 0); r = sc(93, 0, 0, 0, 0, &z); sc(116, &t1, 0);
+	  k = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_usec - t0.tv_usec) / 1000;
+	  check("select nfds 0, no sets, 0.2 s: a sleep", !scerr && r == 0 && k >= 150 && k < 2000);
+#undef	FZ
+#undef	FS
+#undef	FI
+	  sc(6, rfd); sc(6, wfd); }
 	out("summary: "); num(ok_count); out(" ok, "); num(bad_count); out(" failed\n");
 	if (same(mode, "exec")) {	/* "exec": exec self again */
 		char *nargv[] = { argv[0], "x y", "again", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };

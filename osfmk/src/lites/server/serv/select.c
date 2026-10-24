@@ -75,6 +75,8 @@
  *	@(#)sys_generic.c	8.5 (Berkeley) 1/21/94
  */
 
+#include "no_emulator.h"	/* AI-ONLY NOTE: noemul_select() below */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
@@ -187,6 +189,82 @@ done:
 	}
 	return (error);
 }
+
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: select() for a process the server runs without the
+ * emulator, which copied the sets and the time limit in and out
+ * itself around bsd_select() (serv/bsd_1.defs).  Written here after
+ * 4.4BSD-Lite2's select() (kern/sys_generic.c 8.9, under the same
+ * notice as this file).  As Lite2's: nd is cut to the descriptor
+ * table, and bits at or above it are ignored; only the words of each
+ * set that nd then covers are copied; the sets are copied back only
+ * on success, so an error in the call, EINTR too, leaves them as
+ * they were (OSF/1 1.0 manual, select(2); docs/osf1-calls.md,
+ * select-23) -- though a failing copy back can leave the sets before
+ * it written.  The work is s_select() above, as with the emulator.
+ * nd is an int here, so a negative one is EINVAL with one past
+ * FD_SETSIZE, as Lite2's unsigned nd made it; the page says nothing
+ * of either.  A bad address is EFAULT (docs/osf1-interface.md,
+ * COPY-3).
+ * docs/roadmap.md, Tier 1 item 2, step 4.
+ */
+struct noemul_select_args {
+	int		nd;
+	fd_set		*in;
+	fd_set		*ou;
+	fd_set		*ex;
+	struct timeval	*tv;
+};
+
+int
+noemul_select(p, uap, retval)
+	struct proc *p;
+	struct noemul_select_args *uap;
+	integer_t *retval;
+{
+	fd_set ibits[3];
+	struct timeval atv;
+	u_int ni;
+	int nd, error;
+
+	if (uap->nd < 0 || uap->nd > FD_SETSIZE)
+		return (EINVAL);
+	nd = uap->nd;
+	if (nd > p->p_fd->fd_nfiles)
+		nd = p->p_fd->fd_nfiles;	/* as Lite2, and s_select() */
+	ni = howmany(nd, NFDBITS) * sizeof (fd_mask);
+	bzero((caddr_t)ibits, sizeof (ibits));
+#define	getbits(name, x) \
+	if (uap->name && \
+	    (error = copyin((caddr_t)uap->name, (caddr_t)&ibits[x], ni))) \
+		return (error);
+	getbits(in, 0);
+	getbits(ou, 1);
+	getbits(ex, 2);
+#undef	getbits
+	if (uap->tv &&
+	    (error = copyin((caddr_t)uap->tv, (caddr_t)&atv, sizeof (atv))))
+		return (error);
+	error = s_select(p, nd,
+			 uap->in ? &ibits[0] : 0,
+			 uap->ou ? &ibits[1] : 0,
+			 uap->ex ? &ibits[2] : 0,
+			 uap->tv ? &atv : 0,
+			 retval);
+	if (error)
+		return (error);
+#define	putbits(name, x) \
+	if (uap->name && \
+	    (error = copyout((caddr_t)&ibits[x], (caddr_t)uap->name, ni))) \
+		return (error);
+	putbits(in, 0);
+	putbits(ou, 1);
+	putbits(ex, 2);
+#undef	putbits
+	return (0);
+}
+#endif /* NO_EMULATOR */
 
 mach_error_t selscan_sub(
 	struct proc	*p,

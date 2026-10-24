@@ -43,7 +43,9 @@ import re
 import sys
 
 # The server's names for 4.4BSD calls it has under another name: its
-# syscalls.master (server/kern/syscalls.master) names them so.
+# syscalls.master (server/kern/syscalls.master) names them so, or,
+# for a call whose emulator-side name takes other arguments, the
+# server gives it a front end of its own (select: noemul_select).
 SERVER_NAMES = {
     'exit': 'rexit',
     'access': 'saccess',
@@ -52,6 +54,7 @@ SERVER_NAMES = {
     'write': 's_write',
     'readv': 's_readv',
     'writev': 's_writev',
+    'select': 'noemul_select',
     'setrlimit': 's_setrlimit',
     'settimeofday': 's_settimeofday',
     'adjtime': 's_adjtime',
