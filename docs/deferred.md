@@ -1564,10 +1564,15 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   socket as it copies it, and frees it when the copy fails, so a
   `read` of a pipe or socket into a bad address returns `EFAULT` and
   the bytes are gone. With the emulator that copy could not fail;
-  without it, it can. That the call now returns at all is 0144. The
-  OSF/1 documents read so far say only `EFAULT`, not what happens to
-  the data; keeping it (copying before freeing) or not is for the
-  maintainer.
+  without it, it can. That the call now returns at all is 0144.
+  Settled 24 October 2026: dropped, as now. The OSF/1 1.0 and DEC
+  OSF/1 3.0 manuals give only `EFAULT` (`read-E9`, `recv-E5`) and
+  say nothing of the data, where they do say it when a failed
+  receive leaves a message in place (`msgrcv` with `E2BIG`; `recv`
+  with `MSG_PEEK`). OSF/1's sockets are "a parallelized version of
+  that in 4.4BSD" (*OSF/1 Internals*, 1992, Vol. 2, module 8), the
+  code Lite2's `soreceive()` is. A program that hands `read` a bad
+  buffer is given no data to expect.
 
 ### The `ne` driver, measured on 14 October 2026
 

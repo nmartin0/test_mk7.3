@@ -2269,10 +2269,30 @@ a session or process group leader" (`tty.7-11`), which cannot hold
 just after the `setsid` its own example calls.
 
 **ERR-24** A `read` or `write` interrupted after moving some data. The
-manual says without restart it returns −1 with `EINTR` even so
-(`read-21`, `write-35`), and elsewhere that the count is returned
-(`write-33`); pipes and FIFOs are excepted (`read-22`, `write-34`).
-POSIX returns the count. Decision pending.
+manual's `read` and `write` pages say that without restart it returns
+−1 with `EINTR` even so (`read-21`, `write-35`). Everything else in
+the 1.0 manual says the count:
+
+- the same pages' error lists give `EINTR` for a read only "before
+  any data arrived" (`read-E10`);
+- `read` lists an interrupted read among the causes of a short count
+  (`read-10`), and `write` says outright that it returns the number
+  written (`write-33`);
+- pipes and FIFOs never give `EINTR` once data has moved (`read-22`,
+  `write-34`);
+- `siginterrupt(3)`, whose disabled restart is a handler without
+  restart, says a call that "started transferring data" returns "the
+  number of data bytes actually transferred" (`siginterrupt.3-6`).
+
+The design agrees: OSF/1's file and socket code is 4.4BSD's,
+parallelized (*OSF/1 Internals*, 1992, Vol. 2, modules 5 and 8), and
+the Design book keeps 4.3BSD's per-process `u_sigintr` (section
+4.4.7). DEC OSF/1 3.0's pages keep both texts unchanged; the Paragon
+OSF/1 errata (May 1995) lists bug 3559, "Documentation error in
+write(2) man page", without its text. Settled 24 October 2026 from
+these: the count. `read-21` and `write-35` hold for a call that moved
+nothing. So `read`, `write`, `readv` and `writev` without the
+emulator (0145).
 
 **ERR-25** The 1.0 manual's `reboot` describes the integrated kernel,
 booting `/vmunix` (`reboot-3`, `reboot-18`). Not binding on MK

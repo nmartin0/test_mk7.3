@@ -344,10 +344,11 @@ SYS-9, none of which may hang, crash or slowly exhaust the server.
 fuzzer joins it in `docs/tools/`.
 
 Wanted from the maintainer before the tests that depend on them:
-rulings on the seven disagreements in the documents, ERR-18 to ERR-24
-(`SIGCONT`, stop signals in orphaned groups, per-thread pending
+rulings on six of the seven disagreements in the documents, ERR-18 to
+ERR-23 (`SIGCONT`, stop signals in orphaned groups, per-thread pending
 signals, which calls restart, `setpgid` with group 0, acquiring a
-controlling terminal, interrupted partial transfers), and decisions on
+controlling terminal; ERR-24, interrupted partial transfers, is
+settled from the documents), and decisions on
 the open GAPs that are policy rather than fact -- GAP-10, the
 task-level system-call port; GAP-11, what the bootstrap service gives
 an unprivileged task; GAP-12, whether ordinary processes may make
@@ -503,7 +504,7 @@ what `docs/deferred.md` S-23 records: the table's open window, now
 closed for both servers (0137); its second half, a reference held
 across a sleeping call, is open before item 2 is done. Testing
 `readv` found a read into a bad address hung (0144), and that its data
-is lost (S-24, open).
+is lost (S-24, settled from the documents: as 4.4BSD).
 
 What differs from the plan above:
 

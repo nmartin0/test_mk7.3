@@ -277,7 +277,7 @@ s_write(p, uap, retval)
  * took 0 to 1024 lengths, unsigned, and let their sum wrap
  * uio_resid.  An interrupted transfer that has moved data returns its
  * count, as read() and write() here do (docs/osf1-interface.md,
- * ERR-24, decision pending).  docs/roadmap.md, Tier 1 item 2,
+ * ERR-24).  docs/roadmap.md, Tier 1 item 2,
  * step 4.
  */
 #define	OSF1_IOV_MAX	16

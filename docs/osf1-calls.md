@@ -5120,6 +5120,7 @@ Origin: An OSF reference page (headed "OSF").
 **read-21** [OSF/1] If interrupted after reading some data, the result depends on how the handler was installed: without restart, `read()` returns -1 with `EINTR` even if data was already consumed; with restart, it returns the amount of data consumed.
   Test: Not reliably testable from user space (needs a signal arriving mid-transfer); attempt with a slow terminal device.
   Note: The page's rule here (-1 with `EINTR` even after data was consumed) sits uneasily with read-10, which lists an interrupted read as a cause of a short count, and read-22 makes an exception for pipes and FIFOs.
+  Ruling: the count, when data was consumed (`docs/osf1-interface.md`, ERR-24).
 
 **read-22** [OSF/1] A read from a pipe or FIFO never returns with `EINTR` if it has transferred any data.
   Test: Not reliably testable (needs a signal during a partial pipe transfer).
@@ -7871,6 +7872,7 @@ Origin: An OSF reference page (headed "OSF").
 **write-35** [OSF/1] If the signal handler was installed with an indication that functions should not be restarted, `write()` returns −1 and sets `errno` to `EINTR`, even if some data was already written.
   Test: install the handler with `sigaction` without `SA_RESTART`; interrupt a partial pipe write; expect −1/`EINTR`.
   Note: The page contradicts write-33 here; it does not say which rule wins when data was written and the handler does not restart.
+  Ruling: write-33 wins; −1/`EINTR` only when nothing was written (`docs/osf1-interface.md`, ERR-24).
 
 **write-36** [OSF/1] If the handler was installed with an indication that functions should be restarted: if no data had been written when the interrupt was handled, `write()` does not return but is restarted; if data had been written, it returns the amount already written.
   Test: with `SA_RESTART`, interrupt a blocked write that has written nothing; the write continues and completes after the pipe is drained.
