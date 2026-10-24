@@ -220,7 +220,7 @@ fcntl(p, uap, retval)
 	u_int newmin;
 
 	if ((unsigned)uap->fd >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[uap->fd]) == NULL)
+	    (fp = fhold_call(fdp->fd_ofiles[uap->fd])) == NULL)
 		return (EBADF);
 	pop = &fdp->fd_ofileflags[uap->fd];
 	switch (uap->cmd) {
@@ -308,13 +308,15 @@ fcntl(p, uap, retval)
 			if ((fp->f_flag & FREAD) == 0)
 				return (EBADF);
 			p->p_flag |= P_ADVLOCK;
-			return (VOP_ADVLOCK(vp, (caddr_t)p, F_SETLK, &fl, flg));
+			error = VOP_ADVLOCK(vp, (caddr_t)p, F_SETLK, &fl, flg);
+			break;
 
 		case F_WRLCK:
 			if ((fp->f_flag & FWRITE) == 0)
 				return (EBADF);
 			p->p_flag |= P_ADVLOCK;
-			return (VOP_ADVLOCK(vp, (caddr_t)p, F_SETLK, &fl, flg));
+			error = VOP_ADVLOCK(vp, (caddr_t)p, F_SETLK, &fl, flg);
+			break;
 
 		case F_UNLCK:
 			return (VOP_ADVLOCK(vp, (caddr_t)p, F_UNLCK, &fl,
@@ -323,6 +325,21 @@ fcntl(p, uap, retval)
 		default:
 			return (EINVAL);
 		}
+		/*
+		 * AI-ONLY NOTE: a lock granted after the descriptor was
+		 * closed -- by another thread, while this one waited
+		 * (F_SETLKW) -- is given back: the close released the
+		 * process's locks on the file before this one was made,
+		 * and with no descriptor left nothing would release it
+		 * (docs/deferred.md, S-23).  Found by an independent
+		 * review of the call holds.
+		 */
+		if (error == 0 && fdp->fd_ofiles[uap->fd] != fp) {
+			(void) VOP_ADVLOCK(vp, (caddr_t)p, F_UNLCK, &fl,
+					   F_POSIX);
+			error = EBADF;
+		}
+		return (error);
 
 	case F_GETLK:
 		if (fp->f_type != DTYPE_VNODE)
@@ -436,7 +453,7 @@ fstat(p, uap, retval)
 	int error;
 
 	if ((u_int)fd >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[fd]) == NULL)
+	    (fp = fhold_call(fdp->fd_ofiles[fd])) == NULL)
 		return (EBADF);
 	switch (fp->f_type) {
 
@@ -475,7 +492,7 @@ fpathconf(p, uap, retval)
 	struct vnode *vp;
 
 	if ((unsigned)uap->fd >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[uap->fd]) == NULL)
+	    (fp = fhold_call(fdp->fd_ofiles[uap->fd])) == NULL)
 		return (EBADF);
 	switch (fp->f_type) {
 
@@ -813,13 +830,14 @@ fdfree(p)
  * Note: p may be NULL when closing a file
  * that was being passed in a message.
  */
+static int closef_last __P((struct file *, struct proc *));
+
 closef(fp, p)
 	register struct file *fp;
 	register struct proc *p;
 {
 	struct vnode *vp;
 	struct flock lf;
-	int error;
 
 	if (fp == NULL)
 		return (0);
@@ -841,6 +859,24 @@ closef(fp, p)
 	}
 	if (--fp->f_count > 0)
 		return (0);
+	return (closef_last(fp, p));
+}
+
+/*
+ * AI-ONLY NOTE: closef()'s second half, split out so that a call's
+ * hold (fhold_call() below) can be given back without the first
+ * half: dropping a hold is not a close, and must not release the
+ * process's POSIX locks.
+ */
+static int
+closef_last(fp, p)
+	register struct file *fp;
+	register struct proc *p;
+{
+	struct vnode *vp;
+	struct flock lf;
+	int error;
+
 	if (fp->f_count < 0)
 		panic("closef: count < 0");
 	if ((fp->f_flag & FHASLOCK) && fp->f_type == DTYPE_VNODE) {
@@ -866,6 +902,62 @@ closef(fp, p)
 }
 
 /*
+ * AI-ONLY NOTE: the second half of docs/deferred.md, S-23.  A process
+ * here may have several threads in the server at once, and a call
+ * that finds a file by its descriptor and then sleeps -- a read of a
+ * pipe, a wait for a lock, any disk I/O -- held no reference on it,
+ * so another thread's close() could free the file under it.  As
+ * Design of the OSF/1 Operating System, 11.1.2, has it: "the thread
+ * obtaining the descriptor increments the reference count on the open
+ * file description ..., preventing deallocation.  The reference is
+ * released when the operation is completed."  Written here: a lookup
+ * passes the file through fhold_call(), which counts it in f_count
+ * and notes it in the call's invocation; server_thread_deregister()
+ * gives every such reference back with frele_call() when the call
+ * ends, however it ends.  Only while the thread is registered for a
+ * call (k_serving: system threads keep k_p, and START_SERVER sets it
+ * before registering), so that every hold is given back; a call
+ * holding more than K_NHELD files is refused its descriptor.
+ */
+struct file *
+fhold_call(fp)
+	struct file *fp;
+{
+	proc_invocation_t pk = get_proc_invocation();
+
+	if (fp == NULL || pk == NULL || !pk->k_serving)
+		return (fp);
+	if (pk->k_nheld >= K_NHELD) {
+		printf("(lites) pid %d: a call holds more than %d files\n",
+		       pk->k_p->p_pid, K_NHELD);
+		return (NULL);
+	}
+	fp->f_count++;
+	pk->k_held[pk->k_nheld++] = fp;
+	return (fp);
+}
+
+/*
+ * Give back the call's references; a file whose last it was is closed
+ * now, as the close() that came first would have closed it.  Under the
+ * master lock, for closef()'s sake.
+ */
+void
+frele_call(p)
+	struct proc *p;
+{
+	proc_invocation_t pk = get_proc_invocation();
+	struct file *fp;
+
+	while (pk->k_nheld > 0) {
+		fp = pk->k_held[--pk->k_nheld];
+		pk->k_held[pk->k_nheld] = NULL;
+		if (--fp->f_count == 0)
+			(void) closef_last(fp, p);
+	}
+}
+
+/*
  * Apply an advisory lock on a file descriptor.
  *
  * Just attempt to get a record lock of the requested type on
@@ -887,7 +979,7 @@ flock(p, uap, retval)
 	struct flock lf;
 
 	if ((unsigned)uap->fd >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[uap->fd]) == NULL)
+	    (fp = fhold_call(fdp->fd_ofiles[uap->fd])) == NULL)
 		return (EBADF);
 	if (fp->f_type != DTYPE_VNODE)
 		return (EOPNOTSUPP);

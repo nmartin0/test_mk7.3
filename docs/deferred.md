@@ -1550,13 +1550,32 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   AddressSanitizer-clean, where the old code faults; and both servers
   booted running `docs/tools/noemuprobe/fdprobe.c`, which the old
   servers panic (`unp_externalize`) and the new pass.
-  **Still open, the second half of OSF/1's design (11.1.2):** a call
-  that sleeps using a file -- `read`, `write` on a pipe or socket --
-  holds no reference on it, so another thread's `close` can free it
-  underneath, a use-after-free in the server. The fix is the book's:
-  a reference taken for the length of such a call and "released when
-  the operation is completed"; its own patch, before Tier 1 item 2 is
-  called done.
+  **The second half, closed in 0152, for both servers.** A call that
+  sleeps using a file -- `read`, `write` on a pipe or socket, a wait
+  for a lock, any disk I/O -- held no reference on it, so another
+  thread's `close` could free it underneath, a use-after-free in the
+  server. The book's fix, written here: a call that finds a file by
+  its descriptor takes a reference (`fhold_call()`, every lookup a
+  call can sleep after: `read`, `write`, `readv`, `writev`, `ioctl`,
+  `fcntl`, `fstat`, `fpathconf`, `flock`, `lseek`, `getvnode()`,
+  `getsock()`, the emulator's `getattr`), and gives it back when the
+  call ends (`server_thread_deregister()`), closing the file then if
+  that was its last. Giving a hold back is not a close: it releases
+  no POSIX lock. An independent review found one more of the kind,
+  also closed: an `F_SETLKW` granted after another thread closed the
+  descriptor left a lock nothing would release; it is given back,
+  `EBADF`. Tested: `docs/tools/fdfuzz/hold.c`, the hold code copied
+  verbatim against a model, 25 million operations, 2.8 million
+  closes under a sleeping call, AddressSanitizer-clean, where the old
+  code's first wakeup uses freed memory; both servers booted, the
+  probe's 141 checks and the emulator's shell loops. It tests the
+  counting, not the server around it: no program here yet has two
+  threads in the server. Left as they are: `close` no longer wakes a
+  thread blocked on the same file -- a reader of a pipe whose read
+  end another thread closed waits on -- as in OSF/1's design and
+  later systems; the error of a close finished by a hold is not
+  reported; and the `fdesc` and `portal` file systems (`MASTER`,
+  optional and untested) still look files up without a hold.
 
 - **S-24. A read whose copy to the process fails loses the data.**
   Found 24 October 2026 testing `readv` without the emulator (Tier 1

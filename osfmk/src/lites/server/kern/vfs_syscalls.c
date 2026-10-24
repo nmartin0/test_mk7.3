@@ -938,7 +938,7 @@ lseek(p, uap, retval)
 	int error;
 
 	if ((u_int)uap->fd >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[uap->fd]) == NULL)
+	    (fp = fhold_call(fdp->fd_ofiles[uap->fd])) == NULL)
 		return (EBADF);
 	if (fp->f_type != DTYPE_VNODE)
 		return (ESPIPE);
@@ -2124,7 +2124,7 @@ getvnode(fdp, fd, fpp)
 	struct file *fp;
 
 	if ((u_int)fd >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[fd]) == NULL)
+	    (fp = fhold_call(fdp->fd_ofiles[fd])) == NULL)
 		return (EBADF);
 	if (fp->f_type != DTYPE_VNODE)
 		return (EINVAL);

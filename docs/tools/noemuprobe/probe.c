@@ -272,6 +272,20 @@ int start_c(int *kframe)
 #undef	FS
 #undef	FI
 	  sc(6, rfd); sc(6, wfd); }
+	{ /* fcntl locks (92): F_SETLK, F_GETLK, after the S-23 change */
+	  struct flk { long long l_start, l_len; int l_pid; short l_type, l_whence; } fl;
+	  int fd = sc(5, "/sbin/init", 0, 0);
+	  fl.l_start = 0; fl.l_len = 100; fl.l_pid = 0; fl.l_type = 1; fl.l_whence = 0;
+	  r = sc(92, fd, 8, &fl); check("fcntl F_SETLK F_RDLCK -> 0", !scerr && r == 0);
+	  fl.l_type = 3;
+	  r = sc(92, fd, 8, &fl); check("fcntl F_SETLK F_WRLCK on a read-only fd -> EBADF", scerr && r == 9);
+	  fl.l_type = 3; fl.l_start = 0; fl.l_len = 100;
+	  r = sc(92, fd, 7, &fl); check("fcntl F_GETLK: own lock no conflict -> F_UNLCK", !scerr && fl.l_type == 2);
+	  fl.l_type = 2; fl.l_start = 0; fl.l_len = 100;
+	  r = sc(92, fd, 8, &fl); check("fcntl F_SETLK F_UNLCK -> 0", !scerr && r == 0);
+	  fl.l_type = 1;
+	  r = sc(92, fd, 9, &fl); check("fcntl F_SETLKW F_RDLCK -> 0", !scerr && r == 0);
+	  sc(6, fd); }
 	{ /* fork (2), vfork (66): docs/osf1-calls.md, fork-2 to -6, -11, -12,
 	   * -15, -16 */
 	  long long pp, fr; int rfd, wfd, fd, me, pid, st, k, mask, okall;

@@ -758,7 +758,7 @@ getsock(fdp, fdes, fpp)
 	register struct file *fp;
 
 	if ((unsigned)fdes >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[fdes]) == NULL)
+	    (fp = fhold_call(fdp->fd_ofiles[fdes])) == NULL)
 		return (EBADF);
 	if (fp->f_type != DTYPE_SOCKET)
 		return (ENOTSOCK);

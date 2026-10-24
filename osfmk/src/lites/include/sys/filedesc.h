@@ -107,6 +107,9 @@ int	fdalloc __P((struct proc *p, int want, int *result));
 int	fdavail __P((struct proc *p, int n));
 int	falloc __P((struct proc *p, struct file **resultfp, int *resultfd));
 void	fdinstall __P((struct filedesc *fdp, int fd, struct file *fp));
+/* AI-ONLY NOTE: a call's hold on a file (kern/kern_descrip.c; S-23) */
+struct file *fhold_call __P((struct file *fp));
+void	frele_call __P((struct proc *p));
 void	fdunreserve __P((struct filedesc *fdp, int fd));
 struct	filedesc *fdcopy __P((struct proc *p));
 void	fdfree __P((struct proc *p));

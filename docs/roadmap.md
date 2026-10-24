@@ -504,8 +504,8 @@ step 5, as Ctrl-C is a caught signal. `__sysctl` is in (0132, 0133),
 NetBSD 1.0's `sh` runs a pipeline as init. Step 4's list is done;
 step 5 is next. An independent review of each found
 what `docs/deferred.md` S-23 records: the table's open window, now
-closed for both servers (0137); its second half, a reference held
-across a sleeping call, is open before item 2 is done. Testing
+closed for both servers (0137), and its second half, a reference held
+across a sleeping call (0152). Testing
 `readv` found a read into a bad address hung (0144), and that its data
 is lost (S-24, settled from the documents: as 4.4BSD).
 
@@ -533,11 +533,11 @@ What differs from the plan above:
   as 4.4BSD's `userret()` takes them, on the way out of each call.
 
 *Next, as of 24 October 2026.* Step 4's calls are in, through
-`fork` (0151). Next S-23's second half, a reference held on a file
-for the length of a call that sleeps (*Design of the OSF/1 Operating
-System*, 11.1.2), before item 2 is called done; then step 5: a
-caught signal's frame, `sigreturn`, and the interactive shell. Each
-call is checked against its items in `docs/osf1-calls.md`.
+`fork` (0151), and S-23 is closed: its second half, a reference held
+on a file for the length of a call (*Design of the OSF/1 Operating
+System*, 11.1.2), is 0152. Next step 5: a caught signal's frame,
+`sigreturn`, and the interactive shell. Each call is checked against
+its items in `docs/osf1-calls.md`.
 
 ### 3. The locking
 

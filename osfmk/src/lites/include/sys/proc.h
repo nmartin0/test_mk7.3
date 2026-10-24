@@ -328,6 +328,9 @@ struct	prochd {
 
 void proc_allocate(struct proc **np);
 
+#define	K_NHELD	4	/* AI-ONLY NOTE: files one call may hold; see below */
+struct file;
+
 /* State for active invoKation of concurrent system call of a single process */
 typedef struct proc_invocation {
 	queue_chain_t k_servers_chain;
@@ -357,6 +360,18 @@ typedef struct proc_invocation {
 	 * structure is the same in every file whatever its options.
 	 */
 	vm_offset_t k_trap_state;
+	/*
+	 * AI-ONLY NOTE: the open files this call holds a reference on,
+	 * kern/kern_descrip.c, fhold_call(): taken when the call finds
+	 * a file by its descriptor, given back when the call ends
+	 * (serv/syscall_subr.c, server_thread_deregister()), so that
+	 * another thread's close() cannot free a file under a call that
+	 * sleeps.  Design of the OSF/1 Operating System, 11.1.2;
+	 * docs/deferred.md, S-23.
+	 */
+	int k_serving;		/* registered for a call of k_p */
+	int k_nheld;
+	struct file *k_held[K_NHELD];
 } *proc_invocation_t;
 
 #define get_proc_invocation() cthread_data(cthread_self())

@@ -1089,7 +1089,7 @@ mach_error_t getattr(
 	struct file *fp;
 	mach_error_t err;
 
-	if (fileno >= fdp->fd_nfiles || (fp = fdp->fd_ofiles[fileno]) == NULL)
+	if (fileno >= fdp->fd_nfiles || (fp = fhold_call(fdp->fd_ofiles[fileno])) == NULL)
 	    return EBADF;
 
 	VATTR_NULL(va);

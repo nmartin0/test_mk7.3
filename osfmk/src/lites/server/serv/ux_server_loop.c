@@ -199,6 +199,8 @@ void *ux_thread_bootstrap (cthread_fn_t real_routine)
 	pk->event = 0;
 	pk->condition = 0;
 	pk->k_trap_state = 0;	/* AI-ONLY NOTE: see sys/proc.h */
+	pk->k_nheld = 0;	/* AI-ONLY NOTE: see sys/proc.h */
+	pk->k_serving = 0;
 
 	cthread_set_data(cthread_self(), pk);
 #ifdef USEACTIVATIONS

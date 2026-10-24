@@ -80,7 +80,7 @@ s_read(p, uap, retval)
 #endif
 
 	if (((u_int)uap->fd) >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[uap->fd]) == NULL ||
+	    (fp = fhold_call(fdp->fd_ofiles[uap->fd])) == NULL ||	/* AI-ONLY NOTE: S-23 */
 	    (fp->f_flag & FREAD) == 0)
 		return (EBADF);
 	aiov.iov_base = (caddr_t)uap->buf;
@@ -227,7 +227,7 @@ s_write(p, uap, retval)
 #endif
 
 	if (((u_int)uap->fd) >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[uap->fd]) == NULL ||
+	    (fp = fhold_call(fdp->fd_ofiles[uap->fd])) == NULL ||
 	    (fp->f_flag & FWRITE) == 0)
 		return (EBADF);
 	aiov.iov_base = (caddr_t)uap->buf;
@@ -331,7 +331,7 @@ s_readv(p, uap, retval)
 	int cnt, error;
 
 	if (((u_int)uap->fd) >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[uap->fd]) == NULL ||
+	    (fp = fhold_call(fdp->fd_ofiles[uap->fd])) == NULL ||
 	    (fp->f_flag & FREAD) == 0)
 		return (EBADF);
 	if (error = rwv_iov(uap->iovp, uap->iovcnt, aiov, &cnt))
@@ -367,7 +367,7 @@ s_writev(p, uap, retval)
 	int cnt, error;
 
 	if (((u_int)uap->fd) >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[uap->fd]) == NULL ||
+	    (fp = fhold_call(fdp->fd_ofiles[uap->fd])) == NULL ||
 	    (fp->f_flag & FWRITE) == 0)
 		return (EBADF);
 	if (error = rwv_iov(uap->iovp, uap->iovcnt, aiov, &cnt))
@@ -510,7 +510,7 @@ ioctl(p, uap, retval)
 
 	fdp = p->p_fd;
 	if ((u_int)uap->fd >= fdp->fd_nfiles ||
-	    (fp = fdp->fd_ofiles[uap->fd]) == NULL)
+	    (fp = fhold_call(fdp->fd_ofiles[uap->fd])) == NULL)
 		return (EBADF);
 
 	if ((fp->f_flag & (FREAD | FWRITE)) == 0)

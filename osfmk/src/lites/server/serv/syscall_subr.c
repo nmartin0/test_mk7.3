@@ -77,6 +77,7 @@ server_thread_register_locked(struct proc *p)
 		    k_servers_chain);
 	p->p_servers_count++;
 	proc_ref(p);
+	pk->k_serving = 1;	/* AI-ONLY NOTE: kern_descrip.c, fhold_call() */
 	mutex_unlock(&p->p_lock);
 }
 
@@ -97,6 +98,7 @@ server_thread_register_internal(struct proc *p)
 		    k_servers_chain);
 	p->p_servers_count++;
 	proc_ref(p);
+	pk->k_serving = 1;	/* AI-ONLY NOTE: kern_descrip.c, fhold_call() */
 }
 
 /*
@@ -106,6 +108,23 @@ void
 server_thread_deregister(struct proc *p)
 {
 	proc_invocation_t pk = get_proc_invocation();
+
+	/*
+	 * AI-ONLY NOTE: the call is over: give back the files it held
+	 * (kern/kern_descrip.c, fhold_call(); docs/deferred.md, S-23).
+	 * Still registered, as a last close may sleep.
+	 */
+	assert(pk);
+	if (pk->k_nheld > 0) {
+		boolean_t had_master = pk->k_master_lock;
+
+		if (!had_master)
+			unix_master();
+		frele_call(p);
+		if (!had_master)
+			unix_release();
+	}
+	pk->k_serving = 0;
 
 	mutex_lock(&p->p_lock);
 	assert (pk && (p->p_ref >= 1) || !queue_empty(&p->p_servers));
