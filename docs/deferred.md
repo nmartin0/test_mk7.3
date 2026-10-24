@@ -1558,6 +1558,17 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   the operation is completed"; its own patch, before Tier 1 item 2 is
   called done.
 
+- **S-24. A read whose copy to the process fails loses the data.**
+  Found 24 October 2026 testing `readv` without the emulator (Tier 1
+  item 2, step 4). 4.4BSD-Lite2's `soreceive()` takes data off the
+  socket as it copies it, and frees it when the copy fails, so a
+  `read` of a pipe or socket into a bad address returns `EFAULT` and
+  the bytes are gone. With the emulator that copy could not fail;
+  without it, it can. That the call now returns at all is 0144. The
+  OSF/1 documents read so far say only `EFAULT`, not what happens to
+  the data; keeping it (copying before freeing) or not is for the
+  maintainer.
+
 ### The `ne` driver, measured on 14 October 2026
 
 For roadmap milestone 4. With QEMU's `-device

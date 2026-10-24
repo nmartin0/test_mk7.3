@@ -3,11 +3,13 @@
  * without the emulator (docs/roadmap.md, Tier 1 item 2).  It makes
  * 4.4BSD system calls itself (start.s), so it needs no call the server
  * has not got yet, and prints what each returns on /dev/console.  Run
- * as init: "startup startup -i /root/t hd0a <mode>" in bootstrap.conf;
- * the mode is the last argument, as init may be given -s before it.
+ * as init: "startup startup -i /root/<mode> hd0a" in bootstrap.conf.
+ * The server gives init only its path and perhaps -s, so the mode is
+ * the file's name: the last argument's, or the path's when that is -s.
  *
- *   plain   the checks, then exit(7) (and the server's "init died")
- *   exec    the checks, execve itself as "again", then /bin/sh -c
+ *   plain   (any other name) the checks, then exit(7) (and the
+ *           server's "init died")
+ *   exec    the checks, execve itself with "again" last, then /bin/sh -c
  *   run     the checks, then call 9999, which nosys() ends by SIGSYS
  *   nosys   the checks, then sstk (70), nosys in 4.4BSD too
  */
@@ -17,6 +19,7 @@ extern int scerr;
 extern long long sc2(int code, ...);	/* eax:edx */
 static int con = -1;
 static int len(const char *s){int n=0;while(s[n])n++;return n;}
+static int same(const char *a, const char *b){while(*a && *a==*b){a++;b++;}return *a==*b;}
 static void out(const char *s){ sc(4, con, s, len(s)); }
 static void num(long v){ char b[24]; int i=23; int neg=v<0; unsigned long u=neg?-v:v; b[i]=0; do{b[--i]='0'+u%10;u/=10;}while(u); if(neg)b[--i]='-'; out(b+i);}
 static void hex(unsigned long v){ char b[12]; int i=11; b[i]=0; do{b[--i]="0123456789abcdef"[v&15];v>>=4;}while(v); out("0x"); out(b+i);}
@@ -31,7 +34,8 @@ int start_c(int *kframe)
 {
 	int argc = kframe[0]; char **argv = (char **)(kframe+1); char **envp = argv + argc + 1;
 	int i, r; struct timeval tv; struct stat st; char *p;
-	char *mode = argv[argc - 1];	/* last: init may get -s first */
+	char *mode = argc < 1 ? "" : argv[argc - 1][0] == '-' ? argv[0] : argv[argc - 1];
+	for (p = mode; *p; p++) if (*p == '/') mode = p + 1;
 	con = sc(5, "/dev/console", 2, 0);	/* open O_RDWR */
 	if (scerr) sc(1, 99);
 	out("\n== noemu probe ==\nargc "); num(argc); out("\n");
@@ -109,19 +113,30 @@ int start_c(int *kframe)
 	  r = sc(189, fd, &fs); out(" socket blksize "); num(fs.st_blksize); out("\n");
 	  check("fstat socket: S_IFSOCK, zeros not -1", !scerr && fs.st_mode == 0140000 && fs.st_size == 0 && fs.st_uid == 0 && fs.st_nlink == 0);
 	  sc(6, fd); }
+	{ /* a read whose copy-out fails returns EFAULT, not waits
+	   * (kern/uipc_socket.c, soreceive()) */
+	  struct iovec { char *base; u_int len; } v[1];
+	  struct { char *name; u_int namelen; struct iovec *iov; u_int iovlen; char *control; u_int controllen; int flags; } mh;
+	  int rfd, wfd; long long pp;
+	  pp = sc2(42); rfd = (int)pp; wfd = (int)(pp >> 32); check("pipe", !scerr && rfd >= 0 && wfd >= 0);
+	  sc(4, wfd, "zz", 2); r = sc(3, rfd, (char *)0x10, 2); check("read into page 0, data waiting -> EFAULT", scerr && r == 14);
+	  sc(4, wfd, "zzzz", 4); v[0].base = (char *)0x10; v[0].len = 4;
+	  mh.name = 0; mh.namelen = 0; mh.iov = v; mh.iovlen = 1; mh.control = 0; mh.controllen = 0; mh.flags = 0;
+	  r = sc(27, rfd, &mh, 0x40); check("recvmsg MSG_WAITALL into page 0 -> EFAULT, no wait", scerr && r == 14);
+	  sc(6, rfd); sc(6, wfd); }
 	out("summary: "); num(ok_count); out(" ok, "); num(bad_count); out(" failed\n");
-	if (argc >= 2 && mode[0]=='e' && mode[1]=='x') {	/* "exec": exec self again */
-		char *nargv[] = { "/root/t", "again", "x y", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };
+	if (same(mode, "exec")) {	/* "exec": exec self again */
+		char *nargv[] = { argv[0], "x y", "again", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };
 		out("execve self...\n");
-		r = sc(59, "/root/t", nargv, nenv); out("execve returned "); num(r); out("\n");
+		r = sc(59, argv[0], nargv, nenv); out("execve returned "); num(r); out("\n");
 	}
-	if (argc >= 2 && mode[0]=='a') {	/* "again": then a shell */
+	if (same(mode, "again")) {	/* "again": then a shell */
 		char *nargv[] = { "sh", "-c", "echo SH-OK pid $$; echo args: \"$0\"; type cd; echo done", 0 }; char *nenv[] = { "PATH=/bin:/sbin:/usr/bin", 0 };
 		out("execve /bin/sh...\n");
 		r = sc(59, "/bin/sh", nargv, nenv); out("execve sh returned "); num(r); out("\n");
 	}
-	if (argc >= 2 && mode[0]=='r') { out("calling 9999 (out of range: nosys) -> SIGSYS\n"); sc(9999); out("survived?!\n"); }
-	if (argc >= 2 && mode[0]=='n') { out("calling sstk (70, nosys) -> SIGSYS\n"); sc(70, 0); out("survived nosys?!\n"); }
+	if (same(mode, "run")) { out("calling 9999 (out of range: nosys) -> SIGSYS\n"); sc(9999); out("survived?!\n"); }
+	if (same(mode, "nosys")) { out("calling sstk (70, nosys) -> SIGSYS\n"); sc(70, 0); out("survived nosys?!\n"); }
 	out("exit(7)\n");
 	sc(1, 7);
 	return 0;

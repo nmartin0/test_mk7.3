@@ -735,7 +735,8 @@ dontblock:
 		 * with a short count but without error.
 		 * Keep sockbuf locked against other readers.
 		 */
-		while (flags & MSG_WAITALL && m == 0 && uio->uio_resid > 0 &&
+		while (error == 0 &&	/* AI-ONLY NOTE: see below */
+		    flags & MSG_WAITALL && m == 0 && uio->uio_resid > 0 &&
 		    !sosendallatonce(so) && !nextrecord) {
 			if (so->so_error || so->so_state & SS_CANTRCVMORE)
 				break;
@@ -763,7 +764,17 @@ dontblock:
 			    (struct mbuf *)flags, (struct mbuf *)0,
 			    (struct mbuf *)0);
 	}
-	if (orig_resid == uio->uio_resid && orig_resid &&
+	/*
+	 * AI-ONLY NOTE: "error == 0" added, here and to the MSG_WAITALL
+	 * wait above.  4.4BSD-Lite2 starts over whenever nothing was
+	 * moved, and waits for the rest under MSG_WAITALL, even when the
+	 * move failed: the error is lost and the reader waits for data
+	 * it already dropped (docs/deferred.md, S-24).  With the
+	 * emulator uiomove() cannot fail here; without it copyout() can,
+	 * and a read() into a bad address hung for good instead of
+	 * returning EFAULT (docs/roadmap.md, Tier 1 item 2, step 4).
+	 */
+	if (error == 0 && orig_resid == uio->uio_resid && orig_resid &&
 	    (flags & MSG_EOR) == 0 && (so->so_state & SS_CANTRCVMORE) == 0) {
 		sbunlock(&so->so_rcv);
 		splx(s);
