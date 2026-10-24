@@ -79,6 +79,7 @@ int	msync();
 int	munlock();
 int	munmap();
 int	nfssvc();
+int	noemul_fork();
 int	noemul_select();
 int	obreak();
 int	ocreat();
@@ -151,7 +152,7 @@ int	wait4();
 struct sysent noemul_sysent[] = {
 	{ 0, nosys },			/* 0 = syscall */
 	{ 1, rexit },			/* 1 = exit */
-	{ 0, nosys },			/* 2 = fork, not in the server */
+	{ 0, noemul_fork },		/* 2 = fork */
 	{ 3, s_read },			/* 3 = read */
 	{ 3, s_write },			/* 4 = write */
 	{ 3, open },			/* 5 = open */
@@ -219,7 +220,7 @@ struct sysent noemul_sysent[] = {
 	{ 4, ogetkerninfo },		/* 63 = old getkerninfo */
 	{ 0, nosys },			/* 64 = old getpagesize, not in the server */
 	{ 2, msync },			/* 65 = msync */
-	{ 0, nosys },			/* 66 = vfork, not in the server */
+	{ 0, noemul_fork },		/* 66 = vfork */
 	{ 0, nosys },			/* 67 = obsolete vread */
 	{ 0, nosys },			/* 68 = obsolete vwrite */
 	{ 1, nosys },			/* 69 = sbrk, not in the server */

@@ -55,6 +55,8 @@ SERVER_NAMES = {
     'readv': 's_readv',
     'writev': 's_writev',
     'select': 'noemul_select',
+    'fork': 'noemul_fork',
+    'vfork': 'noemul_fork',
     'setrlimit': 's_setrlimit',
     'settimeofday': 's_settimeofday',
     'adjtime': 's_adjtime',

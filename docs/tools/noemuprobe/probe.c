@@ -272,6 +272,100 @@ int start_c(int *kframe)
 #undef	FS
 #undef	FI
 	  sc(6, rfd); sc(6, wfd); }
+	{ /* fork (2), vfork (66): docs/osf1-calls.md, fork-2 to -6, -11, -12,
+	   * -15, -16 */
+	  long long pp, fr; int rfd, wfd, fd, me, pid, st, k, mask, okall;
+	  struct itv { struct timeval it_interval, it_value; } itv, otv;
+	  long dfl[3] = { 0, 0, 0 }, ign[3] = { 1, 0, 0 };
+	  static volatile int cow = 1, cow2 = 1;
+	  long oact[3];
+	  char c, buf[8];
+	  me = sc(20);
+	  pp = sc2(42); rfd = (int)pp; wfd = (int)(pp >> 32);
+	  fd = sc(5, "/sbin/init", 0, 0);
+	  sc(92, rfd, 4, 4);			/* O_NONBLOCK: a wrong edx fails, not hangs */
+	  sc(46, 31, ign, 0);			/* SIGUSR2 ignored: inherited (fork-3) */
+	  sc(60, 027);				/* umask: inherited (fork-3) */
+	  sc(48, 1, 1 << 29);			/* block SIGUSR1 (30) */
+	  sc(37, me, 30);			/* and make it pending */
+	  itv.it_interval.tv_sec = 0; itv.it_interval.tv_usec = 0;
+	  itv.it_value.tv_sec = 100; itv.it_value.tv_usec = 0;
+	  sc(83, 0, &itv, 0);			/* ITIMER_REAL, 100 s */
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) {	/* the child */
+		mask = 0;
+		if ((int)fr == me) mask |= 1;			/* eax = parent's pid */
+		if (sc(20) != me) mask |= 2;			/* its own pid */
+		if (sc(39) == me) mask |= 4;			/* getppid */
+		if (cow == 1) mask |= 8; cow = 2;		/* memory copied */
+		if ((sc(52) & (1 << 29)) == 0) mask |= 16;	/* fork-12 */
+		sc(86, 0, &otv);
+		if (otv.it_value.tv_sec == 0 && otv.it_value.tv_usec == 0) mask |= 32;	/* fork-11 */
+		if (sc(3, fd, buf, 5) == 5) mask |= 64;		/* shares the offset */
+		if (sc(60, 022) == 027 && sc(46, 31, 0, oact) == 0 && oact[0] == 1)
+			mask |= 128;					/* fork-3 */
+		c = mask; sc(4, wfd, &c, 1);
+		mask = 0;
+		if (sc(20) != sc(81)) mask |= 1;		/* fork-4: not a group's id */
+		fr = sc2(2);					/* a grandchild */
+		if (!scerr && (int)(fr >> 32) == 1)
+			sc(1, 5);
+		if (!scerr && sc(7, (int)fr, &st, 0, 0) == (int)fr && ((st >> 8) & 0xff) == 5)
+			mask |= 2;
+		c = mask; sc(4, wfd, &c, 1);
+		sc(1, 42);
+	  }
+	  pid = (int)fr;
+	  check("fork returns the child's pid, edx 0", !scerr && pid > 0 && pid != me && (int)(fr >> 32) == 0);
+	  r = sc(7, pid, &st, 0, 0); check("wait4 the child -> its pid, exit status 42", !scerr && r == pid && (st & 0xff) == 0 && ((st >> 8) & 0xff) == 42);
+	  c = 0; r = sc(3, rfd, &c, 1); mask = c & 0xff;
+	  out(" child mask "); num(mask); out("\n");
+	  check("child: eax = parent's pid, edx 1", mask & 1);
+	  check("child: a pid of its own", mask & 2);
+	  check("child: getppid = parent", mask & 4);
+	  check("child: memory a copy; parent's unchanged", (mask & 8) && cow == 1);
+	  check("child: parent's pending SIGUSR1 not inherited (fork-12)", mask & 16);
+	  check("child: parent's interval timer not inherited (fork-11)", mask & 32);
+	  check("child: read 5 bytes of a shared descriptor", mask & 64);
+	  check("child: umask and an ignored signal inherited (fork-3)", mask & 128);
+	  c = 0; r = sc(3, rfd, &c, 1); mask = c;
+	  check("child: its pid is no process group's (fork-4)", mask & 1);
+	  check("child: forks a grandchild and waits for it", mask & 2);
+	  pp = sc2(199, fd, 0, 0LL, 1); check("parent's offset moved by the child's read (fork-6)", !scerr && pp == 5);
+	  sc(86, 0, &otv); check("parent's timer still runs", !scerr && otv.it_value.tv_sec > 0);
+	  itv.it_value.tv_sec = 0; sc(83, 0, &itv, 0);	/* cancel it */
+	  sc(46, 30, ign, 0); sc(48, 2, 1 << 29); sc(46, 30, dfl, 0);	/* drop the pending SIGUSR1 */
+	  check("parent's pending SIGUSR1 dropped", sc(52) == 0);
+	  sc(60, 022); sc(46, 31, dfl, 0);
+	  fr = sc2(66);
+	  if (!scerr && (int)(fr >> 32) == 1) {
+		cow2 = 2;
+		sc(1, sc(39) == me ? 7 : 8);
+	  }
+	  pid = (int)fr;
+	  check("vfork returns the child's pid", !scerr && pid > 0 && (int)(fr >> 32) == 0);
+	  r = sc(7, pid, &st, 0, 0); check("wait4 the vfork child -> status 7 (getppid ok)", !scerr && r == pid && ((st >> 8) & 0xff) == 7);
+	  check("vfork child's memory a copy, as fork's (fork-15)", cow2 == 1);
+	  fr = sc2(0, 2);
+	  if (!scerr && (int)(fr >> 32) == 1)
+		sc(1, 3);
+	  r = sc(7, (int)fr, &st, 0, 0); check("fork through syscall(0, 2)", !scerr && r == (int)fr && ((st >> 8) & 0xff) == 3);
+	  fr = sc2(198, 2, 0);
+	  if (!scerr && (int)(fr >> 32) == 1)
+		sc(1, 4);
+	  r = sc(7, (int)fr, &st, 0, 0); check("fork through __syscall(198, 2)", !scerr && r == (int)fr && ((st >> 8) & 0xff) == 4);
+	  okall = 1;
+	  for (k = 0; k < 20; k++) {
+		fr = sc2(2);
+		if (!scerr && (int)(fr >> 32) == 1)
+			sc(1, k);
+		if (scerr) { okall = 0; break; }
+		r = sc(7, (int)fr, &st, 0, 0);
+		if (scerr || r != (int)fr || ((st >> 8) & 0xff) != k) { okall = 0; break; }
+	  }
+	  check("20 rounds of fork, exit, wait4", okall);
+	  r = sc(7, -1, &st, 1, 0); check("no children left: wait4 -> ECHILD (10)", scerr && r == 10);
+	  sc(6, fd); sc(6, rfd); sc(6, wfd); }
 	out("summary: "); num(ok_count); out(" ok, "); num(bad_count); out(" failed\n");
 	if (same(mode, "exec")) {	/* "exec": exec self again */
 		char *nargv[] = { argv[0], "x y", "again", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };
@@ -279,7 +373,7 @@ int start_c(int *kframe)
 		r = sc(59, argv[0], nargv, nenv); out("execve returned "); num(r); out("\n");
 	}
 	if (same(mode, "again")) {	/* "again": then a shell */
-		char *nargv[] = { "sh", "-c", "echo SH-OK pid $$; echo args: \"$0\"; type cd; echo done", 0 }; char *nenv[] = { "PATH=/bin:/sbin:/usr/bin", 0 };
+		char *nargv[] = { "sh", "-c", "echo SH-OK pid $$; echo args: \"$0\"; echo piped | /bin/cat; /bin/echo status $?; echo done", 0 }; char *nenv[] = { "PATH=/bin:/sbin:/usr/bin", 0 };
 		out("execve /bin/sh...\n");
 		r = sc(59, "/bin/sh", nargv, nenv); out("execve sh returned "); num(r); out("\n");
 	}

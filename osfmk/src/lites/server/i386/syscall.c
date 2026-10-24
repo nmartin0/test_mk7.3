@@ -299,8 +299,10 @@ catch_exception_raise_state(
 		error = 0;
 
 	unix_master();
+	pk->k_trap_state = (vm_offset_t) regs;	/* for noemul_fork() */
 	if (error == 0)
 		error = (*callp->sy_call)(p, args, rval);
+	pk->k_trap_state = 0;
 
 	/*
 	 * Postamble.
@@ -344,6 +346,43 @@ catch_exception_raise_state(
 	pk->k_p = 0;
 	/* a set-id exec ran the program in a new task, its thread gone */
 	return p->p_task == task ? KERN_SUCCESS : MIG_NO_REPLY;
+}
+
+/*
+ * fork() and vfork(): Lites' s_fork() (serv/serv_fork.c) makes the
+ * child's task, a copy of the parent's memory (task_create(), with
+ * inheritance), and its thread, and starts the thread with the
+ * registers it is given, eax the parent's pid and edx 1, as 4.4BSD's
+ * i386 cpu_fork() leaves the child; NetBSD's C stubs make that 0.
+ * With the emulator those registers came from it; here they are the
+ * parent's at the call, with the carry flag cleared, so the child
+ * returns from the same call, successfully.  The parent gets the
+ * child's pid, and edx 0.  vfork() is fork(): OSF/1's vfork() shares
+ * memory as fork() does (OSF/1 1.0 manual, fork(2); docs/osf1-calls.md,
+ * fork-15), so the parent does not wait for the child, as Lites'
+ * vfork() would.  docs/roadmap.md, Tier 1 item 2, step 4.
+ */
+int
+noemul_fork(
+	struct proc	*p,
+	void		*uap,
+	int		*retval)
+{
+	proc_invocation_t pk = get_proc_invocation();
+	struct i386_thread_state child;
+	int pid, error;
+
+	if (pk->k_trap_state == 0)
+		panic("noemul_fork: no registers");
+	child = *(struct i386_thread_state *) pk->k_trap_state;
+	child.efl &= ~EFL_CF;
+	error = s_fork(p, (thread_state_t) &child, i386_THREAD_STATE_COUNT,
+		       &pid, FALSE);
+	if (error)
+		return (error);
+	retval[0] = pid;
+	retval[1] = 0;
+	return (0);
 }
 
 /*

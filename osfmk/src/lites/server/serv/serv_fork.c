@@ -74,6 +74,7 @@
 #include "map_uarea.h"
 #include "machid_register.h"
 #include "second_server.h"
+#include "no_emulator.h"	/* AI-ONLY NOTE: s_fork() below */
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -104,6 +105,9 @@ extern int machid_register_process(struct proc *p); /* kern_exec.c XXX tri */
 #endif
 
 struct proc *newproc(struct proc *, boolean_t, boolean_t);
+#if NO_EMULATOR
+extern void noemul_set_syscall_port(struct proc *);
+#endif
 
 fork()
 {
@@ -178,6 +182,16 @@ s_fork(
 	    task_terminate(p2->p_task);
 	    return EFAULT;
 	}
+
+#if NO_EMULATOR
+	/*
+	 * AI-ONLY NOTE: the child's thread sends its system calls to the
+	 * child's request port, as every process's does without the
+	 * emulator (i386/syscall.c); a thread's exception ports are not
+	 * inherited by a new task.  Before the thread starts.
+	 */
+	noemul_set_syscall_port(p2);
+#endif
 
 	/*
 	 * Child process.  Set start time and get to work.

@@ -198,6 +198,7 @@ void *ux_thread_bootstrap (cthread_fn_t real_routine)
 	mutex_init(&pk->lock);
 	pk->event = 0;
 	pk->condition = 0;
+	pk->k_trap_state = 0;	/* AI-ONLY NOTE: see sys/proc.h */
 
 	cthread_set_data(cthread_self(), pk);
 #ifdef USEACTIVATIONS

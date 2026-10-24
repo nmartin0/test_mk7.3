@@ -349,6 +349,14 @@ typedef struct proc_invocation {
 	struct mutex lock;	/* protects event and condition */
 	int event;
 	condition_t condition;
+	/*
+	 * AI-ONLY NOTE: the registers of the system call this thread is
+	 * serving, for a process the server runs without the emulator
+	 * (server/i386/syscall.c), so that fork() can give them to the
+	 * child; 0 otherwise.  Last, and in both servers, so that the
+	 * structure is the same in every file whatever its options.
+	 */
+	vm_offset_t k_trap_state;
 } *proc_invocation_t;
 
 #define get_proc_invocation() cthread_data(cthread_self())
