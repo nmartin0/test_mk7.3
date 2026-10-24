@@ -39,7 +39,17 @@ struct mutex timer_lock = MUTEX_NAMED_INITIALIZER("timer_lock");
 mach_port_t timer_port = MACH_PORT_NULL;
 
 /* XXX mach_msg (MK83) has a bug that overflows timeouts above about xfffff */
-const struct timeval infinite_time = { 0xfffff, 0x7fffffff };
+/*
+ * AI-ONLY NOTE: tv_usec 0, not 0x7fffffff.  The limit is added to
+ * the time of day as well as used alone -- here, in tsleep()
+ * (serv/synch_prim.c) and in select() -- and 0x7fffffff plus a
+ * time of day's microseconds overflowed an int, so a sleep or a
+ * select() asked for more than 0xfffff seconds got a deadline whose
+ * microseconds timevalfix() could not mend.  0xfffff seconds, about
+ * twelve days, is still the cap.  docs/roadmap.md, Tier 1 item 2,
+ * step 4.
+ */
+const struct timeval infinite_time = { 0xfffff, 0 };
 volatile struct timeval timer_next_wakeup;
 
 void time_diff_to_time(
