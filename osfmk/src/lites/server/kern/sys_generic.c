@@ -38,6 +38,8 @@
  *	@(#)sys_generic.c	8.5 (Berkeley) 1/21/94
  */
 
+#include "no_emulator.h"	/* AI-ONLY NOTE: readv(), writev() below */
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/filedesc.h>
@@ -260,6 +262,133 @@ s_write(p, uap, retval)
 	*retval = cnt;
 	return (error);
 }
+
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: readv() and writev(), for a process the server runs
+ * without the emulator, which made them itself, a read() or write()
+ * per buffer (emulator/e_bsd.c, e_readv(), e_writev()); Utah left the
+ * server's Lite copies under #if 0, above and below.  Written from
+ * 4.4BSD-Lite2's (kern/sys_generic.c 8.9, under the same notice as
+ * this file), with OSF/1's limits, which are 4.4BSD's tightened: a
+ * count from 1 to 16, and each length an int, a negative one or a sum
+ * past an int EINVAL (OSF/1 1.0 manual, read(2) and write(2);
+ * docs/osf1-calls.md, read-E3, read-E4, write-E3, write-E4).  Lite2
+ * took 0 to 1024 lengths, unsigned, and let their sum wrap
+ * uio_resid.  An interrupted transfer that has moved data returns its
+ * count, as read() and write() here do (docs/osf1-interface.md,
+ * ERR-24, decision pending).  docs/roadmap.md, Tier 1 item 2,
+ * step 4.
+ */
+#define	OSF1_IOV_MAX	16
+
+static int
+rwv_iov(iovp, iovcnt, iov, residp)
+	struct iovec *iovp;
+	u_int iovcnt;
+	struct iovec *iov;
+	int *residp;
+{
+	u_int i;
+	int len, resid, error;
+
+	if (iovcnt < 1 || iovcnt > OSF1_IOV_MAX)
+		return (EINVAL);
+	error = copyin((caddr_t)iovp, (caddr_t)iov,
+		       iovcnt * sizeof (struct iovec));
+	if (error)
+		return (error);
+	resid = 0;
+	for (i = 0; i < iovcnt; i++) {
+		len = (int)iov[i].iov_len;
+		/*
+		 * A negative length is write-E4's.  read-E3 names only
+		 * the sum, but a negative length read as unsigned puts
+		 * the sum past INT_MAX, so readv() refuses it too.
+		 */
+		if (len < 0 || len > INT_MAX - resid)
+			return (EINVAL);
+		resid += len;
+	}
+	*residp = resid;
+	return (0);
+}
+
+struct s_readv_args {
+	int	fd;
+	struct	iovec *iovp;
+	u_int	iovcnt;
+};
+s_readv(p, uap, retval)
+	struct proc *p;
+	register struct s_readv_args *uap;
+	int *retval;
+{
+	register struct file *fp;
+	register struct filedesc *fdp = p->p_fd;
+	struct uio auio;
+	struct iovec aiov[OSF1_IOV_MAX];
+	int cnt, error;
+
+	if (((u_int)uap->fd) >= fdp->fd_nfiles ||
+	    (fp = fdp->fd_ofiles[uap->fd]) == NULL ||
+	    (fp->f_flag & FREAD) == 0)
+		return (EBADF);
+	if (error = rwv_iov(uap->iovp, uap->iovcnt, aiov, &cnt))
+		return (error);
+	auio.uio_iov = aiov;
+	auio.uio_iovcnt = uap->iovcnt;
+	auio.uio_resid = cnt;
+	auio.uio_rw = UIO_READ;
+	auio.uio_segflg = UIO_USERSPACE;
+	auio.uio_procp = p;
+	if (error = (*fp->f_ops->fo_read)(fp, &auio, fp->f_cred))
+		if (auio.uio_resid != cnt && (error == ERESTART ||
+		    error == EINTR || error == EWOULDBLOCK))
+			error = 0;
+	*retval = cnt - auio.uio_resid;
+	return (error);
+}
+
+struct s_writev_args {
+	int	fd;
+	struct	iovec *iovp;
+	u_int	iovcnt;
+};
+s_writev(p, uap, retval)
+	struct proc *p;
+	register struct s_writev_args *uap;
+	int *retval;
+{
+	register struct file *fp;
+	register struct filedesc *fdp = p->p_fd;
+	struct uio auio;
+	struct iovec aiov[OSF1_IOV_MAX];
+	int cnt, error;
+
+	if (((u_int)uap->fd) >= fdp->fd_nfiles ||
+	    (fp = fdp->fd_ofiles[uap->fd]) == NULL ||
+	    (fp->f_flag & FWRITE) == 0)
+		return (EBADF);
+	if (error = rwv_iov(uap->iovp, uap->iovcnt, aiov, &cnt))
+		return (error);
+	auio.uio_iov = aiov;
+	auio.uio_iovcnt = uap->iovcnt;
+	auio.uio_resid = cnt;
+	auio.uio_rw = UIO_WRITE;
+	auio.uio_segflg = UIO_USERSPACE;
+	auio.uio_procp = p;
+	if (error = (*fp->f_ops->fo_write)(fp, &auio, fp->f_cred)) {
+		if (auio.uio_resid != cnt && (error == ERESTART ||
+		    error == EINTR || error == EWOULDBLOCK))
+			error = 0;
+		if (error == EPIPE)
+			psignal(p, SIGPIPE);
+	}
+	*retval = cnt - auio.uio_resid;
+	return (error);
+}
+#endif /* NO_EMULATOR */
 
 #if 0
 /*

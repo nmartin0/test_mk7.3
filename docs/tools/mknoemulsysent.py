@@ -50,6 +50,8 @@ SERVER_NAMES = {
     'acct': 'sysacct',
     'read': 's_read',
     'write': 's_write',
+    'readv': 's_readv',
+    'writev': 's_writev',
     'setrlimit': 's_setrlimit',
     'settimeofday': 's_settimeofday',
     'adjtime': 's_adjtime',

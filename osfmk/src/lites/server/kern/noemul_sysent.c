@@ -111,9 +111,11 @@ int	rexit();
 int	rmdir();
 int	s_adjtime();
 int	s_read();
+int	s_readv();
 int	s_setrlimit();
 int	s_settimeofday();
 int	s_write();
+int	s_writev();
 int	saccess();
 int	sendmsg();
 int	setegid();
@@ -278,8 +280,8 @@ struct sysent noemul_sysent[] = {
 #else
 	{ 0, nosys },			/* 119 = resuba */
 #endif
-	{ 3, nosys },			/* 120 = readv, not in the server */
-	{ 3, nosys },			/* 121 = writev, not in the server */
+	{ 3, s_readv },			/* 120 = readv */
+	{ 3, s_writev },			/* 121 = writev */
 	{ 2, s_settimeofday },		/* 122 = settimeofday */
 	{ 3, fchown },			/* 123 = fchown */
 	{ 2, fchmod },			/* 124 = fchmod */

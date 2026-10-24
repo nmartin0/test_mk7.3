@@ -113,17 +113,97 @@ int start_c(int *kframe)
 	  r = sc(189, fd, &fs); out(" socket blksize "); num(fs.st_blksize); out("\n");
 	  check("fstat socket: S_IFSOCK, zeros not -1", !scerr && fs.st_mode == 0140000 && fs.st_size == 0 && fs.st_uid == 0 && fs.st_nlink == 0);
 	  sc(6, fd); }
-	{ /* a read whose copy-out fails returns EFAULT, not waits
-	   * (kern/uipc_socket.c, soreceive()) */
-	  struct iovec { char *base; u_int len; } v[1];
-	  struct { char *name; u_int namelen; struct iovec *iov; u_int iovlen; char *control; u_int controllen; int flags; } mh;
-	  int rfd, wfd; long long pp;
+	{ /* readv (120), writev (121): OSF/1's limits, ERR-24.  On a pipe:
+	   * the root is read-only while init runs. */
+	  struct iovec { char *base; u_int len; } v[18], *uv = (struct iovec *)(unal + 1);
+	  char a[8], b[8], c[8], d[32]; int rfd, wfd, k; long long pp; long ign[3] = { 1, 0, 0 };
+	  r = sc(46, 13, ign, 0); check("sigaction SIGPIPE ignore", !scerr);
 	  pp = sc2(42); rfd = (int)pp; wfd = (int)(pp >> 32); check("pipe", !scerr && rfd >= 0 && wfd >= 0);
+	  /* non-blocking reads: a readv wrongly let through fails, not hangs */
+	  r = sc(92, rfd, 4, 4); check("fcntl F_SETFL O_NONBLOCK on the read end", !scerr);
+	  v[0].base = "ab"; v[0].len = 2; v[1].base = "cdef"; v[1].len = 4;
+	  r = sc(121, wfd, v, 2); check("writev ab+cdef -> 6", !scerr && r == 6);
+	  v[0].base = "ghi"; v[0].len = 3; v[1].base = "x"; v[1].len = 0;
+	  r = sc(121, wfd, v, 2); check("writev with a zero-length area -> 3", !scerr && r == 3);
+	  for (k = 0; k < 8; k++) a[k] = b[k] = c[k] = '.';
+	  v[0].base = a; v[0].len = 2; v[1].base = b; v[1].len = 4; v[2].base = c; v[2].len = 8;
+	  r = sc(120, rfd, v, 3); check("readv 2+4+8 of 9 bytes -> 9", !scerr && r == 9);
+	  check("readv fills areas in order", a[0]=='a' && a[1]=='b' && a[2]=='.' && b[0]=='c' && b[3]=='f' && b[4]=='.' && c[0]=='g' && c[2]=='i' && c[3]=='.');
+	  v[0].base = a; v[0].len = 1;
+	  r = sc(120, rfd, v, 0); check("readv iovcnt 0 -> EINVAL (22)", scerr && r == 22);
+	  r = sc(121, wfd, v, 0); check("writev iovcnt 0 -> EINVAL", scerr && r == 22);
+	  for (k = 0; k < 18; k++) { v[k].base = "z"; v[k].len = 1; }
+	  r = sc(121, wfd, v, 17); check("writev iovcnt 17 -> EINVAL", scerr && r == 22);
+	  r = sc(120, rfd, v, 17); check("readv iovcnt 17 -> EINVAL", scerr && r == 22);
+	  r = sc(121, wfd, v, -1); check("writev iovcnt 0xffffffff -> EINVAL", scerr && r == 22);
+	  r = sc(121, wfd, v, 16); check("writev iovcnt 16 -> 16", !scerr && r == 16);
+	  for (k = 0; k < 32; k++) d[k] = '.';
+	  for (k = 0; k < 16; k++) { v[k].base = d + 2 * k; v[k].len = 1; }
+	  r = sc(120, rfd, v, 16); check("readv iovcnt 16 -> 16, nothing from the failures", !scerr && r == 16 && d[0]=='z' && d[30]=='z' && d[1] != 'z');
+	  v[0].base = (char *)0x10; v[0].len = 0; v[1].base = "ok"; v[1].len = 2;
+	  r = sc(121, wfd, v, 2); check("writev, a zero-length area at page 0 -> 2", !scerr && r == 2);
+	  v[0].base = (char *)0x10; v[0].len = 0; v[1].base = a; v[1].len = 0;
+	  r = sc(120, rfd, v, 2); check("readv, all lengths zero -> 0", !scerr && r == 0);
+	  v[0].base = a; v[0].len = 8;
+	  r = sc(120, rfd, v, 1); check("readv the ok after them", !scerr && r == 2 && a[0]=='o');
+	  r = sc(120, rfd, v, 1); check("readv an empty non-blocking pipe -> EWOULDBLOCK (35)", scerr && r == 35);
+	  v[0].base = "q"; v[0].len = 0x80000000u;
+	  r = sc(121, wfd, v, 1); check("writev negative length -> EINVAL", scerr && r == 22);
+	  r = sc(120, rfd, v, 1); check("readv negative length -> EINVAL", scerr && r == 22);
+	  v[0].base = a; v[0].len = 0x7fffffff; v[1].base = b; v[1].len = 1;
+	  r = sc(120, rfd, v, 2); check("readv lengths summing past 2^31-1 -> EINVAL", scerr && r == 22);
+	  v[0].len = 0x7ffffffe; v[1].len = 1; v[2].base = c; v[2].len = 0x7ffffffe;
+	  r = sc(121, wfd, v, 3); check("writev three lengths past 2^31-1 -> EINVAL", scerr && r == 22);
+	  v[0].len = 0x7fffffff; v[1].len = 0x7fffffff; v[2].len = 2;
+	  r = sc(121, wfd, v, 3); check("writev lengths summing to 2^32 (0) -> EINVAL", scerr && r == 22);
+	  v[2].len = 0x7fffffff;
+	  r = sc(120, rfd, v, 3); check("readv three 2^31-1 lengths, wrapping -> EINVAL", scerr && r == 22);
+	  r = sc(121, wfd, (struct iovec *)0x10, 1); check("writev iov in page 0 -> EFAULT (14)", scerr && r == 14);
+	  r = sc(120, rfd, (struct iovec *)0x10, 1); check("readv iov in page 0 -> EFAULT", scerr && r == 14);
+	  r = sc(121, wfd, (struct iovec *)((((unsigned long)_end + 0xfff) & ~0xfffUL) - 8), 2);
+	  check("writev iov running off the data page -> EFAULT", scerr && r == 14);
+	  v[0].base = (char *)0x10; v[0].len = 4;
+	  r = sc(121, wfd, v, 1); check("writev buffer in page 0 -> EFAULT", scerr && r == 14);
+	  uv[0].base = "UN"; uv[0].len = 2; uv[1].base = "AL"; uv[1].len = 2;
+	  r = sc(121, wfd, uv, 2); check("writev from an unaligned iov array -> 4", !scerr && r == 4);
+	  for (k = 0; k < 8; k++) a[k] = '.';
+	  v[0].base = a; v[0].len = 8;
+	  r = sc(120, rfd, v, 1); check("readv them back: UNAL and no more", !scerr && r == 4 && a[0]=='U' && a[3]=='L' && a[4]=='.');
+	  /* a failed copyout must not wait for more data (kern/uipc_socket.c) */
 	  sc(4, wfd, "zz", 2); r = sc(3, rfd, (char *)0x10, 2); check("read into page 0, data waiting -> EFAULT", scerr && r == 14);
-	  sc(4, wfd, "zzzz", 4); v[0].base = (char *)0x10; v[0].len = 4;
-	  mh.name = 0; mh.namelen = 0; mh.iov = v; mh.iovlen = 1; mh.control = 0; mh.controllen = 0; mh.flags = 0;
-	  r = sc(27, rfd, &mh, 0x40); check("recvmsg MSG_WAITALL into page 0 -> EFAULT, no wait", scerr && r == 14);
-	  sc(6, rfd); sc(6, wfd); }
+	  sc(4, wfd, "zz", 2); v[0].base = (char *)0x10; v[0].len = 2;
+	  r = sc(120, rfd, v, 1); check("readv into page 0, data waiting -> EFAULT", scerr && r == 14);
+	  /* a good area, then a bad one: an error, not a hang */
+	  sc(4, wfd, "zzzz", 4); v[0].base = a; v[0].len = 2; v[1].base = (char *)0x10; v[1].len = 2;
+	  r = sc(120, rfd, v, 2); check("readv good area then page 0 -> EFAULT", scerr && r == 14);
+	  v[0].base = "ab"; v[0].len = 2; v[1].base = (char *)0x10; v[1].len = 2;
+	  r = sc(121, wfd, v, 2); check("writev good area then page 0 -> EFAULT", scerr && r == 14);
+	  v[0].base = d; v[0].len = sizeof d; sc(120, rfd, v, 1);	/* drain */
+	  { struct { char *name; u_int namelen; struct iovec *iov; u_int iovlen; char *control; u_int controllen; int flags; } mh;
+	    /* as much waiting as asked for, so even non-blocking it copies */
+	    sc(4, wfd, "zzzz", 4); v[0].base = (char *)0x10; v[0].len = 4;
+	    mh.name = 0; mh.namelen = 0; mh.iov = v; mh.iovlen = 1; mh.control = 0; mh.controllen = 0; mh.flags = 0;
+	    r = sc(27, rfd, &mh, 0x40); check("recvmsg MSG_WAITALL into page 0 -> EFAULT, no wait", scerr && r == 14); }
+	  v[0].base = a; v[0].len = 1;
+	  r = sc(120, -1, v, 1); check("readv fd -1 -> EBADF (9)", scerr && r == 9);
+	  r = sc(121, 99, v, 1); check("writev fd 99 -> EBADF", scerr && r == 9);
+	  r = sc(120, wfd, v, 1); check("readv on the write end -> EBADF", scerr && r == 9);
+	  r = sc(121, rfd, v, 1); check("writev on the read end -> EBADF", scerr && r == 9);
+	  sc(6, rfd); v[0].base = "pp"; v[0].len = 2;
+	  r = sc(121, wfd, v, 1); check("writev, reader gone -> EPIPE (32), survived", scerr && r == 32);
+	  { long dfl[3] = { 0, 0, 0 };	/* SIGPIPE raised: default action, blocked */
+	    sc(46, 13, dfl, 0); sc(48, 1, 1 << 12);
+	    r = sc(121, wfd, v, 1); check("writev, reader gone, SIGPIPE blocked -> EPIPE", scerr && r == 32);
+	    r = sc(52); check("and SIGPIPE is pending", !scerr && (r & (1 << 12)));
+	    sc(46, 13, ign, 0); sc(48, 2, 1 << 12);	/* ignoring drops it */
+	    r = sc(52); check("ignored, unblocked: nothing pending", !scerr && r == 0); }
+	  sc(6, wfd);
+	  /* on a file: the offset moves by exactly the count (FD-15) */
+	  rfd = sc(5, "/sbin/init", 0, 0);
+	  v[0].base = a; v[0].len = 2; v[1].base = b; v[1].len = 3;
+	  r = sc(120, rfd, v, 2); check("readv /sbin/init 2+3 -> 5", !scerr && r == 5);
+	  pp = sc2(199, rfd, 0, 0LL, 1); check("and the offset is 5", !scerr && pp == 5);
+	  sc(6, rfd); }
 	out("summary: "); num(ok_count); out(" ok, "); num(bad_count); out(" failed\n");
 	if (same(mode, "exec")) {	/* "exec": exec self again */
 		char *nargv[] = { argv[0], "x y", "again", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };
