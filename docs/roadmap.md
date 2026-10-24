@@ -14,7 +14,7 @@ the reasoning; this file holds the ordering.
 
 An architecturally faithful reconstruction of the OSF/1 Single Server
 on OSFMK 7.3, i386, ELF userland, from permissively licensed components
-and OSF's own freely reproducible specifications.
+and OSF's own published documents.
 
 OSF RI built their server by starting from CMU's Mach 3.0/BSD single
 server and replacing the BSD personality. We start from the same CMU
@@ -24,6 +24,21 @@ sense in which this is canonical.
 It will not be OSF's code. Their personality was never released. Ours
 descends from 4.4BSD-Lite2, a cousin and not the same code. The name
 should say reconstruction, not clone.
+
+**How the design is decided.** *Restated 23 October 2026, by the
+maintainer.* OSF's public documents are the specification, written up
+in two files: `docs/osf1-interface.md`, what cuts across calls -- the
+boot, the system-call path, threads and signals, the Mach seam, the
+defects OSF documented -- and `docs/osf1-calls.md`, each call as the
+OSF/1 1.0 manual gives it, with its flags, defaults and errors. The
+baseline is OSF/1 R1.2 as VSX and VSE measured it. Code comes from the
+permitted trees, in `docs/provenance/precedent.md`'s order: this tree,
+OSFMK 6.1, Rhapsody and Darwin 0, XNU, then our own; the BSD donor is
+`nmartin0/4.4BSD-Lite2`, branch `dev3`. No source that was not
+released for others to use, and none under the GPL, is read, not even
+as a specification. Where the documents are silent (their GAP entries)
+or wrong (ERR), the maintainer decides, and the decision is recorded
+where the gap is.
 
 ## Tier 0 — the ground
 
@@ -37,6 +52,7 @@ Measured against the trees as they stand:
 | the three are one repository | **done** for two of them — the kernel at `osfmk/`, and Lites at `osfmk/src/lites/`, a component of the kernel's own sandbox as OSF's `osf1_server` was |
 | one build drives all three | **done** for the kernel and Lites -- `build_world` builds the kernel, the bootstrap task, `name_server`, `default_pager` and Lites (0051, 0059), Lites with `build -here lites`, OSF's step 8; the server runs NetBSD 1.0's userland multi-user (`docs/status.md`) |
 | the two Utah traps checked for | **done** — trap 1 fires, trap 2 does not on the generic path; `docs/status.md` |
+| a specification to test against | **written**, from public documents only: `docs/osf1-interface.md`, about 300 items (0140), and `docs/osf1-calls.md`, 4,431 items from 265 pages of the OSF/1 1.0 manual (0141); each item says how a program checks it. The tests themselves are not yet written |
 
 Those rows were brought up to date on 17 October 2026; the
 milestones below carry their own dates.
@@ -47,13 +63,13 @@ as `src/osf1_server`, a peer of `mach_kernel` in one ODE sandbox, with
 the same build driver run after `mach_services`. Lites is at
 `osfmk/src/lites/` accordingly. Two earlier placements were wrong —
 inside `mach_services/servers/` and then at the top level beside
-`osfmk/` — and `docs/provenance/precedent.md` records both. Every lineage whose layout is documented —
-CMU's `src/{mk,ux}`, OSF's separate OSF/1 tree, OSF RI's MkLinux
-DR3 — keeps the personality server beside the
-microkernel as a peer, built against its exports. The `startup` name
-belongs to the runtime slot in `/mach_servers`, not to a source
-directory. `docs/provenance/precedent.md`, "Where the server lives,
-and why", has the sources.
+`osfmk/` — and `docs/provenance/precedent.md` records both. Every
+lineage whose layout is documented — CMU's `src/{mk,ux}`, OSF's
+separate OSF/1 tree, OSF RI's MkLinux DR3 — keeps the personality
+server beside the microkernel as a peer, built against its exports.
+The `startup` name belongs to the runtime slot in `/mach_servers`, not
+to a source directory. `docs/provenance/precedent.md`, "Where the
+server lives, and why", has the sources.
 
 **Lites builds, starts and runs a userland** (milestone 3).
 `osfmk/src/lites/makefile` runs Lites' own configure build under ODE
@@ -119,7 +135,8 @@ there are kept to what the running system needs.
 greps and both change the shape of Tier 1 if they fire.
 
 1. Does Lites allocate per-thread state at a constant offset from a
-   fixed-size C-threads stack, as the OSF/1 server did with `uthread`?
+   fixed-size C-threads stack, as Utah recorded of the OSF/1 server's
+   `uthread`?
    If yes, the kernel must hand the server its own service stack and
    cannot reuse the kernel stack.
 2. Do Lites' generated stubs copy arguments that the BSD service
@@ -189,6 +206,16 @@ pipes are built in (0119); six bug fixes from the
 MkLinux project's 1999 tree are taken (0125). S-22, NetBSD 1.0's
 shell failing with sixteen background jobs, is fixed in the userland
 with NetBSD's own 1996 lines (`docs/deferred.md`).
+
+**22 and 23 October 2026.** Tier 1 item 2's step 4 began (below). The
+rule for sources was restated, as "How the design is decided" above
+has it, and the work brought into line with it: S-17, the parent's
+terminal after a child server halts, is open again, with no public
+document to settle it; S-21 is kept as Lites has it, by the
+maintainer's choice; and words after the root on the `startup` line
+are ignored with a message, since nothing documents them (0107;
+`docs/osf1-interface.md`, GAP-2). The OSF/1 interface was written up
+from public documents as the specification (0140, 0141).
 
 **0. The releases, not the copies.** Neither import is its upstream's
 release (`docs/provenance/precedent.md`, "Where the two imports came
@@ -298,9 +325,34 @@ FAST, with the debugger, is for debugging only.
 
 ## Tier 1 — the server becomes OSF-shaped
 
-The five decisions, each settled by a primary source, are in
+The five decisions, each settled by a public source, are in
 `docs/deferred.md` with the reasoning. The order below is forced by
 dependency, not chosen.
+
+### The tests, alongside every item
+
+*Added 23 October 2026.* The conformance suite is built from the two
+specification files, one test per item, from each item's `Test:`
+line, and run against both servers of item 1, so that the
+`noemulator` server is measured against the emulator's at every step
+of item 2. It stands in for VSX and VSE, which are not to hand, and
+adds what they cannot see: the multithreaded, Mach and boot
+behaviour, and the hostile programs of `docs/osf1-interface.md`
+SYS-9, none of which may hang, crash or slowly exhaust the server.
+`[DEC]` items are a guide and `[Fortran]` items are out
+(`docs/osf1-calls.md`, "How to read it"). S-23's descriptor-table
+fuzzer joins it in `docs/tools/`.
+
+Wanted from the maintainer before the tests that depend on them:
+rulings on the seven disagreements in the documents, ERR-18 to ERR-24
+(`SIGCONT`, stop signals in orphaned groups, per-thread pending
+signals, which calls restart, `setpgid` with group 0, acquiring a
+controlling terminal, interrupted partial transfers), and decisions on
+the open GAPs that are policy rather than fact -- GAP-10, the
+task-level system-call port; GAP-11, what the bootstrap service gives
+an unprivileged task; GAP-12, whether ordinary processes may make
+Mach calls. Still to read for more of the interface:
+`docs/osf1-interface.md`, "Not yet read".
 
 ### 1. One build, two servers
 
@@ -395,8 +447,13 @@ from the sources above:
    ("The syscall path is exception-driven"). Not the port Lites now
    gives every exception, with `EXCEPTION_STATE_IDENTITY`: debuggers
    interpose that one, and its messages carry port rights (Patience
-   §3). The dispatch is the integrated kernel's `syscall()`, "with 15
-   extra lines of preamble, 2 postamble and a name change" (§7):
+   §3). *Added 23 October 2026:* a thread a program makes for itself
+   with `thread_create` has no thread-level port, so the server also
+   needs a task-level `EXC_SYSCALL` port, or the same in effect
+   (`docs/osf1-interface.md`, SYS-8 to SYS-10; how it is set up is
+   GAP-10). The dispatch is the integrated kernel's `syscall()`,
+   "with 15 extra lines of preamble, 2 postamble and a name change"
+   (§7):
    Lite2's i386 `trap.c` `syscall()` against Lites' own `sysent`.
 3. *`copyin` and `copyout`.* `copyin` by `vm_read_overwrite`, which
    7.3 has as trap -30 (`kern/ipc_mig.c`); `copyout` by `vm_write`,
@@ -408,8 +465,9 @@ from the sources above:
 5. *Fork's return in the child, signals and exit.* Signal frames on
    the user stack and `sigreturn`: Lite2's i386 `sendsig()` and
    `sigreturn()`. A signal for a thread that makes no system calls
-   (S-11) is delivered OSF's way, by `thread_abort_safely` between a
-   suspend and a resume, retried when the abort fails.
+   (S-11) is delivered as the OSF Mach 3 Kernel Interfaces'
+   `thread_abort_safely` describes: between a suspend and a resume,
+   retried when the abort fails.
 
 Items 1 to 3 are the first that can be tested, together: the
 `noemulator` server running one program, then `init`, then a shell.
@@ -466,20 +524,22 @@ What differs from the plan above:
   until step 5 builds the handler's frame; pending signals are taken
   as 4.4BSD's `userret()` takes them, on the way out of each call.
 
-*Next, step 4.* `/bin/sh` run by the probe's `execve` stops at its
-first missing call, `__sysctl` (202, `getpagesize()` through
-`hw.pagesize`), and would meet `obreak`, `fstat`, `readv`, `select`
-after it; `init` needs `fork` (step 5). Their bodies are in `dev3`
-(`vm/vm_unix.c`, `kern/kern_descrip.c`, `kern/sys_generic.c`,
-`kern/kern_sysctl.c`), against which Lites' server copies are to be
-brought.
+*Next, step 4, as of 23 October 2026.* `__sysctl`, `break` and
+`fstat` are in; next `readv` and `writev`, then `select`, then
+`fork`, which `init` needs; their bodies are in `dev3`
+(`kern/sys_generic.c`, `kern/kern_fork.c`), against which Lites'
+server copies are to be brought. Then S-23's second half, a
+reference held on a file for the length of a call that sleeps
+(*Design of the OSF/1 Operating System*, 11.1.2), before item 2 is
+called done; then step 5. Each call is checked against its items in
+`docs/osf1-calls.md`.
 
 ### 3. The locking
 
 Lites has 603 `spl*()` calls resolving to its own `spl_n()` in
 `include/sys/synch.h`, plus 106 `mutex_lock` and 78 `condition_*`,
-across roughly 96 files. That model is CMU's, inherited from the UX
-server, and documented in Golub et al. 1990: "sleep, wakeup, spl
+across roughly 96 files. That model is CMU's, from its Unix server,
+and documented in Golub et al. 1990: "sleep, wakeup, spl
 implemented by using the C Threads package's mutex, condition_wait and
 condition_signal".
 
@@ -519,9 +579,11 @@ low load and under 1% at high.
 
 ### 5. The ABI, and the boot path
 
-The syscall surface filled from the compat-layer union and the
-documentation; then the kernel-loaded boot path via `KERNEL_LOADED` and
-`unix_mapbase`/`unix_mapend`.
+The syscall surface filled to `docs/osf1-calls.md`: every call the
+OSF/1 1.0 manual gives, with its flags, defaults and errors, OSF/1's
+where they differ from 4.4BSD-Lite2's; then the kernel-loaded boot path
+via `KERNEL_LOADED` and `unix_mapbase`/`unix_mapend`
+(`docs/osf1-interface.md`, COLO).
 
 ## Tier 2 — what the architecture is for
 
@@ -556,6 +618,10 @@ Listed so it is not rediscovered. None of it is scheduled.
   OSF/1 1.0–1.2 and to DEC's Alpha line. `exec_with_loader` is out.
 - **Alpha.** i386 is the platform OSF's MK7.3 release builds and
   boots, and is where the collocated fast path is already written.
+- **DEC's own interfaces and the Fortran library.** What the 1.0
+  manual marks as DEC's (its "Digital" pages and ENVIRONMENT NOTES,
+  `[DEC]` in `docs/osf1-calls.md`) is a guide, not a requirement; the
+  `libU77` pages (`[Fortran]`) are out.
 - **OSF/1 AD's distributed machinery**, which the AD papers
   describe: the AD branch, not the MK single server. *Corrected 21 October
   2026:* NORMA stood in this list; the kernel's DIPC and FLIPC are
