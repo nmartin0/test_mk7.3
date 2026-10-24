@@ -189,9 +189,14 @@ thread_dup(child_thread, new_state, new_state_count, parent_pid, rc)
 	regs->eax = parent_pid;
 	regs->edx = rc;
 
-	(void) thread_set_state(child_thread, i386_THREAD_STATE,
-				new_state, new_state_count);
-	return (TRUE);
+	/*
+	 * AI-ONLY NOTE: a refused state is a failed fork, not a child
+	 * started from nothing (s_fork() then ends the child's task).
+	 * docs/roadmap.md, Tier 1 item 2, step 4.
+	 */
+	return (thread_set_state(child_thread, i386_THREAD_STATE,
+				 new_state, new_state_count)
+		== KERN_SUCCESS);
 }
 
 /* 

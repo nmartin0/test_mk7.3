@@ -158,7 +158,14 @@ s_fork(
 	    /*
 	     * No tasks or threads available.
 	     */
-	    return EAGAIN;
+	    /*
+	     * AI-ONLY NOTE: the count taken above given back, and ENOMEM,
+	     * OSF/1's for no space for a process (OSF/1 1.0 manual,
+	     * fork(2); docs/osf1-calls.md, fork-E2); Lites kept the count
+	     * and returned EAGAIN, the error for the per-user limit.
+	     */
+	    (void)chgproccnt(uid, -1);
+	    return ENOMEM;
 	}
 
 	/*
@@ -276,6 +283,25 @@ mapin_user(p)
 }
 #endif	MAP_UAREA
 
+/*
+ * AI-ONLY NOTE: undo proc_allocate() for a process newproc() could
+ * not give a task and thread: Lites left it on allproc, counted, with
+ * the parent's process group copied in unreferenced, for the pid scan
+ * to read after that group was freed.  A failing task_create() is
+ * open to any program -- another of its threads can end its task.
+ * docs/roadmap.md, Tier 1 item 2, step 4.
+ */
+static void
+newproc_unallocate(struct proc *p2)
+{
+	mutex_lock(&allproc_lock);
+	if ((*p2->p_prev = p2->p_next) != NULL)
+		p2->p_next->p_prev = p2->p_prev;
+	nprocs--;
+	mutex_unlock(&allproc_lock);
+	proc_free(p2);
+}
+
 struct proc *
 newproc(struct proc *p1, boolean_t is_sys_proc, boolean_t isvfork)
 {
@@ -374,6 +400,7 @@ again:
 			     &p2->p_task);
 	if (result != KERN_SUCCESS) {
 	    printf("kern_fork:task create failure %x\n",result);
+	    newproc_unallocate(p2);	/* AI-ONLY NOTE: see above */
 	    return 0;
 	}
 	result = thread_create(p2->p_task, &p2->p_thread);
@@ -381,6 +408,7 @@ again:
 	    (void) task_terminate(p2->p_task);
 	    (void) mach_port_deallocate(mach_task_self(), p2->p_task);
 	    printf("mach_fork:thread create failure %x\n",result);
+	    newproc_unallocate(p2);	/* AI-ONLY NOTE: see above */
 	    return 0;
 	}
 	new_req_port = task_to_proc_enter(p2->p_task, p2);
@@ -402,6 +430,17 @@ again:
     }
 
 #if	MAP_UAREA
+	/*
+	 * AI-ONLY NOTE: clear the window's range in the child first.  The
+	 * parent's own window there is not inherited (VM_INHERIT_NONE),
+	 * but a program may have put memory of its own there that is --
+	 * with vm_inherit(), or after unmapping the window -- and then
+	 * mapin_user()'s vm_map() at that fixed address failed and the
+	 * server panicked.  Found by an independent review of fork()
+	 * without the emulator; docs/roadmap.md, Tier 1 item 2, step 4.
+	 */
+	(void) vm_deallocate(p2->p_task, EMULATOR_END - 4*vm_page_size,
+			     4*vm_page_size);
 	if ((result=mapin_user(p2)) != KERN_SUCCESS) {
 	    printf("kern_fork:mapin_user %x\n",result);
 	    panic("kern_fork");
