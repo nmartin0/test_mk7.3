@@ -46,6 +46,14 @@ struct ushared_ro {
 	struct plimit	us_limit;
 	int		us_cursig;
 	int		us_flag;
+	/*
+	 * AI-ONLY NOTE: new.  The code that calls a signal handler and
+	 * then sigreturn(), for a process the server runs without the
+	 * emulator (server/i386/syscall.c), read-only to the process, as
+	 * 4.4BSD-Lite2's i386 keeps it in the process's pcb (pcb_sigc,
+	 * the same size).  Last, so no other field moves.
+	 */
+	long		us_sigcode[8];
 };
 
 struct ushared_rw {

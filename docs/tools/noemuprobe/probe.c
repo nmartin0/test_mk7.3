@@ -20,15 +20,58 @@ extern long long sc2(int code, ...);	/* eax:edx */
 static int con = -1;
 static int len(const char *s){int n=0;while(s[n])n++;return n;}
 static int same(const char *a, const char *b){while(*a && *a==*b){a++;b++;}return *a==*b;}
-static void out(const char *s){ sc(4, con, s, len(s)); }
+static int ser = -1;		/* /dev/tty00 too, when it opens: a log the host can read */
+static void out(const char *s){ sc(4, con, s, len(s)); if (ser >= 0) sc(4, ser, s, len(s)); }
 static void num(long v){ char b[24]; int i=23; int neg=v<0; unsigned long u=neg?-v:v; b[i]=0; do{b[--i]='0'+u%10;u/=10;}while(u); if(neg)b[--i]='-'; out(b+i);}
 static void hex(unsigned long v){ char b[12]; int i=11; b[i]=0; do{b[--i]="0123456789abcdef"[v&15];v>>=4;}while(v); out("0x"); out(b+i);}
 static int ok_count, bad_count;
-static void check(const char *what, int cond){ out(cond?"  ok   ":"  FAIL "); out(what); out("\n"); if(cond)ok_count++; else bad_count++; }
+static const char *failed[16];
+static void check(const char *what, int cond){ out(cond?"  ok   ":"  FAIL "); out(what); out("\n"); if(cond)ok_count++; else { if (bad_count < 16) failed[bad_count] = what; bad_count++; } }
 struct timeval { long tv_sec, tv_usec; };
 struct stat { unsigned long st_dev; unsigned long st_ino; unsigned short st_mode; short st_nlink; unsigned long st_uid, st_gid, st_rdev;
 	long st_atime, st_atimens, st_mtime, st_mtimens, st_ctime, st_ctimens; long long st_size; long long st_blocks; unsigned long st_blksize, st_flags, st_gen; long st_lspare; long long st_qspare[2]; };
 static char unal[128];
+/* signals (step 5): 4.4BSD-Lite2's i386 sigcontext, and what the handlers saw */
+struct sigctx { int sc_onstack, sc_mask, sc_sp, sc_fp, sc_ap, sc_pc, sc_ps; };
+static volatile int h_sig, h_code, h_mask, h_count, h_nested, h_onalt, h_wfd = -1, h_scmask, h_sconstack, h_usr2;
+static volatile unsigned long h_sp, h_altlo, h_althi, h_ret, h_pc;
+static char altdata[0x6000] = { 1 };	/* initialized: the program file's pages, untouched */
+static volatile struct sigctx *h_scp;
+static void h_plain(int sig, int code, struct sigctx *scp)
+{
+	int here;
+	h_sig = sig; h_code = code; h_scp = scp; h_count++;
+	h_ret = (unsigned long)__builtin_return_address(0); h_pc = scp->sc_pc;
+	h_scmask = scp->sc_mask; h_sconstack = scp->sc_onstack;
+	h_mask = sc(48, 1, 0);			/* sigprocmask(SIG_BLOCK, 0): the mask */
+	h_sp = (unsigned long)&here;
+	h_onalt = h_sp >= h_altlo && h_sp < h_althi;
+	if (h_wfd >= 0) sc(4, h_wfd, "w", 1);
+}
+static void h_inner(int sig, int code, struct sigctx *scp) { (void)code; (void)scp; h_nested = sig; h_usr2++; }
+static void h_outer(int sig, int code, struct sigctx *scp)
+{
+	h_sig = sig; h_scp = scp; h_count++;
+	sc(37, sc(20), 31);			/* kill(self, SIGUSR2): its handler runs inside */
+	if (h_nested != 31) h_nested = -1;
+}
+static void h_segv(int sig, int code, struct sigctx *scp)
+{
+	h_sig = sig; h_code = code; h_count++;
+	scp->sc_pc += 5;			/* past "movl 0x10,%eax" */
+}
+static void h_exit5(int sig, int code, struct sigctx *scp) { (void)sig; (void)code; (void)scp; sc(1, 5); }
+static void h_iopl(int sig, int code, struct sigctx *scp)
+{
+	(void)code; h_sig = sig; h_count++;
+	scp->sc_ps |= 0x3000 | 0x4000 | 0x20000 | 0x40000;	/* IOPL 3, NT, VM: refused; AC: a program's */
+	scp->sc_ps &= ~0x0200;			/* IF off: refused */
+}
+static void h_badscp(int sig, int code, struct sigctx *scp)
+{
+	(void)sig; (void)code;
+	((int *)scp)[-5] = 0x10;		/* the frame's sf_scp: sigreturn fails */
+}
 extern char _end[];			/* probe.ld: the end of data and BSS */
 int start_c(int *kframe)
 {
@@ -37,6 +80,8 @@ int start_c(int *kframe)
 	char *mode = argc < 1 ? "" : argv[argc - 1][0] == '-' ? argv[0] : argv[argc - 1];
 	for (p = mode; *p; p++) if (*p == '/') mode = p + 1;
 	con = sc(5, "/dev/console", 2, 0);	/* open O_RDWR */
+	ser = sc(5, "/dev/tty00", 1 | 4, 0);	/* O_WRONLY|O_NONBLOCK: no wait for carrier */
+	if (scerr) ser = -1; else sc(92, ser, 4, 0);	/* F_SETFL 0: writes wait */
 	if (scerr) sc(1, 99);
 	out("\n== noemu probe ==\nargc "); num(argc); out("\n");
 	for (i = 0; i < argc; i++) { out(" argv["); num(i); out("] "); out(argv[i]); out("\n"); }
@@ -272,6 +317,207 @@ int start_c(int *kframe)
 #undef	FS
 #undef	FI
 	  sc(6, rfd); sc(6, wfd); }
+	{ /* signals (step 5): handlers, sigreturn (103), frames */
+	  long act[3], oact[3]; int me = sc(20), k, fd2[2], st; long long pp, fr;
+	  struct ss { char *ss_base; int ss_size; int ss_flags; } ss;
+	  struct itv { struct timeval it_interval, it_value; } itv;
+	  char c;
+	  unsigned long b0 = ((unsigned long)_end + 0xfff) & ~0xfffUL;
+	  act[0] = (long)h_plain; act[1] = 0; act[2] = 0;
+	  r = sc(46, 30, act, oact); check("sigaction SIGUSR1 -> h_plain", !scerr);
+	  h_count = 0;
+	  r = sc(37, me, 30);
+	  check("kill(self, SIGUSR1): handler ran once, kill returned 0", !scerr && r == 0 && h_count == 1);
+	  check("handler: signum 30, scp in the frame", h_sig == 30 && h_scp != 0);
+	  check("handler: SIGUSR1 blocked while it runs", (h_mask & (1 << 29)) != 0);
+	  check("after sigreturn: SIGUSR1 unblocked again", (sc(48, 1, 0) & (1 << 29)) == 0);
+	  check("context: the saved pc is the kill call's return", h_pc > 0x1000 && h_pc < 0x10000);
+	  check("the handler returns into the read-only page's sigcode", h_ret >= 0xa003f000 && h_ret < 0xa0040000);
+	  check("context: sc_mask the mask before (none), sc_onstack 0", h_scmask == 0 && h_sconstack == 0);
+	  /* nested: SIGUSR1's handler raises SIGUSR2 */
+	  act[0] = (long)h_inner; sc(46, 31, act, 0);
+	  act[0] = (long)h_outer; sc(46, 30, act, 0);
+	  h_count = 0; h_nested = 0;
+	  sc(37, me, 30);
+	  check("nested: SIGUSR2's handler ran inside SIGUSR1's", h_count == 1 && h_nested == 31);
+	  /* two pending at once: both handlers run when unblocked */
+	  act[0] = (long)h_plain; act[1] = 0; act[2] = 0; sc(46, 30, act, 0);
+	  act[0] = (long)h_inner; sc(46, 31, act, 0);
+	  sc(48, 1, (1 << 29) | (1 << 30));
+	  sc(37, me, 30); sc(37, me, 31);
+	  h_count = 0; h_usr2 = 0;
+	  sc(48, 2, (1 << 29) | (1 << 30));
+	  check("two pending signals, unblocked: both handlers run", h_count == 1 && h_usr2 == 1);
+	  /* a burst while the receiver makes calls: no signal left masked */
+	  h_count = 0;
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) {
+		for (k = 0; k < 300; k++) sc(37, me, 30);
+		sc(1, 0);
+	  }
+	  for (k = 0; k < 3000; k++) sc(20);
+	  sc(7, (int)fr, &st, 0, 0);
+	  k = h_count;
+	  check("burst of 300 signals during 3000 calls: some delivered", k >= 1);
+	  check("after the burst: SIGUSR1 not left blocked", (sc(48, 1, 0) & (1 << 29)) == 0);
+	  sc(37, me, 30);
+	  check("after the burst: one more kill is delivered", h_count == k + 1);
+	  /* EINTR, and SA_RESTART */
+	  pp = sc2(42); fd2[0] = (int)pp; fd2[1] = (int)(pp >> 32);
+	  act[0] = (long)h_plain; act[1] = 0; act[2] = 0; sc(46, 14, act, 0);	/* SIGALRM */
+	  itv.it_interval.tv_sec = 0; itv.it_interval.tv_usec = 0;
+	  itv.it_value.tv_sec = 0; itv.it_value.tv_usec = 200000;
+	  h_count = 0; sc(83, 0, &itv, 0);
+	  r = sc(3, fd2[0], &c, 1); check("read of an empty pipe, SIGALRM, no SA_RESTART -> EINTR", scerr && r == 4 && h_count == 1);
+	  act[2] = 2; sc(46, 14, act, 0);	/* SA_RESTART */
+	  h_count = 0; h_wfd = fd2[1]; sc(83, 0, &itv, 0);
+	  r = sc(3, fd2[0], &c, 1); h_wfd = -1;
+	  check("same, SA_RESTART, handler writes a byte -> the read restarts, 1", !scerr && r == 1 && c == 'w' && h_count == 1);
+	  /* sigsuspend */
+	  sc(48, 1, 1 << 13);			/* block SIGALRM */
+	  act[2] = 0; sc(46, 14, act, 0);
+	  h_count = 0; sc(83, 0, &itv, 0);
+	  r = sc(111, 0); check("sigsuspend(empty) -> EINTR after the handler", scerr && r == 4 && h_count == 1);
+	  check("sigsuspend: the mask is back (SIGALRM blocked)", (sc(48, 1, 0) & (1 << 13)) != 0);
+	  sc(48, 2, 1 << 13);
+	  /* the signal stack */
+	  r = sc(17, (char *)(b0 + 0x5000)); check("signals: break grows 5 pages for a signal stack", !scerr);
+	  h_altlo = b0 + 0x1000; h_althi = b0 + 0x5000;
+	  ss.ss_base = (char *)h_altlo; ss.ss_size = 0x4000; ss.ss_flags = 0;
+	  r = sc(53, &ss, 0); check("sigaltstack 16K", !scerr);
+	  act[0] = (long)h_plain; act[1] = 0; act[2] = 1; sc(46, 30, act, 0);	/* SA_ONSTACK */
+	  h_count = 0; h_onalt = 0; sc(37, me, 30);
+	  check("SA_ONSTACK handler runs on the signal stack", h_count == 1 && h_onalt);
+	  { struct ss o; sc(53, 0, &o); check("after it: not on the signal stack", (o.ss_flags & 1) == 0); }
+	  ss.ss_flags = 4; sc(53, &ss, 0);	/* SA_DISABLE */
+	  act[2] = 0; sc(46, 30, act, 0);
+	  /* a caught fault */
+	  act[0] = (long)h_segv; sc(46, 11, act, 0);
+	  h_count = 0;
+	  __asm__ volatile("movl 0x10,%%eax" ::: "eax");
+	  check("SIGSEGV caught: handler ran, went on past the fault", h_count == 1 && h_sig == 11);
+	  act[0] = 0; sc(46, 11, act, 0);
+	  /* a forged context */
+	  act[0] = (long)h_iopl; sc(46, 30, act, 0);
+	  h_count = 0; sc(37, me, 30);
+	  { unsigned long fl; __asm__ volatile("pushfl; popl %0" : "=r"(fl));
+	    check("sigreturn: IOPL, NT, VM and IF off refused, AC taken", h_count == 1 && (fl & 0x27000) == 0 && (fl & 0x0200) && (fl & 0x40000));
+	    __asm__ volatile("pushfl; andl $~0x40000,(%%esp); popfl" ::: "cc"); }
+	  /* sigreturn with a frame whose context is unreadable: EINVAL (Lite2) */
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) {
+		static int fake[8];
+		int e, cf;
+		fake[2] = 0x10;			/* sf_scp in page 0 */
+		__asm__ volatile("movl %%esp,%%esi; movl %2,%%esp; movl $103,%%eax; lcall $7,$0; setc %%cl; movzbl %%cl,%1; movl %%esi,%%esp"
+				 : "=a"(e), "=r"(cf) : "r"(fake) : "ecx", "edx", "esi", "memory", "cc");
+		sc(1, cf ? e : 100);
+	  }
+	  sc(7, (int)fr, &st, 0, 0);
+	  check("sigreturn, frame's context in page 0 -> EINVAL", (st & 0x7f) == 0 && ((st >> 8) & 0xff) == 22);
+	  /* a handler that spoils its frame: sigreturn fails, the sigcode halts: killed */
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) {
+		act[0] = (long)h_badscp; act[1] = 0; act[2] = 0; sc(46, 30, act, 0);
+		sc(37, sc(20), 30);
+		sc(1, 99);
+	  }
+	  sc(7, (int)fr, &st, 0, 0);
+	  check("spoiled frame: the child is killed by a signal at the hlt", (st & 0x7f) != 0 && (st & 0x7f) != 0x7f);
+	  /* the sigcode page is read-only */
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) { *(volatile int *)h_ret = 0; sc(1, 99); }
+	  sc(7, (int)fr, &st, 0, 0);
+	  check("a write to the sigcode page kills the child", (st & 0x7f) == 10 || (st & 0x7f) == 11);
+	  /* a signal that comes while the process is in user code */
+	  act[0] = (long)h_plain; act[2] = 0; sc(46, 30, act, 0);
+	  h_count = 0;
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) { sc(37, me, 30); sc(1, 0); }
+	  for (k = 0; k < 300000000 && h_count == 0; k++)	/* user code only */
+		__asm__ volatile("" ::: "memory");
+	  st = h_count;
+	  r = sc(20);
+	  check("arrives in user code: the handler runs in the loop, getpid after", st == 1 && r == me && h_count == 1);
+	  sc(7, (int)fr, &st, 0, 0);
+	  /* the registers of a loop in user code survive a signal taken there */
+	  h_count = 0;
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) { sc(37, me, 30); sc(1, 0); }
+	  { int bad;
+	    __asm__ volatile(
+		"pushl %%ebp\n\t"
+		"movl $0x11111111,%%eax; movl $0x22222222,%%ecx; movl $0x33333333,%%edx\n\t"
+		"movl $0x44444444,%%esi; movl $0x55555555,%%edi; movl $0x66666666,%%ebp\n\t"
+		"1: cmpl $0,%1; je 1b\n\t"
+		"xorl %%ebx,%%ebx\n\t"
+		"cmpl $0x11111111,%%eax; setne %%bl; orl %%ebx,%%ebx; jnz 2f\n\t"
+		"cmpl $0x22222222,%%ecx; setne %%bl; orl %%ebx,%%ebx; jnz 2f\n\t"
+		"cmpl $0x33333333,%%edx; setne %%bl; orl %%ebx,%%ebx; jnz 2f\n\t"
+		"cmpl $0x44444444,%%esi; setne %%bl; orl %%ebx,%%ebx; jnz 2f\n\t"
+		"cmpl $0x55555555,%%edi; setne %%bl; orl %%ebx,%%ebx; jnz 2f\n\t"
+		"cmpl $0x66666666,%%ebp; setne %%bl\n\t"
+		"2: popl %%ebp\n\t"
+		"movl %%ebx,%0"
+		: "=m"(bad) : "m"(h_count) : "eax", "ebx", "ecx", "edx", "esi", "edi", "memory", "cc");
+	    check("signal in user code: eax, ecx, edx, esi, edi, ebp kept", bad == 0 && h_count == 1); }
+	  sc(7, (int)fr, &st, 0, 0);
+	  /* stopped, sent a caught signal, continued: the handler runs in its loop */
+	  act[0] = (long)h_exit5; act[1] = 0; act[2] = 0; sc(46, 30, act, 0);
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1)
+		for (;;) __asm__ volatile("" ::: "memory");
+	  act[0] = (long)h_plain; sc(46, 30, act, 0);
+	  { struct timeval t; t.tv_sec = 0; t.tv_usec = 200000;
+	    sc(93, 0, 0, 0, 0, &t);
+	    sc(37, (int)fr, 17);		/* SIGSTOP */
+	    sc(93, 0, 0, 0, 0, &t);
+	    sc(37, (int)fr, 30);		/* SIGUSR1, caught */
+	    sc(93, 0, 0, 0, 0, &t);
+	    sc(37, (int)fr, 19);		/* SIGCONT */
+	    t.tv_sec = 2; sc(93, 0, 0, 0, 0, &t);
+	    r = sc(7, (int)fr, &st, 1, 0);	/* WNOHANG */
+	    if (r != (int)fr) { sc(37, (int)fr, 9); sc(7, (int)fr, &st, 0, 0); } }
+	  check("stopped, caught signal, continued: handler runs in the loop (exit 5)", (st & 0x7f) == 0 && ((st >> 8) & 0xff) == 5);
+	  /* a stack that will not take the frame: SIGILL */
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) {
+		ss.ss_base = (char *)0x40000000; ss.ss_size = 0x4000; ss.ss_flags = 0;	/* unmapped */
+		sc(53, &ss, 0);
+		act[0] = (long)h_plain; act[2] = 1; sc(46, 30, act, 0);
+		sc(37, sc(20), 30);
+		sc(1, 99);
+	  }
+	  r = sc(7, (int)fr, &st, 0, 0);
+	  check("no room for the frame: the child dies of SIGILL (4)", !scerr && (st & 0x7f) == 4);
+	  /* the same for a child in user code: the signal comes in from outside */
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) {
+		ss.ss_base = (char *)0x40000000; ss.ss_size = 0x4000; ss.ss_flags = 0;
+		sc(53, &ss, 0);
+		act[0] = (long)h_plain; act[2] = 1; sc(46, 30, act, 0);
+		for (;;) __asm__ volatile("" ::: "memory");
+	  }
+	  { struct timeval t; t.tv_sec = 0; t.tv_usec = 300000; sc(93, 0, 0, 0, 0, &t); }
+	  sc(37, (int)fr, 30);
+	  { struct timeval t; t.tv_sec = 3; t.tv_usec = 0; sc(93, 0, 0, 0, 0, &t); }
+	  r = sc(7, (int)fr, &st, 1, 0);	/* WNOHANG */
+	  if (r != (int)fr) { sc(37, (int)fr, 9); sc(7, (int)fr, &st, 0, 0); }
+	  check("in user code, no room for the frame: the child dies of SIGILL (4)", (st & 0x7f) == 4);
+	  /* a signal stack in the program's initialized data, never touched: the frame pages it in */
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) {
+		h_altlo = ((unsigned long)altdata + 0xfff) & ~0xfffUL; h_althi = h_altlo + 0x4000;
+		ss.ss_base = (char *)h_altlo; ss.ss_size = 0x4000; ss.ss_flags = 0;
+		sc(53, &ss, 0);
+		act[0] = (long)h_plain; act[1] = 0; act[2] = 1; sc(46, 30, act, 0);
+		h_count = 0; h_onalt = 0; sc(37, sc(20), 30);
+		sc(1, h_count == 1 && h_onalt ? 0 : 1);
+	  }
+	  r = sc(7, (int)fr, &st, 0, 0);
+	  check("signal stack in untouched program data: the handler runs there", !scerr && st == 0);
+	  act[0] = 0; act[2] = 0; sc(46, 30, act, 0); sc(46, 31, act, 0); sc(46, 14, act, 0);
+	  sc(17, (char *)b0); sc(6, fd2[0]); sc(6, fd2[1]); }
 	{ /* fcntl locks (92): F_SETLK, F_GETLK, after the S-23 change */
 	  struct flk { long long l_start, l_len; int l_pid; short l_type, l_whence; } fl;
 	  int fd = sc(5, "/sbin/init", 0, 0);
@@ -380,6 +626,7 @@ int start_c(int *kframe)
 	  check("20 rounds of fork, exit, wait4", okall);
 	  r = sc(7, -1, &st, 1, 0); check("no children left: wait4 -> ECHILD (10)", scerr && r == 10);
 	  sc(6, fd); sc(6, rfd); sc(6, wfd); }
+	for (i = 0; i < bad_count && i < 16; i++) { out("failed: "); out(failed[i]); out("\n"); }
 	out("summary: "); num(ok_count); out(" ok, "); num(bad_count); out(" failed\n");
 	if (same(mode, "exec")) {	/* "exec": exec self again */
 		char *nargv[] = { argv[0], "x y", "again", 0 }; char *nenv[] = { "PROBE=2", "TERM=vt100", 0 };

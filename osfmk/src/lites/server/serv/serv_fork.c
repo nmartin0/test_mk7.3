@@ -88,6 +88,7 @@
 #include <sys/file.h>
 #include <sys/acct.h>
 #include <sys/ktrace.h>
+#include <sys/signalvar.h>	/* AI-ONLY NOTE: SAS_NOTIFY_DONE, below */
 #include <sys/synch.h>
 #include <serv/import_mach.h>
 #include <sys/assert.h>
@@ -188,8 +189,12 @@ s_fork(
 	 * AI-ONLY NOTE: the child's thread sends its system calls to the
 	 * child's request port, as every process's does without the
 	 * emulator (i386/syscall.c); a thread's exception ports are not
-	 * inherited by a new task.  Before the thread starts.
+	 * inherited by a new task.  Before the thread starts.  And
+	 * the child starts with no signal notification outstanding,
+	 * whatever the parent's sigacts, copied above, said: its own
+	 * signal port (task_to_proc_enter()) has had none sent.
 	 */
+	p2->p_sigacts->ps_flags &= ~SAS_NOTIFY_DONE;
 	noemul_set_syscall_port(p2);
 #endif
 

@@ -99,6 +99,10 @@
 #include <sys/param.h>
 #include <sys/signalvar.h>
 #include <sys/resourcevar.h>
+#if NO_EMULATOR
+extern void noemul_sendsig(sig_t, int, int, unsigned);	/* AI-ONLY NOTE */
+extern void noemul_signal_running(struct proc *);
+#endif
 #include <sys/namei.h>
 #include <sys/vnode.h>
 #include <sys/proc.h>
@@ -1008,9 +1012,34 @@ psignal(p, signum)
    e.g., is stuck in an infinite loop.  Need to fix this.
  */
 #if SIGNAL_DEBUG
-		if (signal_send_running)
+		/*
+		 * AI-ONLY NOTE: always without the emulator.  Lites turned
+		 * it off for the race above, between the emulator's signal
+		 * thread and the process's own; without the emulator the
+		 * notification comes to the server, which suspends the
+		 * thread and aborts it safely before it looks (i386/
+		 * syscall.c, noemul_signal_notify()), and a process in a
+		 * loop can be interrupted.
+		 */
+		if (signal_send_running || NO_EMULATOR)
 #endif
 		if (action == SIG_CATCH) {
+#if NO_EMULATOR
+			/*
+			 * AI-ONLY NOTE: notified whether or not a call is in
+			 * the server, which may be past the point where it
+			 * takes signals; the notification is tried again
+			 * until it is (i386/syscall.c, noemul_signal_notify()).
+			 * A sleeping call is woken, as Lites wakes it.
+			 */
+			if (p->p_servers_count)
+#if DATA_SYNCH
+			    proc_wakeup_locked(p, PKW_SIGNAL);
+#else
+			    unsleep_process(p);
+#endif
+			noemul_signal_running(p);
+#else /* NO_EMULATOR */
 			if (p->p_servers_count)
 #if DATA_SYNCH
 			    proc_wakeup_locked(p, PKW_SIGNAL);
@@ -1019,6 +1048,7 @@ psignal(p, signum)
 #endif
 			else
 			    (void) send_signal(p, p->p_thread, signum, 0);
+#endif /* NO_EMULATOR */
 			goto out;
 		}
 #endif /* 0: avoid race */
@@ -1050,6 +1080,15 @@ runfast:
 	wakeup((caddr_t)&p->p_stat);
 	task_resume(p->p_task);
 run:
+#if NO_EMULATOR
+	/*
+	 * AI-ONLY NOTE: caught signals that came while it was stopped
+	 * are taken now it runs (i386/syscall.c,
+	 * noemul_signal_notify()).
+	 */
+	if (HAVE_SIGNALS(p))
+		noemul_signal_running(p);
+#endif
 	/* XXX need only do the following if p_servers_count != 0? */
 #if DATA_SYNCH
 	proc_wakeup_locked(p, PKW_SIGNAL);
@@ -1085,7 +1124,17 @@ run:
 			/*
 			 * Send signal to user thread.
 			 */
+#if NO_EMULATOR
+			/*
+			 * AI-ONLY NOTE: no emulator to notify; the server
+			 * stops the thread and sends it to the handler
+			 * itself (i386/syscall.c, noemul_signal_notify()).
+			 * docs/roadmap.md, Tier 1 item 2, step 5.
+			 */
+			noemul_signal_running(p);
+#else
 			(void) send_signal(p, p->p_thread, signum, 0);
+#endif
 			break;
 		}
 	}
@@ -1328,16 +1377,13 @@ postsig(signum)
 		}
 #if NO_EMULATOR
 		/*
-		 * AI-ONLY NOTE: for now, without the emulator, a caught
-		 * signal ends the process as its default action would:
-		 * the handler's frame (4.4BSD's sendsig(), and
-		 * sigreturn() back) is not built yet.  The only caller
-		 * is the system call's way out (i386/syscall.c).
-		 * docs/roadmap.md, Tier 1 item 2, step 5.
+		 * AI-ONLY NOTE: without the emulator the server builds the
+		 * handler's frame itself, as 4.4BSD's sendsig() does, in
+		 * the registers of the call or fault being answered
+		 * (i386/syscall.c, noemul_sendsig()).  docs/roadmap.md,
+		 * Tier 1 item 2, step 5.
 		 */
-		printf("(lites) pid %d: signal %d caught; handlers are not "
-		       "run without the emulator yet\n", p->p_pid, signum);
-		sigexit(p, signum);
+		noemul_sendsig(action, signum, returnmask, code);
 #elif defined(LITES)
 		panic("postsig: sendsig(action, signum, returnmask, code);");
 #else /* LITES */

@@ -92,6 +92,7 @@ void null_pom_lock(void *), null_pom_rm_reverse(void *, mach_port_t);
 void file_ref(void *), file_deref(void *, mach_port_t);
 void file_lock(void *), file_remove_reverse(void *, mach_port_t);
 void sigport_remove_reverse(void *, mach_port_t);
+void sigrecv_remove_reverse(void *, mach_port_t);
 
 /* Globals */
 static zone_t port_object_zone;
@@ -129,7 +130,10 @@ const struct port_object_methods port_object_methods[POT_COUNT] = {
 /*TTY     */ {null_pom_ref, null_pom_deref, null_pom_lock, null_pom_rm_reverse,
 		  POF_RECEIVE | POF_SO | POF_LOOKUP},
 /*CHAR_DEV*/ {null_pom_ref, null_pom_deref, null_pom_lock, null_pom_rm_reverse,
-		  POF_RECEIVE | POF_SO | POF_LOOKUP}};
+		  POF_RECEIVE | POF_SO | POF_LOOKUP},
+/* AI-ONLY NOTE: POT_SIGRECV; see port_object.h */
+/*SIGRECV */ {proc_ref, proc_deref, proc_lock, sigrecv_remove_reverse,
+		  POF_RECEIVE | POF_GC | POF_LOOKUP}};
 
 
 boolean_t po_debug = FALSE;

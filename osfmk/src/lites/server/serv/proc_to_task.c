@@ -32,6 +32,7 @@
  */
 
 #include "data_synch.h"
+#include "no_emulator.h"	/* AI-ONLY NOTE: task_remove_reverse() */
 
 #include <serv/server_defs.h>
 #include <serv/synch_prim.h>
@@ -66,6 +67,31 @@ mach_port_t task_to_proc_enter(
 	assert(kr == KERN_SUCCESS);
 
 	ux_server_add_port(req_port);
+#if NO_EMULATOR
+	/*
+	 * AI-ONLY NOTE: the process's signal port, where send_signal()
+	 * notifies (serv/serv_syscalls.c, i386/syscall.c).  With the
+	 * emulator the process checks one in, a send right
+	 * (bsd_signal_port_register(), POT_SIGPORT) to a port the
+	 * emulator receives on.  Here the server receives, so the port
+	 * is made as the request port is: a receive right, and one send
+	 * right that is p_sigport, kept until the task dies
+	 * (task_remove_reverse(), below), when the port's last sender
+	 * goes and it is shut down.  A process has one for life: a
+	 * set-id exec, which comes here again with a new task, keeps it.
+	 */
+	if (!MACH_PORT_VALID(p->p_sigport)) {
+		mach_port_t sigrecv;
+
+		proc_ref(p);
+		kr = port_object_allocate_receive(&sigrecv, POT_SIGRECV, p);
+		assert(kr == KERN_SUCCESS);
+		kr = port_object_make_send(sigrecv);
+		assert(kr == KERN_SUCCESS);
+		p->p_sigport = sigrecv;
+		ux_server_add_port(sigrecv);
+	}
+#endif /* NO_EMULATOR */
 	return req_port;
 }
 
@@ -146,6 +172,23 @@ void task_remove_reverse(struct proc *p, mach_port_t port)
 		p->p_sigignore = ~0;
 		p->p_siglist = 0;
 		p->p_task = MACH_PORT_NULL;
+#if NO_EMULATOR
+		/*
+		 * AI-ONLY NOTE: the signal port's send right, made with the
+		 * port (task_to_proc_enter(), above), goes with the task,
+		 * so that the port's last sender goes and it is shut
+		 * down, giving back the reference it holds on the
+		 * process.  A signal port the process registered itself
+		 * (bsd_signal_port_register()) is POT_SIGPORT, and its
+		 * own notification gives it back.
+		 */
+		if (MACH_PORT_VALID(p->p_sigport)
+		    && port_object_type(p->p_sigport) == POT_SIGRECV) {
+			(void) mach_port_deallocate(mach_task_self(),
+						    p->p_sigport);
+			p->p_sigport = MACH_PORT_NULL;
+		}
+#endif
 		/* Wake up all server threads to make them go away */
 #if DATA_SYNCH
 		proc_wakeup_unlocked(p, PKW_EXIT);
@@ -164,6 +207,24 @@ void task_remove_reverse(struct proc *p, mach_port_t port)
 	kr = mach_port_deallocate(mach_task_self(), port);
 	assert(kr == KERN_SUCCESS);
 }
+
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: no more mapping to remove; the send right was given
+ * back at the task's death (task_remove_reverse()).
+ */
+void sigrecv_remove_reverse(struct proc *p, mach_port_t port)
+{
+	mutex_lock(&p->p_lock);
+	if (p->p_sigport == port)
+		p->p_sigport = MACH_PORT_NULL;
+	mutex_unlock(&p->p_lock);
+}
+#else
+void sigrecv_remove_reverse(struct proc *p, mach_port_t port)
+{
+}
+#endif
 
 void thread_remove_reverse(struct proc *p, mach_port_t port)
 {

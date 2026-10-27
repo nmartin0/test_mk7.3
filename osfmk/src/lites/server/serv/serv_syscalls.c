@@ -57,6 +57,7 @@
  */
 
 #include "map_uarea.h"
+#include "no_emulator.h"	/* AI-ONLY NOTE: thread_signal() */
 
 #include <serv/server_defs.h>
 #include <sys/syscall.h>
@@ -652,6 +653,28 @@ boolean_t machine_signal_redirect(struct proc *, thread_state_t,
  * builds pass one (serv/ux_exception.c).  machine_signal_redirect()
  * exists for i386 alone, the only OSFMACH3 target built.
  */
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: the pending signals taken into a fault's reply state
+ * (i386/syscall.c, noemul_sendsig()); copyout() writes to the task
+ * only with k_reply_msg not 0, which the exception server leaves 0.
+ */
+static void
+noemul_fault_take_signals(struct proc *p, thread_state_t state)
+{
+	extern void noemul_take_signals(struct proc *);
+	proc_invocation_t pk = get_proc_invocation();
+	mach_msg_header_t *saved = pk->k_reply_msg;
+
+	pk->k_trap_state = (vm_offset_t) state;
+	if (saved == 0)
+	    pk->k_reply_msg = (mach_msg_header_t *) 1;
+	noemul_take_signals(p);
+	pk->k_reply_msg = saved;
+	pk->k_trap_state = 0;
+}
+#endif /* NO_EMULATOR */
+
 boolean_t thread_signal(
 	struct proc		*p,
 	thread_t		thread,
@@ -672,6 +695,14 @@ boolean_t thread_signal(
 		 * Save the signal in p_sig.
 		 */
 		p->p_siglist |= mask;
+#if NO_EMULATOR
+		/*
+		 * AI-ONLY NOTE: the others pending are taken in the reply
+		 * all the same, as 4.4BSD's userret() would.
+		 */
+		if (state)
+		    noemul_fault_take_signals(p, state);
+#endif
 		return FALSE;
 	    }
 
@@ -754,6 +785,38 @@ boolean_t thread_signal(
 		 * by longjmp() never returns to the loop that clears it,
 		 * and the thread would fault for ever.
 		 */
+#if NO_EMULATOR
+		/*
+		 * AI-ONLY NOTE: without the emulator the signal is taken
+		 * here, in the reply's state, as 4.4BSD's trapsignal()
+		 * takes a caught fault's: postsig() builds the handler's
+		 * frame there (i386/syscall.c, noemul_sendsig()).
+		 * docs/roadmap.md, Tier 1 item 2, step 5.
+		 */
+		if (state) {
+		    proc_invocation_t pk = get_proc_invocation();
+		    mach_msg_header_t *saved = pk->k_reply_msg;
+
+		    p->p_sigacts->ps_sig = sig;
+		    p->p_sigacts->ps_code = code;
+		    pk->k_trap_state = (vm_offset_t) state;
+		    /*
+		     * Not 0, so that copyout() writes the frame into the
+		     * task (serv/user_copy.c), as bsd_syscall_server()
+		     * marks a system call; the exception server leaves it
+		     * 0, and the frame went into the server's own memory.
+		     */
+		    if (saved == 0)
+			pk->k_reply_msg = (mach_msg_header_t *) 1;
+		    postsig(sig);
+		    pk->k_reply_msg = saved;
+		    pk->k_trap_state = 0;
+		    /* and the rest pending, as 4.4BSD's userret() would */
+		    noemul_fault_take_signals(p, state);
+		    notified = TRUE;
+		    break;
+		}
+#endif /* NO_EMULATOR */
 		if (state) {
 		    if (machine_signal_redirect(p, state, count)) {
 			p->p_sigacts->ps_flags |= SAS_NOTIFY_DONE;
@@ -820,7 +883,6 @@ boolean_t thread_psignal(
 		mutex_unlock(&p->p_lock);
 		return FALSE;
 	}
-
 	/*
 	 * Register thread as service thread
 	 */

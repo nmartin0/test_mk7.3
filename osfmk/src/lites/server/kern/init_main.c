@@ -79,6 +79,7 @@
 #include "sl.h"
 #include "ppp.h"
 #include "ext2fs.h"
+#include "no_emulator.h"	/* AI-ONLY NOTE: noemul_sigcode_init() */
 
 #include <serv/server_defs.h>
 #include <sys/param.h>
@@ -390,6 +391,18 @@ noreturn system_setup()
 
 	/* Initialize signal state for process 0. */
 	siginit(p);
+#if NO_EMULATOR && MAP_UAREA
+	/*
+	 * AI-ONLY NOTE: the code that calls a signal handler, in process
+	 * 0's read-only page, which each child's copies, as 4.4BSD-Lite2's
+	 * i386 init386() puts it in process 0's pcb (server/i386/syscall.c).
+	 */
+	{
+		extern void noemul_sigcode_init(struct proc *);
+
+		noemul_sigcode_init(p);
+	}
+#endif
 
 	initproc = newproc(p, TRUE, FALSE);
 

@@ -1177,6 +1177,38 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   instead would meet the race Utah describe: the emulator's signal
   thread aborting a thread already taking the signal at a system
   call's end, which under OSFMK is S-7's case again.
+  **Done without the emulator, 0153, by OSF's recipe after all.** An
+  earlier draft of 0153 said `thread_abort_safely` could not be used,
+  as it would end a task whose thread waits on an exception (S-7).
+  That was wrong: S-7 is `thread_abort`. OSFMK 7.3's
+  `thread_abort_safely` (`kern/thread_act.c`) refuses, with
+  `KERN_FAILURE` and nothing aborted, a thread waiting for the reply
+  to a message the kernel sent (`SAFE_INTERNAL_RECEIVE`,
+  `kern/ipc_mig.c`), which is how an exception waits, and OSF made it
+  so for this purpose (*OSF Mach Kernel Interface Changes*, Loepere,
+  17 June 1993, OSFMK 6.1 `doc/spec93/notes/`: "It is possible for
+  another thread to abort a thread out of (syscall) exception
+  processing ... Make thread_abort_safely not abort exception
+  sequences"). So the server suspends the thread, aborts it safely,
+  sets its registers to the handler's frame and resumes it; when the
+  abort is refused -- a call or fault being answered, or, in OSFMK
+  7.3, a page wait (`vm/vm_fault.c` waits uninterruptibly, and a page
+  wait is not one of `thread_abort_safely()`'s safe points) -- the
+  call takes the signal on its way out, and the attempt is made again
+  a second later, as OSF/1 AD retried an interrupt that crossed a
+  reply "every one second or so until the operation is interrupted
+  (or completes normally)" (Zajcew et al., *An OSF/1 Unix for
+  Massively Parallel Multicomputers*, USENIX Winter 1993). It goes
+  the way it went with the emulator, with the server as the
+  receiver: Lites' `send_signal()` sends `signal_notify` to the
+  process's signal port, here a port of the process's own that the
+  server receives on (`POT_SIGRECV`), and a server thread takes it, as
+  a call of the process, as `bsd_take_signal()` is taken
+  (`start_server_op()`, code 1000), doing the emulator's
+  `do_signal_notify()` steps itself; a refused attempt sends the
+  notification again from the timer, as `realitexpire()` posts
+  SIGALRM from it. The switch is on for that server only; the
+  emulator's server is as before.
 - **S-12. NetBSD's `ftpd` and `sendmail` die in `setproctitle()`.**
   `ftp` in fixed on 15 October 2026 by the maintainer's option (a);
   `sendmail` deferred by the maintainer. NetBSD 1.0's libc
@@ -1576,6 +1608,109 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   later systems; the error of a close finished by a hold is not
   reported; and the `fdesc` and `portal` file systems (`MASTER`,
   optional and untested) still look files up without a hold.
+
+- **S-25. What signals without the emulator leave open.** Step 5
+  (0153); none open to more than the process itself. (a) Only a
+  process's first thread is signalled in user code, as NetBSD 1.0's
+  programs have one. (b) A signal can wait up to a second when the
+  first attempt is refused: a reply crossing it, or a page wait. (c) A
+  signal frame written to a page that is slow to come in holds up the
+  server thread taking the notification until it does. (d) A fault
+  whose signal is blocked faults again on the reply, for ever, as on
+  4.4BSD. (e) A default signal that kills, posted while the process
+  runs (SIGILL for a frame that will not fit, among them), ends it
+  through Lites' own direct path, `proc_zap()`, with no core, where
+  Lite2 would take it in `userret()` and dump one. (f) The timer's
+  retry sets `SAS_NOTIFY_DONE` at `splhigh` without the master lock,
+  as Lites' own `send_signal()` does from `psignal()`, but before the
+  send and not after, so that a server thread taking the notification
+  at once cannot clear it first; a `sigsuspend()` setting
+  `SAS_OLDMASK` under the master lock at the same moment could lose
+  it. (g) A caught signal pending through a sleep that cannot be
+  interrupted is retried every second until the sleep ends. (h) A
+  handler that reads registers other than sp, fp, pc and the flags
+  through its context gets none: the context is Lite2's i386 one,
+  which this tree's emulator also gives NetBSD programs, not the
+  fuller one in NetBSD 1.0's own `<machine/signal.h>` (the
+  maintainer's choice, 26 October 2026). (i) The timer's retry holds
+  no reference on the process, as `realitexpire()` holds none;
+  `exit1()` cancels it, and the callback looks at `P_WEXIT` first, but
+  one already running is not waited for. (j) A send to a signal port
+  that is shutting down can leave one dead-name reference unreleased
+  (the error handler gives back the reference only for a timed-out or
+  interrupted send), and a signal for a process whose task has just
+  died may name a failed send on the console. (k) `sigreturn` reads
+  its frame at the stack pointer and ignores its argument, as Lite2's
+  does, where the emulator's takes the context as the argument (it is
+  for gdb and `longjmp`); NetBSD 1.0's `libc.a` has no caller of it
+  but its own stub.
+
+- **Step 5's choices, each from a source or the maintainer.** Made
+  26 October 2026, after a precedent audit of the first draft of
+  0153; each behaviour with no source was put to the maintainer
+  separately from the code (`docs/provenance/precedent.md`).
+  - *The frame, context, handler-calling code and `sigreturn`* are
+    4.4BSD-Lite2's i386 (`i386/i386/machdep.c`, `locore.s`), and the
+    context is the one this tree's emulator gives a NetBSD program
+    (`emulator/i386/e_machinedep.c`), not NetBSD 1.0's fuller one:
+    the maintainer's choice between the two.
+  - *The handler-calling code* lives in each process's read-only
+    shared page (`us_sigcode`), as Lite2's i386 keeps it in the
+    process's pcb, readable by it, and "don't copy sigcode above user
+    stack" (`i386/include/cpu.h`, in Lite2 and Lites); set in process
+    0's and copied to each child's, as Lite2's `init386()` and fork
+    do. If `sigreturn` fails it halts, as Lite2's does.
+  - *The flags a context can set* are those a program can set itself
+    with `popf`, as this tree's emulator restores a context
+    (`emul_load_state`); OSFMK's `thread_set_state()` keeps IOPL, NT
+    and RF clear and IF set. No trace flag cleared on entry and no
+    rounding of the frame's address: no source does either.
+  - *A frame that will not fit* resets SIGILL to its default and
+    posts it, as Lite2, Rhapsody and XNU 123.5 do. A missing register
+    set is a panic, this tree's way with what cannot happen.
+  - *What cannot be masked* is `sigcantmask`, SIGKILL and SIGSTOP, as
+    this tree's own `bsd_sigreturn()` has it.
+  - *`EJUSTRETURN`* has Lite2's one meaning, the reply carries the
+    registers the call left: `sigreturn` and `execve` both put theirs
+    there (the maintainer's choice over a second code).
+  - *A missing call* is named on the console every time, as Lites
+    names its unimplemented `table()` requests.
+  - *A signal for a process in user code*: the recipe and retry in
+    S-11 above, through Lites' own notification path with the server
+    as its receiver: the maintainer's choice, after a first version on
+    the timer thread proved unsafe (it held no reference on the
+    process across `copyout()`'s release of the master lock), and
+    acting as the target inside another process's call before that.
+    The notification is cleared when it is taken, not when no signal
+    is left as `bsd_take_signal()` clears it, as the server takes
+    every pending signal there and a signal posted after its last
+    look must notify again; the flag is cleared at fork for a child,
+    which starts with no notification outstanding (Lites' fork copies
+    it; without the clear, 22 of 400 children flooded with signals
+    never took theirs, and with it none of 400). Rhapsody 5.3 clears
+    its marker (`ast_off(AST_UNIX)`) before `issignal()` and XNU
+    123.5 (`thread_ast_clear(AST_BSD)`) before `bsd_ast()`, in that
+    order; Lites clears at the end, after the last signal is taken.
+    The signal port is a port apart from the request port, as Lites'
+    own is (the emulator's, checked in with
+    `bsd_signal_port_register()`), made with the process, kept for
+    its life across a set-id exec, with its send right given back at
+    the task's death (`task_remove_reverse()`): without that the
+    port's reference on the process is never given back and the
+    process is never reaped (0 of 5 children reaped in the test, 5
+    of 5 with it). The OSF/1 documents say nothing of a signal port
+    (searched 26 October 2026: the design book has signals go to the
+    process's first thread and be taken at the kernel-to-user
+    transition; Patience says only that splitting signal code between
+    server and emulator bred bugs), so a port apart from the request
+    port is the maintainer's choice of 26 October 2026, over using
+    the request port, which the first draft did; it keeps the
+    notification out of the process's own call queue (limit 5). A
+    notification that cannot be queued gives back the rights the
+    kernel returns and is not retried, and is named on the console
+    as Lites names it (`signal_notify failed`): a full queue holds
+    notifications or calls, which take the signal. All found or
+    settled by two independent reviews of 0153.
 
 - **S-24. A read whose copy to the process fails loses the data.**
   Found 24 October 2026 testing `readv` without the emulator (Tier 1

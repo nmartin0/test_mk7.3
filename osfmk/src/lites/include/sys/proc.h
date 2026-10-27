@@ -370,6 +370,7 @@ typedef struct proc_invocation {
 	 * docs/deferred.md, S-23.
 	 */
 	int k_serving;		/* registered for a call of k_p */
+	int k_sigframe;		/* a handler's frame was built (step 5) */
 	int k_nheld;
 	struct file *k_held[K_NHELD];
 } *proc_invocation_t;

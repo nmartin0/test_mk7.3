@@ -81,6 +81,7 @@ int	munmap();
 int	nfssvc();
 int	noemul_fork();
 int	noemul_select();
+int	noemul_sigreturn();
 int	obreak();
 int	ocreat();
 int	oftruncate();
@@ -257,7 +258,7 @@ struct sysent noemul_sysent[] = {
 	{ 2, getpriority },		/* 100 = getpriority */
 	{ 4, nosys },			/* 101 = old send, not in the server */
 	{ 4, nosys },			/* 102 = old recv, not in the server */
-	{ 1, nosys },			/* 103 = sigreturn, not in the server */
+	{ 1, noemul_sigreturn },		/* 103 = sigreturn */
 	{ 3, nosys },			/* 104 = bind, not in the server */
 	{ 5, nosys },			/* 105 = setsockopt, not in the server */
 	{ 2, listen },			/* 106 = listen */

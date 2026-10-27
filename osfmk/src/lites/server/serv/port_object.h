@@ -47,6 +47,15 @@ typedef enum {
 	POT_SIGPORT,	/* S gc */
 	POT_TTY,	/* R + SO */
 	POT_CHAR_DEV,	/* R + SO */
+	/*
+	 * AI-ONLY NOTE: POT_SIGRECV, appended so that no value moves.  A
+	 * process's signal port when the server itself receives the
+	 * notifications (i386/syscall.c, noemul_signal_notify()): the
+	 * server holds the receive right and one send right, as
+	 * POT_PROCESS's request port has.  Not used by the emulator's
+	 * server.
+	 */
+	POT_SIGRECV,	/* R + S gc. a process's signal port, server receiving */
 	POT_COUNT
     } port_object_type_t;
 

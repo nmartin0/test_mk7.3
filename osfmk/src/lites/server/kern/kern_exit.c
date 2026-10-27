@@ -65,6 +65,7 @@
 
 #include "compat_43.h"
 #include "osfmach3.h"
+#include "no_emulator.h"	/* AI-ONLY NOTE: exit1() */
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -159,6 +160,14 @@ void proc_died(struct proc *p)
 	p->p_sigignore = ~0;
 	p->p_siglist = 0;
 	untimeout(realitexpire, (caddr_t)p);
+#if NO_EMULATOR
+	{
+		/* AI-ONLY NOTE: the signal retry's, i386/syscall.c */
+		extern void noemul_signal_untimeout(struct proc *);
+
+		noemul_signal_untimeout(p);
+	}
+#endif
 
 	/*
 	 * Close open files and release open-file table.

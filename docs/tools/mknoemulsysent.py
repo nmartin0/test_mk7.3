@@ -57,6 +57,7 @@ SERVER_NAMES = {
     'select': 'noemul_select',
     'fork': 'noemul_fork',
     'vfork': 'noemul_fork',
+    'sigreturn': 'noemul_sigreturn',
     'setrlimit': 's_setrlimit',
     'settimeofday': 's_settimeofday',
     'adjtime': 's_adjtime',
