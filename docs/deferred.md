@@ -1643,7 +1643,36 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
   its frame at the stack pointer and ignores its argument, as Lite2's
   does, where the emulator's takes the context as the argument (it is
   for gdb and `longjmp`); NetBSD 1.0's `libc.a` has no caller of it
-  but its own stub.
+  but its own stub. (l) The one-second retry
+  is a fallback and is not an event: no kernel call tells the server
+  when a thread can be stopped. Measured 27 October 2026 on 0153,
+  with 400 children signalled once each: the abort was refused, and a
+  call in progress made the notification wait, in none of them,
+  with or without a flood of signals at the parent. (m) A flood of
+  signals at one process delays other processes' signals: with a
+  process signalling its parent without a pause (about 800,000
+  signals in a run), 177 to 185 of 400 children ran their handler
+  more than 200 ms late, the latest 2.7 s, and none was lost; with no
+  flood none was late. Timing the notification inside the server
+  (waiting in the port, for the master lock, and the work) found no
+  step over 200 ms, but that timing was not checked against a case
+  known to be slow, so it is indicative only; the cause is probably
+  the single emulated CPU shared by the flooder and the parent, not
+  tested. (n) *Alerts do not serve as a hook.* Looked at 27 October
+  2026 as a way to have the kernel tell the server when a thread
+  reaches user mode, and not used. OSFMK 6.1's RPC paper
+  (*RPCDesign1*, section 4.2) defines an alert as a software
+  exception "that affects the head of an RPC chain", for breaking
+  chains, with `thread_alert()`; in OSFMK 7.3 `act_alert()`
+  (`kern/thread_act.c`) sets bits only on the activations above the
+  one named, so a thread making no RPC gets none, a successful reply
+  from the handler returns `KERN_RPC_TERMINATE_ORPHAN` and ends the
+  activation (`alert_exception()`, `kern/exception.c`;
+  `special_handler()`), and `act_alert_mask()` is `panic("... NOT
+  YET IMPLEMENTED")`. XNU 123.5 carries the same code, and nothing
+  calls it. Delivery with no timer would be a new kernel facility
+  built on the return handlers `thread_suspend()` uses; the
+  maintainer kept the retry (27 October 2026).
 
 - **Step 5's choices, each from a source or the maintainer.** Made
   26 October 2026, after a precedent audit of the first draft of
