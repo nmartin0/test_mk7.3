@@ -748,7 +748,22 @@ O-2, O-4, O-5).
    `is_shared`, `colo_shared`) — so an XNU file's HISTORY block is
    often a direct statement about OSFMK's own development.
 
-5. **Our own code, last**, and only where the four above have nothing.
+5. **Third-party artifacts of OSF/1 that are not GPL**, added 26
+   October 2026 at the maintainer's word: how other projects'
+   toolchains, headers and build files treated OSF/1 and Mach (a
+   compiler target for OSF/1, say, or a port's notes). They show what
+   OSF/1 did, and are read for that. The behaviour is taken, and the
+   code is written here. A GPL artifact is not read under this step.
+   The maintainer let one be read once, on 26 October 2026, "just to
+   collect information on how OSF/1 was compiled ... not reading the
+   code line for line and copying it, just the publicly documented
+   behavior"; that was for the question asked, and the next GPL file
+   asks again. What was found is recorded as the behaviour and where
+   it was seen (GCC 2.7.2.1's `config/i386/osfrose.h`: no
+   `gcc2_compiled.` label for OSF/1 targets, the reason given there
+   that GDB does not need it and kdb dislikes it).
+
+6. **Our own code, last**, and only where the five above have nothing.
 
 ## APSL code may be used, and that is the difference from the Lite2 tree
 
@@ -865,6 +880,18 @@ because this project has more trees to confuse, not fewer.
    the session that writes it — not from memory of what Mach "usually
    does".
 
+4. **Behaviour with no precedent is stated, and confirmed on its own.**
+   Set by the maintainer on 24 October 2026 as a hard rule. Whenever a
+   change creates behaviour that follows no precedent in the order
+   above, the proposal says so: it names the behaviour, gives the
+   alternatives that do have a precedent, and asks the maintainer to
+   verify it. That verification is separate from the one the code
+   gets: a patch approved is not its unprecedented behaviour
+   approved. The search behind "no precedent" is the one "Proving an
+   absence" asks for, and what the maintainer decides is recorded
+   with the change (step 5's, in `docs/deferred.md`, "Step 5's
+   choices").
+
 ## Proving an absence
 
 A found donor proves itself: the line is shown. An absence does not.
@@ -874,7 +901,7 @@ been searched, and the commit message names them. For this project that
 is: `osfmk7.3/`, `lites/`, `bsd/`, OSFMK 6.1, Rhapsody, and XNU from
 `rel/xnu-124` forward.
 
-Six trees. The sweep is cheap and the claim is worthless without it.
+Six trees, and the third-party sweep of step 5. The sweep is cheap and the claim is worthless without it.
 
 ## What in this tree is ours
 

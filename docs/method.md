@@ -118,6 +118,19 @@ But **a paper settles what to build, not whose line to write.** After
 reading Patience §4, the question of how to spell the dispatch in this
 tree's idiom is still open and still answered by the search order.
 
+### Unprecedented behaviour is put to the maintainer by itself
+
+The hard rule in `docs/provenance/precedent.md`, "Every claim names a
+tree and a release", point 4: behaviour with no precedent is named,
+with the alternatives that have one, and confirmed by the maintainer
+separately from the code. Its worked case is step 5 of Tier 1 item 2
+(0153): a first draft invented a way to tell when a thread could be
+changed, four delivery threads, a retry every 10 ms that gave up after
+30 s, and a 512-entry queue, all on the strength of a misreading of
+`thread_abort_safely`. A precedent audit replaced most of it with
+OSF's own recipe and OSF/1 AD's one-second retry, and the maintainer
+decided what the sources left open, one question at a time.
+
 ### Read the donor before designing anything
 
 The rule the Lite2 tree records as "broken more often than any other
