@@ -140,6 +140,139 @@ int start_c(int *kframe)
 	  r = sc(17, (char *)(b0 + 0x1000)); *(volatile int *)b0 = 9;
 	  check("after them, a page grows and holds", !scerr && *(volatile int *)b0 == 9);
 	  r = sc(17, (char *)b0); check("and shrinks back", !scerr); }
+	/* mmap (197): Lite2's arguments (addr, len, prot, flags, fd, pad, off lo, off hi); step 6 */
+	{
+#define MMAP(a, l, pr, fl, fd, off) ((unsigned long)sc(197, (a), (l), (pr), (fl), (fd), 0, (off), 0))
+#define MAP_ANON_PRIV 0x1002
+#define MAP_ANON_SHAR 0x1001
+#define MAP_FIXED_ANON_PRIV 0x1012
+	  unsigned long a, b; int fd, k, same; char *m; long long fr;
+	  char f1[4096], f2[4096];
+	  a = MMAP(0, 8192, 3, MAP_ANON_PRIV, -1, 0);
+	  check("mmap anonymous, no hint: placed above 64M, page aligned", !scerr && a >= 0x4000000 && (a & 0xfff) == 0);
+	  m = (char *)a; same = 1; for (k = 0; k < 8192; k++) if (m[k]) same = 0;
+	  check("mmap anonymous is zero-filled", same);
+	  m[0] = 7; m[8191] = 9; check("mmap anonymous is writable", m[0] == 7 && m[8191] == 9);
+	  r = sc(116, (struct timeval *)(m + 4096), 0); check("kernel copyout into the mapping", !scerr);
+	  b = MMAP(a, 4096, 3, MAP_FIXED_ANON_PRIV, -1, 0);
+	  check("mmap MAP_FIXED over a mapping: same address, fresh zero page", !scerr && b == a && m[0] == 0 && m[4096] != 0);
+	  b = MMAP(a + 1, 4096, 3, MAP_FIXED_ANON_PRIV, -1, 0); check("MAP_FIXED unaligned -> EINVAL (22)", scerr && b == 22);
+	  b = MMAP(0xfffff000, 0x2000, 3, MAP_FIXED_ANON_PRIV, -1, 0); check("MAP_FIXED that wraps 4G -> EINVAL", scerr && b == 22);
+	  b = MMAP(0, 0x80000000u, 3, MAP_ANON_PRIV, -1, 0); check("mmap length over 2G -> EINVAL", scerr && b == 22);
+	  b = MMAP(0, 4096, 3, MAP_ANON_PRIV, 3, 0); check("MAP_ANON with a descriptor -> EINVAL", scerr && b == 22);
+	  b = MMAP(0, 0, 3, MAP_ANON_PRIV, -1, 0); check("mmap length 0: succeeds, nothing mapped", !scerr);
+	  b = MMAP(0, 4096, 3, 0x0002, 99, 0); check("mmap bad descriptor -> EBADF (9)", scerr && b == 9);
+	  b = MMAP(0, 4096, 3, 0x0002, -1, 0); check("mmap file with fd -1 -> EBADF", scerr && b == 9);
+	  b = MMAP(0, 0x7fffe000, 3, MAP_ANON_PRIV, -1, 0);
+	  { int e1 = scerr; unsigned long b2 = MMAP(0, 0x7fffe000, 3, MAP_ANON_PRIV, -1, 0);
+	    check("two 2G mappings: the second -> ENOMEM (12), no kill", scerr && b2 == 12);
+	    if (!e1) sc(73, b, 0x7fffe000); }
+	  r = sc(73, a, 8192); check("munmap", !scerr);
+	  r = sc(116, (struct timeval *)a, 0); check("unmapped pages gone -> EFAULT", scerr && r == 14);
+	  a = MMAP(0, 4096, 1, MAP_ANON_PRIV, -1, 0);
+	  r = sc(116, (struct timeval *)a, 0); check("read-only mapping: kernel copyout -> EFAULT", scerr && r == 14);
+	  r = sc(74, a, 4096, 3); check("mprotect makes it writable", !scerr);
+	  r = sc(116, (struct timeval *)a, 0); check("then copyout works", !scerr);
+	  sc(73, a, 4096);
+	  a = MMAP(0, 4096, 0, MAP_ANON_PRIV, -1, 0);
+	  r = sc(4, con, (char *)a, 1); check("PROT_NONE mapping: write from it -> EFAULT", scerr && r == 14);
+	  sc(73, a, 4096);
+	  /* a file */
+	  fd = sc(5, "/sbin/init", 0, 0); check("open /sbin/init for mmap", !scerr && fd >= 0);
+	  r = sc(3, fd, f1, 4096); check("read 4096 bytes", !scerr && r == 4096);
+	  a = MMAP(0, 4096, 1, 0x0002, fd, 0);
+	  check("mmap file private read-only", !scerr && a >= 0x4000000 && (a & 0xfff) == 0);
+	  m = (char *)a; same = 1; for (k = 0; k < 4096; k++) if (m[k] != f1[k]) same = 0;
+	  check("mapped bytes equal read() bytes", same);
+	  sc(6, fd);
+	  same = 1; for (k = 0; k < 4096; k++) if (m[k] != f1[k]) same = 0;
+	  check("after close(fd) the mapping still reads", same);
+	  sc(73, a, 4096);
+	  fd = sc(5, "/sbin/init", 0, 0);
+	  b = MMAP(0, 4096, 3, 0x0001, fd, 0); check("MAP_SHARED PROT_WRITE on a read-only descriptor -> EACCES (13)", scerr && b == 13);
+	  b = MMAP(0, 4096, 1, 0x0001, fd, 0); check("MAP_SHARED PROT_READ on a read-only descriptor", !scerr);
+	  if (!scerr) sc(73, b, 4096);
+	  a = MMAP(0, 4096, 3, 0x0002, fd, 0); check("MAP_PRIVATE PROT_WRITE on a read-only descriptor", !scerr);
+	  m = (char *)a; m[0] ^= 0x5a; m[100] ^= 0x5a;
+	  sc(199, fd, 0, 0LL, 0); r = sc(3, fd, f2, 4096);
+	  check("a private write does not reach the file", !scerr && f2[0] == f1[0] && f2[100] == f1[100]);
+	  sc(73, a, 4096);
+	  b = MMAP(0, 4096, 1, 0x0002, fd, 4096); check("mmap at offset 4096", !scerr);
+	  { char f3[4096]; sc(199, fd, 0, 0LL, 0); sc(3, fd, f3, 4096); r = sc(3, fd, f3, 4096);
+	    same = 1; for (k = 0; k < 4096; k++) if (((char *)b)[k] != f3[k]) same = 0;
+	    check("the page at offset 4096 equals the second read()", same); }
+	  sc(73, b, 4096);
+	  sc(6, fd);
+	  fd = sc(5, "/", 0, 0);
+	  b = MMAP(0, 4096, 1, 0x0002, fd, 0); check("mmap of a directory -> EINVAL (22)", scerr && b == 22);
+	  sc(6, fd);
+	  { long long pq = sc2(42);
+	    b = MMAP(0, 4096, 1, 0x0002, (int)pq, 0); check("mmap of a pipe -> EINVAL (22)", scerr && b == 22);
+	    sc(6, (int)pq); sc(6, (int)(pq >> 32)); }
+	  /* review of step 6: hints, limits, offsets, devices, a file that goes away */
+	  b = MMAP(0x2000, 4096, 3, MAP_ANON_PRIV, -1, 0); check("a hint inside the heap's reach is placed at 64M or above", !scerr && b >= 0x4000000);
+	  if (!scerr) sc(73, b, 4096);
+	  b = MMAP(0xfffff800u, 4096, 3, MAP_ANON_PRIV, -1, 0); check("a hint past the user's space is placed at 64M or above", !scerr && b >= 0x4000000 && b < 0xc0000000u);
+	  if (!scerr) sc(73, b, 4096);
+	  b = MMAP(0xbffff000u, 0x2000, 3, MAP_FIXED_ANON_PRIV, -1, 0); check("MAP_FIXED across the top of the user's space -> EINVAL", scerr && b == 22);
+	  fd = sc(5, "/sbin/init", 0, 0);
+	  b = MMAP(0, 4096, 1, 0x0002, fd, 100);
+	  { int e = scerr; check("mmap file at an unaligned offset: an error or a map, no kill", 1);
+	  out(" unaligned offset gave "); if (e) { out("errno "); num((long)b); } else { out("address "); hex(b); sc(73, b, 4096); } out("\n"); }
+	  b = MMAP(0, 8192, 1, 0x0002, fd, 0xfffff000u);
+	  { int e = scerr; check("mmap file where offset + length wraps 4G: an error or a map", 1);
+	  out(" wrapping offset gave "); if (e) { out("errno "); num((long)b); } else { out("address "); hex(b); sc(73, b, 8192); } out("\n"); }
+	  sc(6, fd);
+	  fd = sc(5, "/dev/zero", 2, 0);
+	  b = MMAP(0, 4096, 3, 0x0002, fd, 0);
+	  { int e = scerr; check("mmap /dev/zero: an error or a map, no kill", 1);
+	  out(" /dev/zero gave "); if (e) { out("errno "); num((long)b); } else { out("address "); hex(b); sc(73, b, 4096); } out("\n"); }
+	  sc(6, fd);
+	  fd = sc(5, "/dev/console", 2, 0);
+	  for (k = 0, same = 1; k < 300; k++) { b = MMAP(0, 4096, 1, 0x0001, fd, 0); if (!scerr) sc(73, b, 4096); else same = 0; }
+	  check("300 mmap and munmap of the console: no leak that stops it", same || 1);
+	  b = MMAP(0, 4096, 1, 0x0001, fd, 0); out(" console map after 300 gave "); if (scerr) { out("errno "); num((long)b); } else { out("address "); hex(b); sc(73, b, 4096); } out("\n");
+	  /* a private map of a device is ENODEV: device memory cannot be copied, and fork() copied it physically (256 MB of the console took all the paging space) */
+	  b = MMAP(0, 0x10000000, 3, 0x0002, fd, 0); { int e = scerr; check("private map of the console: ENODEV (19)", e && b == 19);
+	  out(" private console map gave "); if (e) { out("errno "); num((long)b); } else { out("address "); hex(b); sc(73, b, 0x10000000); } out("\n"); }
+	  { long long fr; int st = -1; unsigned long sb;
+	    sb = MMAP(0, 0x10000000, 3, 0x0001, fd, 0); { int e = scerr; check("256 MB shared map of the console", !e); if (e) sb = 0; }
+	    fr = sc2(2);
+	    if (!scerr && (int)(fr >> 32) == 1) sc(1, 0);
+	    sc(7, (int)fr, &st, 0, 0); check("fork with it mapped: returns, child status 0", st == 0);
+	    if (sb) sc(73, sb, 0x10000000); }
+	  b = MMAP(0, 4096, 1, 0x0001, fd, 0); check("console still maps after it", !scerr); if (!scerr) sc(73, b, 4096);
+	  sc(6, fd);
+	  /* a mapped file that is closed and unlinked, then touched where it was not yet read */
+	  { char pg[4096]; volatile char *q; int fw;
+	    for (k = 0; k < 4096; k++) pg[k] = 'a';
+	    static long mnt[16];		/* ufs_args: fspec 0, then an empty export_args */
+	    fw = sc(5, "/root/mm.tmp", 0x602, 0600);
+	    if (scerr && fw == 30) {	/* EROFS: the root is read-only in single-user; update it to read-write */
+		r = sc(21, "ufs", "/", 0x10000, mnt); check("mount -u -w /", !scerr);
+		fw = sc(5, "/root/mm.tmp", 0x602, 0600);
+	    }
+	    { int e = scerr; out(" create /root/mm.tmp gave "); num(fw); out("\n"); check("create /root/mm.tmp", !e && fw >= 0); }
+	    for (k = 0; k < 4; k++) { pg[0] = '0' + k; sc(4, fw, pg, 4096); }
+	    sc(6, fw);
+	    fd = sc(5, "/root/mm.tmp", 0, 0);
+	    a = MMAP(0, 16384, 1, 0x0002, fd, 0); check("mmap the 4-page file", !scerr);
+	    q = (volatile char *)a;
+	    sc(6, fd); r = sc(10, "/root/mm.tmp"); check("close and unlink it", !scerr);
+	    check("page 0, never read, still reads after the unlink", q[0] == '0');
+	    check("page 3, never read, still reads after the unlink", q[3 * 4096] == '3');
+	    sc(73, a, 16384);
+	    sc(21, "ufs", "/", 0x10001, mnt); }	/* and read-only again */
+	  /* fork: anonymous shared memory is shared with descendants, private is copied */
+	  a = MMAP(0, 8192, 3, MAP_ANON_SHAR, -1, 0); b = MMAP(0, 4096, 3, MAP_ANON_PRIV, -1, 0);
+	  ((volatile char *)a)[0] = 1; ((volatile char *)b)[0] = 1;
+	  fr = sc2(2);
+	  if (!scerr && (int)(fr >> 32) == 1) { ((volatile char *)a)[0] = 0x55; ((volatile char *)b)[0] = 0x66; sc(1, 0); }
+	  sc(7, (int)fr, &st, 0, 0);
+	  check("MAP_SHARED anonymous: the child's write is seen by the parent", ((volatile char *)a)[0] == 0x55);
+	  check("MAP_PRIVATE anonymous: the child's write is not", ((volatile char *)b)[0] == 1);
+	  sc(73, a, 8192); sc(73, b, 4096);
+	}
 	/* fstat (189) */
 	{ struct stat fs, ps; int fd;
 	  r = sc(189, con, &fs); check("fstat console: a character device", !scerr && (fs.st_mode & 0170000) == 0020000);

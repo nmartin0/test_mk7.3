@@ -124,7 +124,16 @@ kern_return_t mmap_vm_map(
 				    curprot,
 				    maxprot,
 				    inheritance);
+#if NO_EMULATOR
+			/*
+			 * AI-ONLY NOTE: mmap() (below) passes retval and
+			 * returns the error to the program; a program's
+			 * bad request is not named on the console.
+			 */
+			if (kr && retval == NULL)
+#else
 			if (kr)
+#endif
 			    printf("mmap_vm_map: vm_map(%x %x %x %x %x %x %x %x %x %x %x) failed: %s\n",
 				   p->p_task, addr, size, 0, anywhere, port,
 				   pager_offset, copy, curprot, maxprot, inheritance,
@@ -225,6 +234,185 @@ mach_error_t file_vm_map(
 
 	return kr;
 }
+
+#if NO_EMULATOR
+/*
+ * AI-ONLY NOTE: mmap(), for a process run without the emulator
+ * (docs/roadmap.md, Tier 1 item 2, step 6; docs/deferred.md, "Step 6's
+ * choices").  With the emulator the process makes the BSD arguments
+ * into Mach ones itself (emulator/e_bsd.c, e_mmap()) and the server
+ * maps the file (bsd_vm_map(), file_vm_map() above); here the call
+ * comes to the server as it came to 4.4BSD's, so this does both, with
+ * 4.4BSD-Lite2's mmap() (vm_mmap.c) checks and the emulator's
+ * translation to vm_map(), the way server_exec_load() maps a file.
+ * file_vm_map() is not used: it returns an errno or a kern_return_t
+ * in one int, which a caller cannot tell apart (EACCES is
+ * KERN_NAME_EXISTS).  NetBSD 1.0's call is Lite2's: addr, len, prot,
+ * flags, fd, a pad word, and the offset as two words (8 in all).  The
+ * offset is the low word, as Lite2's `pos' is a vm_offset_t.
+ */
+struct mmap_args {
+	caddr_t	addr;
+	size_t	len;
+	int	prot;
+	int	flags;
+	int	fd;
+	long	pad;
+	off_t	pos;
+};
+
+/* an errno from a vm_map() failure, as Lite2's vm_mmap() has it */
+static int
+mmap_errno(kern_return_t kr)
+{
+	switch (kr) {
+	      case KERN_SUCCESS:
+		return 0;
+	      case KERN_INVALID_ADDRESS:
+	      case KERN_NO_SPACE:
+	      case KERN_RESOURCE_SHORTAGE:
+		return ENOMEM;
+	      case KERN_PROTECTION_FAILURE:
+		return EACCES;
+	      default:
+		return EINVAL;
+	}
+}
+
+int
+mmap(
+	struct proc *p,
+	struct mmap_args *uap,
+	int *retval)
+{
+	struct filedesc *fdp = p->p_fd;
+	struct file *fp;
+	struct vnode *vp = 0;
+	vm_offset_t addr, pos;
+	vm_size_t size;
+	vm_prot_t prot, maxprot;
+	boolean_t anywhere, shared;
+	mach_port_t object = MACH_PORT_NULL;
+	int flags = uap->flags;
+	kern_return_t kr;
+
+	/*
+	 * Address (if FIXED) must be page aligned; the size is rounded
+	 * to a page.  The offset need not be (Lite2's comment: nlist
+	 * relies on it), and is the low word.
+	 */
+	addr = (vm_offset_t) uap->addr;
+	pos = (vm_offset_t) uap->pos;
+	if (((flags & MAP_FIXED) && addr != trunc_page(addr))
+	    || (ssize_t) uap->len < 0
+	    || ((flags & MAP_ANON) && uap->fd != -1))
+		return EINVAL;
+	size = round_page((vm_size_t) uap->len);
+	anywhere = !(flags & MAP_FIXED);
+	shared = (flags & MAP_SHARED) != 0;
+	if (!anywhere && (addr + size < addr	/* wraps */
+			  || addr + size >= VM_MAX_ADDRESS))
+		return EINVAL;
+
+	prot = VM_PROT_NONE;
+	if (uap->prot & PROT_READ)
+		prot |= VM_PROT_READ;
+	if (uap->prot & PROT_WRITE)
+		prot |= VM_PROT_WRITE;
+	if (uap->prot & PROT_EXEC)
+		prot |= VM_PROT_EXECUTE;
+
+	if (flags & MAP_ANON) {
+		maxprot = VM_PROT_ALL;
+		pos = 0;
+	} else {
+		if ((unsigned) uap->fd >= fdp->fd_nfiles
+		    || (fp = fdp->fd_ofiles[uap->fd]) == NULL)
+			return EBADF;
+		if (fp->f_type != DTYPE_VNODE)
+			return EINVAL;
+		vp = (struct vnode *) fp->f_data;
+		if (vp->v_type != VREG && vp->v_type != VCHR)
+			return EINVAL;
+		/*
+		 * AI-ONLY NOTE: a character device can be mapped only
+		 * MAP_SHARED; a private map is ENODEV, which OSF/1's
+		 * mmap(2) gives for an object that cannot be mapped
+		 * (mmap-E4).  Lite2 and the emulator allow it, but
+		 * device memory cannot be copied lazily: fork() copied
+		 * a private map of the console physically, and a 256 MB
+		 * one used up the paging space.  Refusing the private
+		 * map is this tree's own rule (docs/deferred.md, S-26 (b)).
+		 */
+		if (vp->v_type == VCHR && !shared)
+			return ENODEV;
+		/*
+		 * File and memory protections must agree: the file must
+		 * be open for reading (OSF/1 mmap(2), "a mapped file
+		 * region ... open for reading"); a shared mapping can be
+		 * written only if it is open for writing.
+		 */
+		if (!(fp->f_flag & FREAD))
+			return EACCES;
+		maxprot = VM_PROT_READ | VM_PROT_EXECUTE;
+		if (shared) {
+			if (fp->f_flag & FWRITE)
+				maxprot |= VM_PROT_WRITE;
+			else if (prot & VM_PROT_WRITE)
+				return EACCES;
+		} else
+			maxprot |= VM_PROT_WRITE;
+	}
+	if (size == 0) {		/* NetBSD's zero bss: nothing to map */
+		*retval = (int) addr;
+		return 0;
+	}
+	/*
+	 * A hint under 64 MB, or past the user's space, is placed at 64
+	 * MB: room for sbrk, as the emulator does for NetBSD's shared
+	 * libraries (emulator/e_bsd.c, e_mmap(), for a hint of 0) and as
+	 * Lite2 does for any hint inside the heap's reach (vm_mmap.c).
+	 */
+	if (anywhere) {
+		if (addr < 0x4000000 || addr >= VM_MAX_ADDRESS)
+			addr = 0x4000000;
+		else
+			addr = round_page(addr);
+	}
+
+	if (vp == 0) {
+		/* anonymous: shared with the process's descendants */
+		kr = mmap_vm_map(p, addr, size, anywhere, MACH_PORT_NULL, 0,
+				 FALSE, prot, maxprot,
+				 shared ? VM_INHERIT_SHARE : VM_INHERIT_COPY,
+				 &addr);
+	} else if (vp->v_type == VREG) {
+		object = vnode_to_port(vp);
+		if (!MACH_PORT_VALID(object))
+			return EINVAL;
+		vref(vp);	/* mmap_vm_map drops the master lock */
+		kr = mmap_vm_map(p, addr, size, anywhere, object, pos,
+				 !shared, prot, maxprot,
+				 shared ? VM_INHERIT_SHARE : VM_INHERIT_COPY,
+				 &addr);
+		vrele(vp);
+	} else {
+		object = device_pager_create(vp->v_rdev, pos, size, prot);
+		if (!MACH_PORT_VALID(object))
+			return EINVAL;
+		/* a device is mapped shared (see ENODEV above): no copy */
+		kr = mmap_vm_map(p, addr, size, anywhere, object, pos,
+				 FALSE, prot, maxprot, VM_INHERIT_SHARE,
+				 &addr);
+		/* vm_map holds its own reference; give back the right
+		   device_pager_create() made, as serv/misc.c does */
+		(void) mach_port_deallocate(mach_task_self(), object);
+	}
+	if (kr == KERN_SUCCESS)
+		*retval = (int) addr;
+	return mmap_errno(kr);
+}
+#endif /* NO_EMULATOR */
 
 struct munmap_args {
 	caddr_t	addr;

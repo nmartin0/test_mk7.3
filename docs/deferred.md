@@ -1741,6 +1741,100 @@ Each run was QEMU TCG, 64 MB of memory. What fails:
     notifications or calls, which take the signal. All found or
     settled by two independent reviews of 0153.
 
+- **S-26. What `mmap` without the emulator leaves open.** Step 6
+  (27 October 2026). (a) A file offset is its low 32 bits, as Lite2's
+  `pos` is a `vm_offset_t`; a mapping past 4 GB is not asked for by
+  NetBSD 1.0's programs. (b) The console can be mapped, through the
+  device pager as with the emulator (a pty or serial line gives
+  `EINVAL`), where OSF/1's `mmap(2)` says `ENODEV` for a terminal
+  (mmap-E4); the send right `device_pager_create()` makes is given
+  back as `serv/misc.c` gives back the time device's, and 300 maps
+  and unmaps of the console leave it working. A device can be mapped
+  only `MAP_SHARED`; a private map is `ENODEV` (mmap-E4: "an object
+  that cannot be mapped"). **This rule has no precedent**: Lite2 and
+  the emulator allow a private map, and OSF/1 names `ENODEV` for
+  objects that cannot be mapped, such as a terminal, not for private
+  maps. It is this tree's own, confirmed by the maintainer on 28
+  October 2026, because device memory cannot be copied lazily: a
+  private map of the console was copied physically, at the map in the
+  fuzz test's 1.4 GB case and 256 MB on a fresh boot, and at `fork()`
+  once the map itself was not copied; each used up the paging space
+  and hung the machine. A shared 256 MB map of the console, with a
+  `fork()`, works. (c) `MAP_FIXED` removes what is there before
+  it maps, and a failure leaves the range empty, as Lite2's does.
+  (d) `MAP_INHERIT` is ignored, as the emulator ignores it
+  (`emulator/e_bsd.c`, `e_mmap()`): a mapping does not survive
+  `execve`. (e) OSF/1's own flags (`MAP_VARIABLE`, `MAP_FILE` as a
+  choice, the default exact mapping address of mmap-18 to mmap-20)
+  are for OSF/1 programs, whose table the emulator keeps
+  (`e_osf1_mmap()`); NetBSD's flags are Lite2's. (f) Mapping `/dev/zero` gives `EINVAL`: its
+  driver has no pager (`null_port()`), and Lite2's special case that
+  maps it as anonymous memory is not made, `iszerodev()` being stubbed
+  to `FALSE` in this tree's i386 `conf.c`; NetBSD 1.0's `ld.so` does
+  not use it. (g) A mapped file that is closed and unlinked
+  can still be read in pages not yet touched (the probe, one run:
+  mmap-32); what keeps the vnode was not examined, and `ftruncate` of
+  a mapped file was not tested. (h) A file offset that is not
+  aligned, or whose offset plus length wraps 4 GB, is passed to
+  `vm_map()` as it is, as Lite2 passes one: both map (the probe),
+  where OSF/1 says `EINVAL` for an unaligned offset (mmap-E3). (i) The
+  anonymous path drops the master lock around `vm_map()` as the file
+  path does, where nothing needs it, as `mmap_vm_map()` does for every
+  caller.
+
+- **Step 6's choices, each from a source.** Made 27 October 2026,
+  after a precedent search of this tree and Lite2; each choice has a
+  source, so none was put to the maintainer on its own.
+  - *`mmap` in the server* is the emulator's `e_mmap()` (this tree's
+    own: zero length, `PROT_*` to `VM_PROT_*`, `MAP_FIXED` or
+    anywhere, a hint of 0 placed at 64 MB "for NetBSD shared
+    libraries: leave some space for sbrk", `vm_map` on the process's
+    task) with Lite2's `mmap()` (`vm_mmap.c`) checks: a fixed address
+    must be page aligned, not wrap, and end below the user's limit
+    (0xc0000000, as Lite2's `VM_MAXUSER_ADDRESS` check); a hint under
+    64 MB or past the limit is placed at 64 MB (the emulator's, for a
+    hint of 0, and Lite2's for any hint in the heap's reach);
+    `MAP_ANON` takes `fd` -1; a length above 2 GB, and a file that is
+    not a regular file or character device, are `EINVAL`; a bad
+    descriptor is `EBADF`. The mapping is made as `server_exec_load()`
+    maps a program: `vnode_to_port()`, a vnode reference held across
+    `mmap_vm_map()` (which drops the master lock). Not
+    `file_vm_map()`: it returns an errno or a Mach error in one `int`,
+    which the caller cannot tell apart (`EACCES` is
+    `KERN_NAME_EXISTS`).
+  - *Where this differs from the emulator's `e_mmap()`*, the other
+    source is followed, the emulator's being the lesser: anonymous
+    memory takes the protection asked for (OSF/1 mmap-26 and
+    mmap-27, Lite2) where the emulator gave read-write whatever was
+    asked; `MAP_SHARED` anonymous memory is shared with descendants
+    (mmap-11, mmap-34, Lite2) where the emulator copied it; a
+    length that rounds to nothing returns success with the address
+    as given (Lite2's `vm_mmap()`) where the emulator left the
+    result unset; the maximum protection is Lite2's (read and execute,
+    write if the mapping is private or the descriptor is open for
+    writing) where the emulator's was the protection asked for; a
+    device gets the protection asked for (BUG-19), and is only ever
+    shared (S-26 (b)).
+  - *Errors*: a failed `vm_map` is Lite2's: no space, a bad address
+    and a resource shortage `ENOMEM` (mmap-E5), a protection failure
+    `EACCES`, the rest `EINVAL`. The emulator ends a program given
+    `KERN_NO_SPACE` (`e_kernel_error_to_lites_error()`); the server's
+    `noemul_errno()` does the same for an error it cannot convert, so
+    `mmap` converts its own.
+  - *A file* must be open for reading (mmap-29, mmap-E1; this tree's
+    `file_vm_map()` the same); a shared mapping can be written only
+    if the descriptor is open for writing (mmap-28).
+  - *The console*: `mmap_vm_map()` names a failed `vm_map` only when
+    its caller wants no result (the program loader); `mmap()` returns
+    the error to the program, which can otherwise fill the console
+    with its bad requests (an `AI-ONLY NOTE` at the site).
+  Measured by `docs/tools/noemuprobe/` (224 checks, 51 of them for
+  `mmap`: placement, zero fill, `MAP_FIXED`, protections, a file and
+  an offset, a private write not reaching the file, fork sharing, bad
+  arguments), by 5,000 calls with random hostile arguments, and by
+  NetBSD's dynamically linked `true`, `false` and `env` run from the
+  single-user shell.
+
 - **S-24. A read whose copy to the process fails loses the data.**
   Found 24 October 2026 testing `readv` without the emulator (Tier 1
   item 2, step 4). 4.4BSD-Lite2's `soreceive()` takes data off the

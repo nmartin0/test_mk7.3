@@ -545,14 +545,19 @@ What differs from the plan above:
   taken as 4.4BSD's `userret()` takes them, on the way out of each
   call.
 
-*Next, as of 26 October 2026.* Step 4's calls are in, through
-`fork` (0151); S-23 is closed (0152); step 5, signals, is 0153. The
-single-user shell runs; the first call missing is `mmap` (197), which
-NetBSD's `ld.so` maps every dynamically linked program's libraries
-with -- the server now names each missing call on the console. Next
-`mmap`, then the rest of the 43 calls still `nosys`, as `/etc/rc`
-and the multi-user programs ask for them. Each call is checked
-against its items in `docs/osf1-calls.md`.
+*Step 6, `mmap`, done 27 October 2026.* Call 197 is in the server
+(`serv/vm_syscalls.c`): the emulator's translation to `vm_map`, with
+4.4BSD-Lite2's argument checks; NetBSD 1.0's dynamically linked
+programs now start (`/usr/bin/true`, `/usr/bin/env` from the
+single-user shell), and the probe checks it (224 checks). The choices
+and what is left are in `docs/deferred.md`, "Step 6's choices", S-26.
+
+*Next, as of 27 October 2026.* Step 4's calls are in, through `fork`
+(0151); S-23 is closed (0152); signals are 0153; `mmap` is step 6.
+The rest of the 42 calls still `nosys` follow, as `/etc/rc` and the
+multi-user programs ask for them -- the server names each missing
+call on the console. Each call is checked against its items in
+`docs/osf1-calls.md`.
 
 ### 3. The locking
 

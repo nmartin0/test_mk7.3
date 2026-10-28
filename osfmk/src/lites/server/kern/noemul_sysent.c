@@ -73,6 +73,7 @@ int	mkdir();
 int	mkfifo();
 int	mknod();
 int	mlock();
+int	mmap();
 int	mount();
 int	mprotect();
 int	msync();
@@ -379,7 +380,7 @@ struct sysent noemul_sysent[] = {
 	{ 2, getrlimit },		/* 194 = getrlimit */
 	{ 2, s_setrlimit },		/* 195 = setrlimit */
 	{ 4, getdirentries },		/* 196 = getdirentries */
-	{ 8, nosys },			/* 197 = mmap, not in the server */
+	{ 8, mmap },			/* 197 = mmap */
 	{ 0, nosys },			/* 198 = __syscall */
 	{ 5, lseek },			/* 199 = lseek */
 	{ 4, truncate },			/* 200 = truncate */
